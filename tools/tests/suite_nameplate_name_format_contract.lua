@@ -5,6 +5,7 @@ local ClientWorld = assert(loadfile(host .. "/tools/tests/client_world.lua"))()
 for _, flavor in ipairs({ "Mainline", "Forever" }) do
     local secret = {}
     local isPlayer, tapped, classSecret = false, false, false
+    local classReads, playerClass = 0, "WARRIOR"
     local world = ClientWorld.New(host, flavor)
     world.env.issecretvalue = function(v) return rawequal(v, secret) end
     world.env.UnitExists = function(unit) return unit == "nameplate1" end
@@ -14,10 +15,15 @@ for _, flavor in ipairs({ "Mainline", "Forever" }) do
     world.env.UnitCanAttack = function() return true end
     world.env.UnitClassification = function() return "normal" end
     local classColor = { r = .78, g = .61, b = .43 }
-    world.env.RAID_CLASS_COLORS, world.env.CUSTOM_CLASS_COLORS = { WARRIOR = classColor }, false
+    world.env.RAID_CLASS_COLORS = { WARRIOR = classColor, MAGE = { r = .25, g = .78, b = .92 } }
+    world.env.CUSTOM_CLASS_COLORS = false
     world.env.C_ClassColor = { GetClassColor = function() return classColor end }
     world.env.UnitClass = function(unit)
-        if unit == "nameplate1" and classSecret then return secret, secret, secret end
+        if unit == "nameplate1" then
+            classReads = classReads + 1
+            if classSecret then return secret, secret, secret end
+            return playerClass, playerClass, 1
+        end
         return "Warrior", "WARRIOR", 1
     end
     world.env.MAX_BOSS_FRAMES = 5
@@ -35,6 +41,11 @@ for _, flavor in ipairs({ "Mainline", "Forever" }) do
     -- The standard native scope is covered by the real Fonts-page contract.
     local legacy = {}
     for key, value in pairs(engine) do if key ~= "Nameplates" then legacy[key] = value end end
+    local formatCalls, format = 0, legacy.Format
+    legacy.Format = function(...)
+        formatCalls = formatCalls + 1
+        return format(...)
+    end
     local provider = legacy
     local combat, checks, reads, writes, hooks = false, 0, 0, 0, 0
     local S = {
@@ -54,6 +65,9 @@ for _, flavor in ipairs({ "Mainline", "Forever" }) do
     assert(loadfile(os.getenv("SUITE_NAME_TEXT_HELPER_OVERRIDE") or root .. "/MSUF_Suite/Core/NameplateText.lua"))("Suite", NS)
     local private = { NS = NS, Suite = S }
     local callback
+    UnitIsPlayer, UnitPlayerControlled, UnitClass = world.env.UnitIsPlayer, world.env.UnitIsPlayer, world.env.UnitClass
+    C_Secrets = { ShouldUnitIdentityBeSecret = function() return classSecret end }
+    RAID_CLASS_COLORS = world.env.RAID_CLASS_COLORS
     hooksecurefunc = function(name, fn)
         assert(name == "CompactUnitFrame_UpdateName")
         callback, hooks = fn, hooks + 1
@@ -99,6 +113,10 @@ for _, flavor in ipairs({ "Mainline", "Forever" }) do
     end
     Native("Ancient Twilight Archmage")
     assert(label.value == "A. T. Archmage", "native name reset was not reformatted")
+    local warmFormats = formatCalls
+    for _ = 1, 1000 do Native("Ancient Twilight Archmage") end
+    assert(formatCalls == warmFormats, "identical native name resets repeatedly called the host formatter")
+    assert(label.value == "A. T. Archmage", "warm native reset lost the formatted name")
     combat, uf.protected = true, true
     Native("Ancient Twilight Sorcerer")
     assert(module.pendingPlates[uf], "protected native update was not queued")
@@ -126,6 +144,27 @@ for _, flavor in ipairs({ "Mainline", "Forever" }) do
     Names.Configure(config)
     Names.Apply(uf, "enemy", "nameplate1")
     assert(label.value == "hmage", "length/direction override failed")
+    do
+        assert(Names.secretNameWidth == 30, "expected a geometry limit derived from five characters")
+        local observed, changes = {}, 0
+        Names.ObserveNameClip(function(frame, isSecret)
+            assert(frame == uf, "secret name layout targeted a different plate")
+            changes = changes + 1
+            observed[uf] = isSecret or nil
+        end, observed)
+        Native(secret)
+        assert(changes == 1 and observed[uf] and rawequal(label.value, secret), "secret name did not signal layout")
+        for _ = 1, 30 do Native(secret) end
+        assert(changes == 1, "repeated secret names ran layout")
+        Native("Ancient Twilight Archmage")
+        assert(changes == 2 and not observed[uf] and label.value == "hmage", "plain text did not resume exact shortening")
+        config.enemyNameFormat = 3
+        Names.Configure(config)
+        assert(not Names.secretNameWidth, "word initials unexpectedly enable a width limit")
+        config.enemyNameFormat = 4
+        Names.Configure(config)
+        Names.ObserveNameClip()
+    end
     label.shown = false
     callback(uf)
     config.nameFormattingEnabled, config.enemyNameColorEnabled = false, false
@@ -242,6 +281,34 @@ for _, flavor in ipairs({ "Mainline", "Forever" }) do
     Native("Player Example")
     Names.Apply(uf, "enemy", "nameplate1")
     assert(label.r == .78 and label.g == .61 and label.b == .43, "Shared player class color was not applied: " .. tostring(label.r) .. "," .. tostring(label.g) .. "," .. tostring(label.b))
+    local beforeClassReads = classReads
+    for _ = 1, 1000 do Native("Player Example") end
+    assert(classReads == beforeClassReads and label.r == .78, "warm class tint resolved the same public player again")
+    Native("Ada")
+    local beforeWrites = writes
+    for _ = 1, 100 do callback(uf) end
+    assert(writes == beforeWrites, "a public name with the correct class color repeated native writes")
+    db.classColors.WARRIOR = { r = .3, g = .5, b = .7 }
+    mw.core.UF.Config.RefreshSettingsCache()
+    Native("Player Example")
+    assert(classReads > beforeClassReads and label.r == .3, "cached class tint survived a palette edit")
+    db.classColors.WARRIOR = nil
+    mw.core.UF.Config.RefreshSettingsCache()
+    Native("Player Example")
+    assert(label.r == .78, "class tint did not return after the palette reset")
+    classSecret = true
+    Native("Player Example")
+    assert(label.r ~= .78, "an unchanged public name reused a newly restricted class tint")
+    classSecret = false
+    Native("Player Example")
+    assert(label.r == .78, "the public class tint did not recover after restrictions")
+    Names.Release(uf)
+    Names.Begin(uf)
+    playerClass = "MAGE"
+    Native("Player Example")
+    Names.Apply(uf, "enemy", "nameplate1")
+    assert(label.r == .25, "a recycled same-name unit inherited the previous class tint")
+    playerClass = "WARRIOR"
     isPlayer = false
     Names.Begin(uf)
     Names.Configure(config)

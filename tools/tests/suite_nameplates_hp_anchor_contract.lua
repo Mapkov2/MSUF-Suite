@@ -220,6 +220,23 @@ for _, forever in ipairs({ false, true }) do
     combat = true
     neutral:UpdateAnchors()
     assert(name.points.BOTTOMLEFT[4] == 50, "a native combat rebuild reused the previous custom health height")
+
+    local cast = Region()
+    cast.Icon, cast.Text = Region(), Region()
+    neutral.CastBarsContainer.castBar = cast
+    config.enemyCastTextOffsetY = 13
+    Layout.Configure(config)
+    cast.Text.protected = true
+    neutral:UpdateAnchors()
+    assert(name.points.BOTTOMLEFT[4] == 50, "protected cast used custom health sizing")
+    cast.Text.protected = false
+    Apply(neutral)
+    assert(neutral.HealthBarsContainer.height == 34 and cast.Text.y == 13,
+        "the writable cast did not recover together with the configured health height")
+    assert(name.points.BOTTOMLEFT[4] == 56, "the centered name did not follow the recovered health height")
+    neutral:UpdateAnchors()
+    assert(name.points.BOTTOMLEFT[4] == 56, "combat rebuild centered the name against the native health height")
+    config.enemyCastTextOffsetY = nil
     combat = false
     config.neutralCenterName = false
     Layout.Configure(config)

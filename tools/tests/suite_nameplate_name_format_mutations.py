@@ -8,7 +8,7 @@ files = {"runtime": root / "MSUF_Suite_Nameplates/NameText.lua", "helper": root 
 cases = [
     ("secret restore", "runtime", "    if not S.Public(current) then\n        ForgetPlain(state)\n        return\n    end", ""),
     ("pooled identity", "runtime", "    Clear(state)\nend\n", "end\n"),
-    ("deferred replay", "runtime", "M.pendingPlates[uf], state.look = true, nil", "M.pendingPlates[uf] = true"),
+    ("deferred replay", "runtime", "M.pendingPlates[uf], state.look, state.tintRevision = true, nil, nil", "M.pendingPlates[uf], state.tintRevision = true, nil"),
     ("mapped owner", "runtime", "    if M.activeUnits[unit] ~= uf then return end", "    if not unit then return end"),
     ("side switch", "runtime", "if not look or not M.config[look.visualSide] then return end", "if not look then return end"),
     ("neutral scope", "runtime", 'if kind == "neutralNpc" then scope =', 'if kind == "enemyNpc" then scope ='),

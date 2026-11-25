@@ -46,11 +46,15 @@ CastingBarTypeInfo = {
     standard = { filling = "ui-castingbar-filling-standard", full = "ui-castingbar-full-standard" },
     interrupted = { filling = "ui-castingbar-interrupted", full = "ui-castingbar-interrupted" },
 }
-local function Public(value)
+local function IsSecret(value)
     publicChecks = publicChecks + 1
-    return value ~= SECRET and value ~= LOCKED
+    return value == SECRET or value == LOCKED
+end
+local function Public(value)
+    return not IsSecret(value)
 end
 local NS = {
+    IsSecret = IsSecret,
     Public = Public,
     Client = { isForever = false },
     Finite = function(value) return type(value) == "number" and value == value end,
@@ -165,6 +169,53 @@ local function Instructions(fn)
     return count
 end
 
+-- Three native health text regions and the selection border are reused for
+-- different occupants. Neither their own alpha nor a denied restore may be
+-- carried to the next occupant once the frame is available again.
+do
+    local context = { NS = NS, Mode = { KEEP = 1, CUSTOMIZE = 2, HIDE = 3, LOOK_BLIZZARD = 2 } }
+    assert(loadfile(source .. "/Mouseover.lua"))("Nameplates", context)
+    assert(loadfile(source .. "/Selection.lua"))("Nameplates", context)
+    local hover, selection = context.Mouseover, context.Selection
+    local config = { look = 1, friendly = true, friendlyHealthTextVisible = false, selectionBorder = 3, selectionDim = 1, highlightAggroOverride = true }
+    hover.Bind({ config = config, friendlyNames = {} })
+    hover.Configure()
+    selection.Configure(config)
+    local function Label()
+        local label = Region()
+        label.alpha = .8
+        function label:SetAlpha(value) self.alpha = value end
+        function label:GetAlpha() return self.alpha end
+        return label
+    end
+    local frame = { name = Label() }
+    local bar = { Text = Label(), LeftText = Label(), RightText = Label(), selectedBorder = Label() }
+    local function CycleText()
+        hover.Apply(frame, bar, "friendly", true)
+        assert(bar.Text.alpha == 0 and bar.LeftText.alpha == 0 and bar.RightText.alpha == 0)
+        hover.Restore(frame)
+        assert(bar.Text.alpha == .8 and bar.RightText.alpha == .8)
+    end
+    local function CycleSelection()
+        selection.Apply(bar, true, frame, "friendly")
+        assert(bar.selectedBorder.alpha == 0)
+        selection.Restore(bar)
+        assert(bar.selectedBorder.alpha == .8)
+    end
+    local textGrowth, selectGrowth = Grown(100, CycleText), Grown(100, CycleSelection)
+    print(("100 pooled plates: text visibility %.2f KB, selection %.2f KB; Lua instructions per cycle %d/%d")
+        :format(textGrowth, selectGrowth, Instructions(CycleText), Instructions(CycleSelection)))
+    assert(textGrowth < 1 and selectGrowth < 1, "recycled text visibility or selection kept allocating ownership records")
+    bar.RightText.alpha = .35
+    hover.Apply(frame, bar, "friendly", true)
+    bar.RightText.locked = true
+    hover.Restore(frame)
+    assert(bar.RightText.alpha == 0)
+    bar.RightText.locked = nil
+    hover.Restore(frame)
+    assert(bar.RightText.alpha == .35, "denied text restore used the previous occupant's alpha")
+end
+
 ------------------------------------------------------------------ textures
 local config = { nativeHealthFillTexture = "health", nativeHealthBackgroundTexture = "healthBack",
     nativeCastFillTexture = "cast", nativeCastBackgroundTexture = "castBack" }
@@ -219,11 +270,15 @@ do
     local nativeNameOnly, nativeHealth, nativeCast = Plate("nameplate3")
     nativeNameOnly.showOnlyName = true
     NativeAcquire(nativeHealth, nativeCast)
+    local originalCastUpdate = nativeCast.UpdateBarFillTexture
     T.Apply(nativeNameOnly)
     assert(nativeHealth.barTexture.textures == 0 and T.HasHealthBackground(nativeNameOnly),
         "a names-only plate touched its hidden fill or gave up its background ownership")
+    assert(nativeCast.UpdateBarFillTexture == originalCastUpdate,
+        "native name-only mode acquired a cast texture hook for an invisible component")
     nativeNameOnly.showOnlyName = false
     T.OnAnchors(nativeNameOnly)
+    assert(nativeCast.UpdateBarFillTexture ~= originalCastUpdate, "full bars did not arm cast texture updates")
     assert(nativeHealth.barTexture.path == "health" and nativeHealth.bgTexture.path == "healthBack",
         "the native anchor rebuild did not style the exposed health bar")
     nativeNameOnly.showOnlyName = true
@@ -396,12 +451,9 @@ do
     counts, walks = Reads()
     assert(counts == 2 and walks == 1 and active[1].writes == 1, "an unchanged aura refresh walked the pool or wrote a button")
 
-    -- Budget (Lua 5.1 VM instructions, this fixture's Public and wrapper
-    -- included): a lane that is not the last cost 42 with a frame field
-    -- read and two checks, 29 with the lane checked once against the lane
-    -- Observe verified; an unchanged refresh ran 8 checks, now 5. Two of
-    -- three hook calls take the first path.
-    local LANE_BUDGET, REFRESH_CHECKS = 29, 5
+    -- Match the native secret predicate and keep the same safety checks.
+    -- Two of the three callbacks stop after testing the lane.
+    local LANE_BUDGET, REFRESH_BUDGET, REFRESH_CHECKS = 28, 183, 5
     local hook
     for _, entry in ipairs(hooks) do
         if entry.owner == auras and entry.method == "RefreshList" then hook = entry.callback end
@@ -411,13 +463,14 @@ do
     local lane = Instructions(function() hook(auras, auras.BuffListFrame) end)
     local laneChecks = publicChecks
     publicChecks = 0
-    auras:RefreshAuras()
-    print(("aura lane that is not the last: %d instructions, %d check(s); unchanged refresh: %d checks"):format(
-        lane, laneChecks, publicChecks))
+    local refresh = Instructions(function() auras:RefreshAuras() end)
+    print(("aura lane that is not the last: %d instructions, %d check(s); unchanged refresh: %d instructions, %d checks"):format(
+        lane, laneChecks, refresh, publicChecks))
     assert(laneChecks == 1 and lane <= LANE_BUDGET,
         ("an intermediate aura lane cost %d instructions and %d checks (budget %d and 1)"):format(lane, laneChecks, LANE_BUDGET))
-    assert(publicChecks <= REFRESH_CHECKS,
-        "an unchanged aura refresh ran " .. publicChecks .. " checks (budget " .. REFRESH_CHECKS .. ")")
+    assert(publicChecks == REFRESH_CHECKS and refresh <= REFRESH_BUDGET,
+        ("an unchanged aura refresh cost %d instructions and %d checks (budget %d and %d)")
+            :format(refresh, publicChecks, REFRESH_BUDGET, REFRESH_CHECKS))
     assert(Grown(100, function() auras:RefreshAuras() end) == 0, "aura refreshes allocated")
 
     -- A restricted or missing lane is never compared; nothing runs for it.

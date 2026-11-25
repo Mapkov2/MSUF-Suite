@@ -4,16 +4,16 @@ local Mode, Key = private.Mode, private.Key
 local Layout = {}
 private.Layout = Layout
 local Geometry = private.Geometry
-local Point = Geometry.Point
+local Point, Offset, Link, Accessible = Geometry.Point, Geometry.Offset, Geometry.Link, Geometry.Accessible
+local CastOffsets, Writable = Geometry.CastOffsets, Geometry.Writable
 local states = setmetatable({}, { __mode = "k" })
+local spareStates = setmetatable({}, { __mode = "k" })
 local hooked = setmetatable({}, { __mode = "k" })
 local plans, generation, module = {}, 0
+local instanceNameWidth, instanceHealthFontSize, queuedNames
+local clippedNames = setmetatable({}, { __mode = "k" })
 local elements, X = NS.NameplateStyle.Elements, NS.NameplateExtensions
 local AuraModel = NS.NameplateAuraDisplay
-
-local function Accessible(region)
-    return region and not NS.Safety.IsForbidden(region)
-end
 
 -- A write this plate could not make now: the end of combat applies the
 -- plate again (Skin.lua OnCombatEnded).
@@ -21,32 +21,13 @@ local function Defer(uf)
     module.pendingPlates[uf] = true
 end
 
--- Restricted nameplate regions cannot be measured, even outside combat.
--- SetPointsOffset changes their displacement without reading/replacing native
--- anchors. We store only our own offsets, never GetPoint/GetRect results.
-local function Offset(state, region, x, y, force)
-    local old = state.offsets[region]
-    if x == 0 and y == 0 and not old then return end
-    if not force and old and old[1] == x and old[2] == y then return end
-    if not Accessible(region) then return end
-    region:SetPointsOffset(x, y)
-    if x == 0 and y == 0 then
-        state.offsets[region] = nil
-    else
-        old = old or {}
-        old[1], old[2] = x, y
-        state.offsets[region] = old
+local function AcquireState(uf)
+    local state = spareStates[uf]
+    if state then
+        spareStates[uf] = nil
+        return state
     end
-end
-
--- A few native regions have anchors to two independently movable elements.
--- Correct only those links; their public base anchors come from upstream/live
--- Blizzard_NamePlateUnitFrame:UpdateAnchors and CastingBar:ApplyStyleAndAnchoring
--- (also present in upstream/forever). No native setup method is invoked.
-local function Link(state, region, point, owner, relative, x, y, dx, dy)
-    if dx == 0 and dy == 0 or not Accessible(region) or not owner then return end
-    state.links[#state.links + 1] = { region, point, owner, relative, x, y }
-    Point(region, point, owner, relative, x - dx, y - dy)
+    return { offsets = {}, links = {} }
 end
 
 -- Blizzard's aura list anchors include fixed offsets (-5, +5 and the debuff
@@ -149,7 +130,7 @@ local function RestoreHeader(state, uf)
     return true
 end
 
-local function MirrorHeader(state, uf, prefix, plan, setup, config)
+local function MirrorHeader(state, uf, prefix, plan, setup, config, nameWidth)
     local style = NS.NameplateStyle
     if prefix ~= "enemy" or not style.MirrorHeader(config.enemyMirrorHeader,
         config.enemyTextMode, setup.unitNameAnchorStyle, uf.showOnlyName) then return false end
@@ -184,101 +165,50 @@ local function MirrorHeader(state, uf, prefix, plan, setup, config)
     value:SetPointsOffset(0, 0)
     state.offsets[name], state.offsets[value] = nil, nil
     style.PlaceMirroredHeader(name, value, health, container, spacing,
-        plan.Name[1], plan.Name[2], plan.HealthText[1], plan.HealthText[2], Point)
+        plan.Name[1], plan.Name[2], plan.HealthText[1], plan.HealthText[2], Point, nameWidth)
     name:SetJustifyH("RIGHT")
     return true
 end
 
-local function AuraWritable(frame)
-    if not Accessible(frame) then return false end
-    local allowed = frame:CanBeAccessedInContext()
-    return NS.Public(allowed) and allowed == true
-end
-
-local function RestoreAuraStyles(state, uf)
-    if not state.auraStyles then return end
-    for frame, saved in pairs(state.auraStyles) do
-        if AuraWritable(frame) then
-            if saved.scale then frame:SetScale(saved.scale) end
-            if saved.alpha then frame:SetAlpha(saved.alpha) end
-            if saved.layer then frame:SetFrameLevel(saved.layer) end
-            state.auraStyles[frame] = nil
-        else
-            Defer(uf)
-        end
-    end
-    if not next(state.auraStyles) then state.auraStyles = nil end
-end
-
-local function NameAnchorWritable(label)
-    if not AuraWritable(label) then return false end
-    local restricted = label:IsAnchoringRestricted()
-    return NS.Public(restricted) and restricted == false
-end
-
 local function RestoreNameAnchor(state, uf)
-    local saved = state.nameAnchor
-    if not saved then return true end
-    local writable = saved.native and AuraWritable or NameAnchorWritable
-    if not writable(uf.name) then
-        Defer(uf)
-        return false
-    end
-    uf.name:ClearAllPoints()
-    for _, point in ipairs(saved.points) do uf.name:SetPoint(unpack(point)) end
-    uf.name:SetJustifyH(saved.justify)
-    state.nameAnchor = nil
-    return true
+    if Geometry.RestoreNameAnchor(state, uf) then return true end
+    Defer(uf)
+    return false
 end
 
-local function ApplyNameAnchor(state, uf, plan)
-    local anchor, label, owner = plan.nameAnchor, uf.name, uf.HealthBarsContainer.healthBar
-    if not anchor or private.HealthNameOnly(uf) or not NameAnchorWritable(label) or not Accessible(owner) then return end
-    local points, justify = {}, label:GetJustifyH()
-    if not NS.Public(justify) then return end
-    local count = label:GetNumPoints()
-    if not NS.Finite(count) then return end
-    for index = 1, count do
-        local point, relative, relativePoint, x, y = label:GetPoint(index)
-        if not NS.Public(point) or not NS.Public(relative) or not NS.Public(relativePoint)
-            or not NS.Finite(x) or not NS.Finite(y) then return end
-        points[index] = { point, relative, relativePoint, x, y }
-    end
-    state.nameAnchor = { points = points, justify = justify }
-    label:ClearAllPoints()
-    Point(label, anchor, owner, anchor, plan.Name[1], plan.Name[2])
-    label:SetJustifyH(anchor:find("LEFT", 1, true) and "LEFT" or anchor:find("RIGHT", 1, true) and "RIGHT" or "CENTER")
-    return true
-end
-
-local function PlaceNativeName(state, uf, plan, setup, baseHeight, badgeShown, center, nativeReset)
-    if AuraWritable(uf.name) then
+local function PlaceNativeName(state, uf, plan, setup, baseHeight, badgeShown, center, nativeReset, width)
+    if Writable(uf.name) then
+        local offset = width and state.offsets[uf.name]
+        if offset then Offset(state, uf.name, 0, 0, true) end
         local anchor
         if center then
             local size = not nativeReset and state.healthSize
             local height = size and size[4] + size[2] or baseHeight
             local geometry = not nativeReset and state.geometry
-            anchor = Geometry.CenterName(uf, setup, height, plan.Name[2], badgeShown, geometry)
-        else
-            anchor = Geometry.FitNameOnly(uf, setup, plan.Name[1], plan.Name[2], badgeShown, plan.nameAnchor)
+            anchor = Geometry.CenterName(uf, setup, height, plan.Name[2], badgeShown, geometry, width)
+        elseif plan.fitName and private.FriendlyNames.IsNameOnly(uf) then
+            anchor = Geometry.FitNameOnly(uf, setup, plan.Name[1], plan.Name[2], badgeShown, plan.nameAnchor, width)
+        elseif width then
+            anchor = Geometry.LimitNativeName(uf, setup, badgeShown, plan, width)
         end
         if anchor then
-            Offset(state, uf.name, 0, 0, true)
-            anchor.generation = generation
+            if not width then Offset(state, uf.name, 0, 0, true) end
+            anchor.generation, anchor.width = generation, width
             state.nameAnchor = anchor
             return true
         end
+        if offset then Offset(state, uf.name, offset[1], offset[2], true) end
     end
     Defer(uf)
     return nil, true
 end
 
-local function AnchorName(state, uf, plan, center, setup, height, badgeShown)
+local function AnchorName(state, uf, plan, center, setup, height, badgeShown, width)
     if center or plan.fitName and private.FriendlyNames.IsNameOnly(uf) then
-        return PlaceNativeName(state, uf, plan, setup, height, badgeShown, center)
+        return PlaceNativeName(state, uf, plan, setup, height, badgeShown, center, nil, width)
     elseif plan.nameAnchor then
         Offset(state, uf.name, 0, 0, true)
-        return ApplyNameAnchor(state, uf, plan)
+        return Geometry.ApplyNameAnchor(state, uf, plan, width)
     end
 end
 
@@ -288,9 +218,8 @@ end
 -- after its last write, so the castbar's spark is sized from the final
 -- geometry (Textures.OnLayout). A pass that returns at its combat or
 -- generation gate wrote nothing and returns nothing. The result belongs to
--- its call: a native setter can run the layout of another plate inside this
--- pass, which reports that plate and leaves this one's result alone.
--- Blizzard's own rebuild is reported by Textures.OnAnchors.
+-- its call, including a guarded combat pass. Blizzard's own rebuild
+-- is reported by Textures.OnAnchors.
 local function Settle(uf)
     local textures = private.Textures
     if textures and textures.inUse then textures.OnLayout(uf) end
@@ -299,6 +228,7 @@ end
 local function Restore(uf, recycled)
     local state = states[uf]
     if not state then return end
+    if recycled then clippedNames[uf], state.nameWidthGeneration = nil, nil end
     if NS.IsCombatLocked() or NS.Safety.IsForbidden(uf) then
         Defer(uf)
         return
@@ -311,9 +241,10 @@ local function Restore(uf, recycled)
     elseif not RestoreNameAnchor(state, uf) or not RestoreHeader(state, uf) then
         return true
     end
+    clippedNames[uf], state.nameWidthGeneration = nil, nil
     RestoreLinks(state, uf, recycled)
     if not recycled then RestoreHealthSize(state, uf) end
-    RestoreAuraStyles(state, uf)
+    if state.auraStyles and not Geometry.RestoreAuraStyles(state) then Defer(uf) end
     if state.iconZoom and not Geometry.RestoreIconZoom(state) then Defer(uf) end
     if state.castIconBorder then Geometry.HideCastIconBorder(state) end
     if state.geometry and not Geometry.Restore(state, uf, NamePlateSetupOptions) then Defer(uf) end
@@ -326,7 +257,13 @@ local function Restore(uf, recycled)
         end
     end
     if not next(state.offsets) and #state.links == 0 and not state.healthSize and not state.geometry
-        and not state.iconZoom and not (state.auraStyles and next(state.auraStyles)) then states[uf] = nil end
+        and not state.iconZoom and not (state.auraStyles and next(state.auraStyles)) then
+        local offsets, links, auraList = state.offsets, state.links, state.spareAuraStyles
+        for key in pairs(state) do state[key] = nil end
+        state.offsets, state.links, state.spareAuraStyles = offsets, links, auraList
+        state.recycled = recycled
+        states[uf], spareStates[uf] = nil, state
+    end
     return true
 end
 
@@ -340,15 +277,26 @@ local function OnAnchors(uf)
     local state = states[uf]
     local forbidden = NS.Safety.IsForbidden(uf)
     local locked = forbidden or NS.IsCombatLocked()
+    local spare = not state and spareStates[uf]
+    if spare and spare.recycled and not locked and module.active then
+        -- A completed native release has no layout to invalidate. SetUnit
+        -- can rebuild the same frame three times before the next binding.
+        local unit = uf.unit
+        if NS.Public(unit) and type(unit) == "string" and module.activeUnits[unit] ~= uf then
+            if not private.IsSkinSuppressed or not private.IsSkinSuppressed(uf) then private.Extensions.OnAnchors(uf) end
+            return
+        end
+    end
     if state then
         -- UpdateAnchors rebuilds dynamic links, including Forever's CC
         -- badge reservation. Restore only fixed XML links before applying
         -- saved offsets again; rebuilt anchors belong to Blizzard.
-        local pending = {}
-        for _, link in ipairs(state.links) do
+        local links, retained = state.links, 0
+        for _, link in ipairs(links) do
             if link.nativeFixed then
                 if locked then
-                    pending[#pending + 1] = link
+                    retained = retained + 1
+                    links[retained] = link
                 elseif Accessible(link[1]) then
                     Point(unpack(link))
                 else
@@ -356,10 +304,11 @@ local function OnAnchors(uf)
                 end
             end
         end
-        state.links = pending
+        for index = retained + 1, #links do links[index] = nil end
         state.header, state.nameAnchor = nil, nil -- Blizzard rebuilt the anchors and justification.
+        clippedNames[uf], state.nameWidthGeneration = nil, nil
         state.healthTextApplied, state.generation = nil, nil
-        state.nativeReset = true
+        state.nativeReset, state.combatCastApplied = true, nil
     end
     local active = not forbidden and module.active
         and (not private.IsSkinSuppressed or not private.IsSkinSuppressed(uf))
@@ -389,65 +338,6 @@ function Layout.Observe(uf)
     if hooked[uf] then return end
     hooksecurefunc(uf, "UpdateAnchors", OnAnchors)
     hooked[uf] = true
-end
-
--- Rebuild the native castbar edges with the configured width and position.
--- Its parent anchors the health bar and keeps its own size.
-local function CastWidth(state, cast, container, setup, plan, delta)
-    local half = delta / 2
-    local x, y = plan.Cast[1], plan.Cast[2]
-    if setup.useClassicCastBar then
-        local h, baseY = setup.horizontalScale, .5 * setup.verticalScale
-        Link(state, cast, "TOPLEFT", container, "TOPLEFT", 20.75 * h, baseY, half - x, -y)
-        Link(state, cast, "BOTTOMRIGHT", container, "BOTTOMRIGHT", -3.5 * h, baseY, -half - x, -y)
-    elseif setup.spellNameInsideCastBar then
-        Link(state, cast, "TOPLEFT", container, "TOPLEFT", 0, 0, half - x, -y)
-        Link(state, cast, "BOTTOMRIGHT", container, "BOTTOMRIGHT", 0, 0, -half - x, -y)
-    else
-        local iconX, iconY = plan.CastIcon[1], plan.CastIcon[2]
-        Link(state, cast, "LEFT", container, "BOTTOMLEFT", 0, 0, half - x, -y)
-        Link(state, cast, "RIGHT", container, "BOTTOMRIGHT", 0, 0, -half - x, -y)
-        Link(state, cast.Icon, "BOTTOMLEFT", container, "BOTTOMLEFT", 0, 0, half - iconX, -iconY)
-        Link(state, cast, "BOTTOM", cast.Icon, "TOP", 0, 0, iconX - half - x, iconY - y)
-    end
-end
-
-local function CastOffsets(state, uf, plan, setup, force, delta)
-    local container = uf.CastBarsContainer
-    local cast = container and container.castBar
-    local customWidth = delta ~= 0
-    local classic, inside = setup.useClassicCastBar == true, setup.spellNameInsideCastBar == true
-    if customWidth and (not Accessible(container) or not Accessible(cast)
-        or not classic and not inside and not Accessible(cast.Icon)) then
-        Defer(uf)
-        return false
-    end
-    if not cast then return true end
-    local bar, text, time, icon = plan.Cast, plan.CastText, plan.CastTime, plan.CastIcon
-    local shield, target = plan.CastShield, plan.CastTarget
-    Offset(state, cast, customWidth and 0 or bar[1], customWidth and 0 or bar[2], force)
-    Offset(state, cast.Border, classic and bar[1] or 0, classic and bar[2] or 0, force)
-    if classic or inside then
-        -- Classic's icon follows Border; Modern-inside follows the bar.
-        Offset(state, cast.Icon, icon[1] - bar[1], icon[2] - bar[2], force)
-    elseif customWidth then
-        Offset(state, cast.Icon, 0, 0, force)
-    else
-        Offset(state, cast.Icon, icon[1], icon[2], force)
-        Link(state, cast, "BOTTOM", cast.Icon, "TOP", 0, 0, icon[1], icon[2])
-    end
-    if customWidth then CastWidth(state, cast, container, setup, plan, delta) end
-    local parent = classic and bar or icon
-    Offset(state, cast.Text, text[1] - parent[1], text[2] - parent[2], force)
-    local castTime = module.castTimes[cast]
-    Offset(state, castTime and castTime.label, time[1] - bar[1], time[2] - bar[2], force)
-    Offset(state, cast.BorderShield, shield[1] - parent[1], shield[2] - parent[2], force)
-    Offset(state, cast.CastTargetNameText, target[1] - bar[1], target[2] - bar[2], force)
-    if not classic then
-        Link(state, cast.CastTargetNameText, "LEFT", cast.Text, "RIGHT", 2, 0,
-            text[1] - bar[1], text[2] - bar[2])
-    end
-    return true
 end
 
 -- The native level frames and the Suite's own level number. The badge is
@@ -501,22 +391,58 @@ end
 
 local CombatWritable = Geometry.CombatWritable
 
-local function CombatCenter(state, uf, plan, config)
+local function ReadNameWidth(uf, requested)
+    local label, override = uf.name, uf.UpdateNameOverride
+    if not NS.Public(override) or override or not Writable(label) then return end
+    local shown = label:IsShown()
+    if NS.Public(shown) and shown and NS.IsSecret(label:GetText()) then return requested end
+end
+
+local function NativeNameLayout(state, uf, plan, config, castApplied, limit, locked)
     if not NS.Public(uf.unit) or not uf.unit or module.activeUnits[uf.unit] ~= uf then return state end
     local anchor = state and state.nameAnchor
     local center = plan.centerName and Geometry.CenterEnabled(private.UnitKinds[uf] or X.UnitKind(uf, uf.unit), config)
-    local wanted = center or plan.fitName and private.FriendlyNames.IsNameOnly(uf)
-    if wanted and anchor and anchor.generation == generation and (anchor.centered == true) == (center == true)
-        or not wanted and not (anchor and anchor.native) then return state end
-    if not CombatWritable(uf) or not CombatWritable(uf.name) or not NS.Public(uf.showOnlyName) then return state end
-    if anchor and not RestoreNameAnchor(state, uf) then return state end
-    if wanted then
-        state = state or { offsets = {}, links = {} }
-        states[uf] = state
-        local setup = NamePlateSetupOptions
-        PlaceNativeName(state, uf, plan, setup, setup.healthBarHeight, Geometry.LevelBadgeShown(uf, uf.unit), center, state.nativeReset)
-        Layout.Observe(uf)
+    local nameOnly = plan.fitName and private.FriendlyNames.IsNameOnly(uf)
+    if locked and limit and not center and not nameOnly and plan.nameAnchor then return state end
+    local setup = NamePlateSetupOptions
+    local probe = limit and (not state or state.nameWidthGeneration ~= generation)
+    local writable = locked and CombatWritable or Writable
+    if probe and (not writable(uf) or not writable(uf.name)) then
+        Defer(uf)
+        return state
     end
+    local desired
+    if probe then desired = ReadNameWidth(uf, limit)
+    elseif limit and clippedNames[uf] then desired = limit end
+    local wanted = center or nameOnly or desired
+    if wanted and anchor and not probe and not castApplied and anchor.generation == generation
+        and (limit or not anchor.width) and (anchor.centered == true) == (center == true) then return state end
+    if not wanted and not probe and not (anchor and anchor.native) then return state end
+    if state and state.header and (limit or clippedNames[uf]) then return state end
+    if not NS.Public(uf.showOnlyName) or not NS.Public(setup.unitNameAnchorStyle)
+        or not probe and (not writable(uf) or not writable(uf.name)) then
+        Defer(uf)
+        return state
+    end
+    if anchor and not RestoreNameAnchor(state, uf) then return state end
+    state = state or AcquireState(uf)
+    states[uf] = state
+    local pending
+    if wanted then
+        local badge = Geometry.LevelBadgeShown(uf, uf.unit)
+        local delta = state.healthSize and state.healthSize[1] or 0
+        local width = desired and Geometry.NameWidthWithinPlate(desired, uf, setup, config, badge, delta, instanceHealthFontSize)
+        local castCurrent = state.combatCastApplied and not state.combatCastWriting
+        local geometry = castCurrent and state.geometry
+        if center or nameOnly or width then
+            local _, deferred = PlaceNativeName(state, uf, plan, setup, geometry and geometry.healthHeight or setup.healthBarHeight,
+                badge, center, state.nativeReset and not castCurrent, width)
+            pending = deferred
+            Layout.Observe(uf)
+        end
+    end
+    clippedNames[uf], state.nameWidthGeneration = desired and true or nil, generation
+    state.nameWidthDeferred = locked and pending or nil
     return state
 end
 
@@ -549,7 +475,7 @@ local function ApplyCombatHealthText(state, uf, prefix, plan, config)
         if not CombatWritable(name) or not CombatWritable(health.Text)
             or not NS.Finite(name:GetEffectiveScale()) then return end
     end
-    state = state or { offsets = {}, links = {} }
+    state = state or AcquireState(uf)
     states[uf] = state
     Offset(state, label, x, y, true)
     if point then Link(state, uf.name, point, health.Text, relative, -2, 0, x, y) end
@@ -629,104 +555,153 @@ local function ElementOffsets(state, uf, plan, force, anchored)
         plan.Classification[1] - raid[1], plan.Classification[2] - raid[2], force)
 end
 
-local function AuraProperty(frame, saved, field, value, get, set, relative)
-    local original, applied = saved[field], "applied" .. field
-    if value == nil then
-        if original then set(frame, original) end
-        saved[field], saved[applied] = nil, nil
-        return
+local function PlaceNameAndOffsets(state, uf, prefix, plan, setup, config, height, badge, center, width, force)
+    local anchored, pending
+    if plan.centerName or plan.fitName or plan.nameAnchor then
+        anchored, pending = AnchorName(state, uf, plan, center, setup, height, badge, width)
     end
-    if not original then
-        original = get(frame)
-        if not NS.Finite(original) then return end
-        saved[field] = original
+    if not anchored and width and not NS.NameplateStyle.MirrorHeader(config.enemyMirrorHeader,
+        config.enemyTextMode, setup.unitNameAnchorStyle, uf.showOnlyName) then
+        anchored, pending = PlaceNativeName(state, uf, plan, setup, height, badge, false, nil, width)
     end
-    local result = relative and original + value or original * value
-    if saved[applied] ~= result then
-        set(frame, result)
-        saved[applied] = result
+    ElementOffsets(state, uf, plan, force, anchored)
+    if not anchored then
+        local mirrored = MirrorHeader(state, uf, prefix, plan, setup, config, width)
+        if mirrored == nil then return end
+        if not mirrored then NameLink(state, uf, plan, setup, badge) end
     end
-end
-
-local function StyleAuraRow(state, uf, frame, style)
-    if not frame then return end
-    local previous = state.auraStyles and state.auraStyles[frame]
-    if not style and not previous then return end
-    if not AuraWritable(frame) then
-        Defer(uf)
-        return
-    end
-    if not previous then
-        previous = {}
-        state.auraStyles = state.auraStyles or {}
-        state.auraStyles[frame] = previous
-    end
-    AuraProperty(frame, previous, "scale", style and style.scale, frame.GetScale, frame.SetScale)
-    AuraProperty(frame, previous, "alpha", style and style.alpha, frame.GetAlpha, frame.SetAlpha)
-    AuraProperty(frame, previous, "layer", style and style.layer, frame.GetFrameLevel, frame.SetFrameLevel, true)
-    if not style then state.auraStyles[frame] = nil end
+    return true, pending
 end
 
 local function ApplyAuraStyles(state, uf, styles)
-    local auras = uf.AurasFrame
-    if not AuraWritable(auras) then
-        Defer(uf)
-        return
-    end
-    for _, row in ipairs(AuraModel.NativeRows) do
-        local style = styles and styles[row.key]
-        StyleAuraRow(state, uf, auras[row.frame], style)
-        if row.playerFrame then StyleAuraRow(state, uf, auras[row.playerFrame], style) end
-    end
-    if state.auraStyles and not next(state.auraStyles) then state.auraStyles = nil end
+    state.auraPending = not Geometry.ApplyAuraStyles(state, uf, styles) or nil
+    if state.auraPending then Defer(uf) end
 end
 
--- Lays one plate out, once per settings generation (Layout.Configure).
--- force (Layout.Reapply) writes every offset again. true: the pass reached
--- the cast's geometry (see Settle), also when it stopped after that.
+local function BarDimensions(uf, setup, config, prefix, plan, kind)
+    local width, height
+    if kind then
+        width, height = X.HealthDimensions(config, prefix, kind)
+    else
+        local keys = Key[prefix]
+        width, height = config[keys.HealthWidthDelta] or 0, config[keys.HealthHeightDelta] or 0
+    end
+    local delta = plan.castWidth
+    if plan.castWidthMode then delta = Geometry.CastWidthDelta(uf, setup, config, prefix, width) end
+    return width, height, delta
+end
+
+-- Restore cast geometry after a cold acquisition or native rebuild in combat.
+local function ApplyCombatCast(state, uf, prefix, plan, config)
+    if not plan.castLayout or state and (state.combatCastWriting or state.combatCastApplied or state.prefix and not state.nativeReset) then return end
+    local unit, setup = uf.unit, NamePlateSetupOptions
+    if not NS.Public(unit) or type(unit) ~= "string" or module.activeUnits[unit] ~= uf then return end
+    if not NS.Public(setup.useClassicCastBar) or not NS.Public(setup.useClassicHealthBar)
+        or not NS.Public(setup.spellNameInsideCastBar) then return end
+    local cast = Geometry.CombatCast(uf)
+    if not cast then return end
+    local castTime = module.castTimes[cast]
+    local label = castTime and castTime.label
+    if label and not CombatWritable(label) then return end
+    local badge
+    if NS.Client.isForever and config.barGeometry == Mode.SAME_GEOMETRY then
+        badge = Geometry.LevelBadgeShown(uf, unit)
+        if badge == nil or badge and (not NS.Finite(setup.playerLevelDiffWidth) or not Geometry.CombatControlAuras(uf)) then return end
+    end
+    local kind
+    if plan.sizeByKind then kind = X.PlateKind(uf, unit, private.UnitKinds[uf] or X.UnitKind(uf, unit)) end
+    local width, height, delta = BarDimensions(uf, setup, config, prefix, plan, kind)
+    if delta == nil then return end
+    state = state or AcquireState(uf)
+    states[uf] = state
+    state.combatCastApplied, state.combatCastWriting = true, true
+    Layout.Observe(uf)
+    local baseHeight = Geometry.Apply(state, uf, setup, config, true, prefix, delta)
+    if baseHeight and state.combatCastApplied then
+        HealthSize(state, uf, setup, width, height, true, baseHeight)
+        if badge then ControlAuraAnchors(state, uf, plan, setup, config, badge) end
+        if CastOffsets(state, uf, plan, setup, true, delta, module.castTimes) then state.castWidth = delta end
+    elseif not baseHeight then
+        state.combatCastApplied = nil
+    end
+    state.combatCastWriting = nil
+    return baseHeight ~= nil
+end
+
+local function ApplyCombatLayout(state, uf, prefix, plan, config, limit)
+    local castApplied = ApplyCombatCast(state, uf, prefix, plan, config)
+    state = states[uf]
+    local anchor = state and state.nameAnchor
+    local probe = limit and (not state or state.nameWidthGeneration ~= generation)
+    if (plan.centerName or plan.fitName or probe or anchor and anchor.native and (not anchor.width or castApplied or not limit))
+        and not NS.Safety.IsForbidden(uf) then
+        state = NativeNameLayout(state, uf, plan, config, castApplied, limit, true)
+    end
+    ApplyCombatHealthText(state, uf, prefix, plan, config)
+    return castApplied
+end
+
+local function LimitNameOnly(state, uf, plan, config, limit, locked)
+    if state and state.nameLimitOnly and state.nameWidthGeneration == generation then
+        if not state.nameWidthDeferred or locked then return end
+        state.nameWidthGeneration = nil
+    end
+    local restored
+    if state and not state.nameLimitOnly then
+        restored = Restore(uf)
+        if states[uf] then return restored end
+        state = nil
+    end
+    state = NativeNameLayout(state, uf, plan, config, false, limit, locked)
+    if state then state.nameLimitOnly = true end
+    return restored
+end
+
 local function Lay(uf, prefix, config, force)
     local plan, state = plans[prefix], states[uf]
-    local enabled = plan and plan.active and config.look ~= Mode.LOOK_BLIZZARD and config[prefix]
+    local limit = prefix == "enemy" and instanceNameWidth or nil
+    local enabled = plan and (plan.active or limit) and config.look ~= Mode.LOOK_BLIZZARD and config[prefix]
     if not enabled then
         if state then return Restore(uf) end
         return
     end
-    local locked = NS.IsCombatLocked()
-    if locked or NS.Safety.IsForbidden(uf) then
-        if locked then
-            if (plan.centerName or plan.fitName or state and state.nameAnchor and state.nameAnchor.native) and not NS.Safety.IsForbidden(uf) then
-                state = CombatCenter(state, uf, plan, config)
-            end
-            ApplyCombatHealthText(state, uf, prefix, plan, config)
+    local locked, forbidden = NS.IsCombatLocked(), NS.Safety.IsForbidden(uf)
+    if not plan.active then
+        if forbidden then
+            Defer(uf)
+            return
         end
+        if force and state then state.nameWidthGeneration = nil end
+        return LimitNameOnly(state, uf, plan, config, limit, locked)
+    end
+    if locked or forbidden then
         Defer(uf)
+        if locked then return ApplyCombatLayout(state, uf, prefix, plan, config, limit) end
         return
     end
     local unitKind, kind
     if plan.centerName or plan.sizeByKind then unitKind = private.UnitKinds[uf] or X.UnitKind(uf, uf.unit) end
     if plan.sizeByKind and NS.Public(uf.unit) then kind = X.PlateKind(uf, uf.unit, unitKind) end
-    if state and state.generation == generation and state.prefix == prefix and state.kind == kind and state.unitKind == unitKind and not force then return end
+    if state and state.generation == generation and state.prefix == prefix and state.kind == kind and state.unitKind == unitKind and not force then
+        if state.auraPending then ApplyAuraStyles(state, uf, plan.auraStyles) end
+        return
+    end
     local setup = NamePlateSetupOptions
     if not NS.Public(setup.useClassicCastBar) or not NS.Public(setup.spellNameInsideCastBar)
         or not NS.Public(setup.unitNameAnchorStyle) or not NS.Public(uf.showOnlyName) then return end
-    state = state or { offsets = {}, links = {} }
+    state = state or AcquireState(uf)
     states[uf] = state
+    state.nameLimitOnly = nil
     force = force or state.nativeReset
     if state.nameAnchor and not RestoreNameAnchor(state, uf) then return end
     if not RestoreHeader(state, uf) then return end
     if state.links[1] then RestoreLinks(state, uf) end
     local wasUniform = state.geometry ~= nil and state.geometry.inset ~= nil
     local geometryChanged = (config.barGeometry == Mode.SAME_GEOMETRY) ~= wasUniform
-    local keys = Key[prefix]
-    local width, height = config[keys.HealthWidthDelta] or 0, config[keys.HealthHeightDelta] or 0
-    if kind then width, height = X.HealthDimensions(config, prefix, kind) end
-    local delta = plan.castWidth
-    if plan.castWidthMode then
-        delta = Geometry.CastWidthDelta(uf, setup, config, prefix, width)
-        if delta == nil then
-            Defer(uf)
-            return
-        end
+    local width, height, delta = BarDimensions(uf, setup, config, prefix, plan, kind)
+    if delta == nil then
+        Defer(uf)
+        return
     end
     state.castWidth = delta
     local baseHeight = Geometry.Apply(state, uf, setup, config, force, prefix, delta)
@@ -736,28 +711,24 @@ local function Lay(uf, prefix, config, force)
     end
     HealthSize(state, uf, setup, width, height, force or geometryChanged, baseHeight)
     local badgeShown = LevelOffsets(state, uf, prefix, plan, setup, config, force)
-    local anchored, centerPending
-    if plan.centerName or plan.fitName or plan.nameAnchor then
-        local center = plan.centerName and Geometry.CenterEnabled(unitKind, config)
-        anchored, centerPending = AnchorName(state, uf, plan, center, setup, baseHeight, badgeShown)
-    end
-    ElementOffsets(state, uf, plan, force, anchored)
-    if not anchored then
-        local mirrored = MirrorHeader(state, uf, prefix, plan, setup, config)
-        if mirrored == nil then return true end
-        if not mirrored then NameLink(state, uf, plan, setup, badgeShown) end
-    end
+    local desired = limit and ReadNameWidth(uf, limit)
+    local nameWidth = desired and Geometry.NameWidthWithinPlate(desired, uf, setup, config, badgeShown, width, instanceHealthFontSize)
+    local center = plan.centerName and Geometry.CenterEnabled(unitKind, config)
+    local placed, namePending = PlaceNameAndOffsets(state, uf, prefix, plan, setup, config, baseHeight,
+        badgeShown, center, nameWidth, force)
+    if not placed then return true end
+    clippedNames[uf], state.nameWidthGeneration = desired and true or nil, generation
     AuraAnchors(state, uf, plan)
     ControlAuraAnchors(state, uf, plan, setup, config, badgeShown)
     DebuffPaddingAnchor(state, uf, plan, setup)
-    if plan.auraStyles or state.auraStyles then ApplyAuraStyles(state, uf, plan.auraStyles) end
-    if not CastOffsets(state, uf, plan, setup, force, delta) then return true end
-    if (plan.castIconStyle or state.castIconStyle) and not Geometry.CastIconStyle(state, uf, plan) then
+    if plan.auraStyles or state.auraStyles or state.auraPending then ApplyAuraStyles(state, uf, plan.auraStyles) end
+    if not CastOffsets(state, uf, plan, setup, force, delta, module.castTimes)
+        or (plan.castIconStyle or state.castIconStyle) and not Geometry.CastIconStyle(state, uf, plan) then
         Defer(uf)
         return true
     end
-    state.generation, state.prefix, state.kind, state.unitKind = not centerPending and generation or nil, prefix, kind, unitKind
-    state.nativeReset = nil
+    state.generation, state.prefix, state.kind, state.unitKind = not namePending and generation or nil, prefix, kind, unitKind
+    state.nativeReset, state.combatCastApplied = nil, nil
     Layout.Observe(uf)
     return true
 end
@@ -773,9 +744,48 @@ function Layout.Reapply(uf, prefix, config)
     Apply(uf, prefix, config, true)
 end
 
+local function ReplayNameChanges()
+    local queued = queuedNames
+    queuedNames = nil
+    if not module.active or not instanceNameWidth then return end
+    for uf, unit in pairs(queued) do
+        if module.activeUnits[unit] == uf and private.PlatePrefix(uf) == "enemy"
+            and (not private.IsSkinSuppressed or not private.IsSkinSuppressed(uf)) then Apply(uf, "enemy", module.config) end
+    end
+end
+
+local function NamePrivacyChanged(uf, secret)
+    local unit = uf.unit
+    if not NS.Public(unit) or type(unit) ~= "string" or module.activeUnits[unit] ~= uf then return end
+    if not instanceNameWidth or private.PlatePrefix(uf) ~= "enemy" then
+        clippedNames[uf] = nil
+        return
+    end
+    clippedNames[uf] = secret or nil
+    Layout.InvalidateName(uf)
+    if queuedNames then
+        queuedNames[uf] = unit
+    else
+        queuedNames = { [uf] = unit }
+        C_Timer.After(0, ReplayNameChanges)
+    end
+end
+
+function Layout.InstanceNameClip(inGroupInstance)
+    local names = private.NameText
+    local width = inGroupInstance and module.config.look ~= Mode.LOOK_BLIZZARD and names.secretNameWidth or nil
+    local size = names.secretNameHealthSize
+    local healthFont = width and (NS.Finite(size) and size > 0 and size or 10)
+    if instanceNameWidth == width and instanceHealthFontSize == healthFont then return end
+    instanceNameWidth, instanceHealthFontSize = width, healthFont
+    generation = generation + 1
+    names.ObserveNameClip(width and NamePrivacyChanged or nil, width and clippedNames or nil)
+    return true
+end
+
 function Layout.InvalidateName(uf)
     local state = states[uf]
-    if state then state.generation = nil end
+    if state then state.generation, state.nameWidthGeneration = nil, nil end
 end
 
 function Layout.CastWidthDelta(uf, config, prefix)
@@ -827,8 +837,11 @@ function Layout.Configure(config)
             if element.key == "Name" or element.key == "HealthText" or element.key == "CastText"
                 or element.key == "CastTime" or element.key == "CastTarget" then y = y + baseline end
             plan.active = plan.active or x ~= 0 or y ~= 0
-            if element.section == "castbar" and element.key ~= "Cast" then
-                x, y = x + (config[prefix .. "CastOffsetX"] or 0), y + (config[prefix .. "CastOffsetY"] or 0)
+            if element.section == "castbar" then
+                plan.castLayout = plan.castLayout or x ~= 0 or y ~= 0
+                if element.key ~= "Cast" then
+                    x, y = x + (config[prefix .. "CastOffsetX"] or 0), y + (config[prefix .. "CastOffsetY"] or 0)
+                end
             end
             plan[element.key] = { x, y }
         end
@@ -839,11 +852,13 @@ function Layout.Configure(config)
         plan.iconBorder = config[prefix .. "CastIconBorder"] and (config[prefix .. "CastIconBorderSize"] or 1) or nil
         plan.iconBorderColor = config[prefix .. "CastIconBorderColor"] or "000000"
         plan.castIconStyle = plan.iconZoom or plan.iconBorder
+        plan.castLayout = plan.castLayout or config.barGeometry == Mode.SAME_GEOMETRY
+            or plan.castWidthMode or plan.castWidth ~= 0 or (config[Key[prefix].CastHeight] or 0) > 0
+            or (config[Key[prefix].CastIconSize] or 0) > 0
         plans[prefix] = plan
-        plan.active = plan.active or (config[prefix .. "HealthWidthDelta"] or 0) ~= 0
+        plan.active = plan.active or plan.castLayout or (config[prefix .. "HealthWidthDelta"] or 0) ~= 0
             or (config[prefix .. "HealthHeightDelta"] or 0) ~= 0
             or (prefix == "enemy" and config.neutralNpcSizeOverride or prefix == "friendly" and config.friendlyNpcSizeOverride)
-            or plan.castIconStyle or plan.castWidthMode or plan.castWidth ~= 0 or (config[Key[prefix].CastHeight] or 0) > 0
-            or (config[Key[prefix].CastIconSize] or 0) > 0
+            or plan.castIconStyle
     end
 end

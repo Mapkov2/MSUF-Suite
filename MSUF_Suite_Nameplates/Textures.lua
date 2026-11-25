@@ -711,7 +711,11 @@ local function Apply(uf, reset, useTextures, background, deferSpark)
     -- Attach the shape after the texture and its native slice have been updated.
     local shapeDone = not Slant or Slant.Apply(uf, health, useTextures, Writable, backChanged, visuals)
     local castDone
-    if useTextures then
+    -- On both clients native name-only mode suppresses the casting bar.
+    -- UpdateShowOnlyName updates the child before rebuilding the anchors;
+    -- the observed rebuild acquires or releases its skin in the same call.
+    local nativeNameOnly = uf.showOnlyName
+    if useTextures and not (NS.Public(nativeNameOnly) and nativeNameOnly == true) then
         castDone = ApplyCast(uf, cast, reset, castFill, castBack, sharedCastStyle, deferSpark)
     else
         castDone = ApplyCast(uf, cast)

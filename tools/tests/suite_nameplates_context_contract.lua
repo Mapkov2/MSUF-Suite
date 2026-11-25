@@ -141,7 +141,12 @@ local function Component(name, methods)
     private[name] = component
     return component
 end
-Component("Layout", "Bind Configure Apply Restore RestoreAll Observe")
+local layout = Component("Layout", "Bind Configure Apply Restore RestoreAll Observe")
+local instanceNameClip
+function layout.InstanceNameClip(enabled)
+    instanceNameClip = enabled
+    Count("Layout.InstanceNameClip")
+end
 Component("Power", "Enable ConfigureEnemy Refresh Reapply Disable SetExtraTextEvents")
 Component("Threat", "Enable Apply Restore Disable Refresh")
 Component("Level", "Bind PaintNative Paint Hide RestoreNative")
@@ -185,6 +190,7 @@ assert(loadfile(root .. "/MSUF_Suite_Nameplates/CastSettings.lua"))("Nameplates"
 assert(loadfile(root .. "/MSUF_Suite_Nameplates/Textures.lua"))("nameplates", private)
 assert(loadfile(root .. "/MSUF_Suite_Nameplates/HealthAppearance.lua"))("nameplates", private)
 assert(loadfile(override or root .. "/MSUF_Suite_Nameplates/Skin.lua"))("nameplates", private)
+private.SlantedHealth = { BindVisual = function() return true end }
 local applyText = private.Text.Apply
 private.Text.Apply = function(...) Count("Text.Apply"); return applyText(...) end
 module.config = {
@@ -202,20 +208,24 @@ module.context = {
     Coalesce = function() return { Cancel = Nothing, Request = Nothing } end,
     Cancel = Nothing,
 }
-for i = 1, 5 do
-    local unit = "nameplate" .. i
+local function NewUnitFrame(friendlyPlayer, withCast)
     local frame, health = Region(), Region()
-    frame.name, frame.isFriend, frame.isPlayer = Region(), i == 3, i == 3
+    frame.name, frame.isFriend, frame.isPlayer = Region(), friendlyPlayer, friendlyPlayer
     frame.optionTable = { usePlayerForAggroHighlightThreat = true }
     frame.HealthBarsContainer = Region()
     frame.HealthBarsContainer.healthBar = health
     health.texture, health.Text = Region(), Region()
-    if i <= 2 then
+    if withCast then
         local cast = Region()
         cast.Text, cast.CastTargetNameText = Region(), Region()
         frame.CastBarsContainer = Region()
         frame.CastBarsContainer.castBar = cast
     end
+    return frame
+end
+for i = 1, 5 do
+    local unit = "nameplate" .. i
+    local frame = NewUnitFrame(i == 3, i <= 2)
     local plate = { UnitFrame = frame, unitToken = unit }
     plates[i] = plate
     units[unit] = { plate = plate, level = i < 3 and 82 - i or i == 3 and 90 or 90 - i,
@@ -276,6 +286,21 @@ for _, forever in ipairs({ false, true }) do
     NS.Client.isForever = forever
     module.active = true
     module:Enable()
+    local previousInstance = instance
+    for _, context in ipairs({ { "party", true }, { "raid", true }, { "none", false },
+        { "arena", false }, { "pvp", false }, { "scenario", false }, { secret, false } }) do
+        instance = context[1]
+        -- The instance flag is forwarded by the real Skin event handler.
+        Event("PLAYER_ENTERING_WORLD")
+        assert(instanceNameClip == context[2], "incorrect secret-name clip scope for this instance")
+        if instance == "raid" then
+            instanceNameClip = nil
+            module:Refresh()
+            assert(instanceNameClip == true, "initial raid configuration missed the secret-name width limit")
+        end
+    end
+    instance = previousInstance
+    Event("PLAYER_ENTERING_WORLD")
     -- The tank token stays party1 while its occupant changes. No GUID is readable.
     members.party1.occupant = "second"
     Replay("GROUP_ROSTER_UPDATE")
@@ -432,6 +457,108 @@ for _, forever in ipairs({ false, true }) do
     combat, mob.fighting, mob.reaction = false, nil, nil
     mob.lead, mob.threat, mob.held = 3, 3, held
     module.config.neutralPlateNameOnly, module.config.neutralPlateNameTypeColor = nil, nil
+    module:Disable()
+end
+-- The native driver can handle the raw event after the Suite, including at
+-- the upper end of Forever's public token pool. No targeting or retry fires.
+do
+    local friend, token = units.nameplate3, "nameplate150"
+    local uf = friend.plate.UnitFrame
+    units[token], friend.nextFrame = friend, uf
+    NamePlateDriverFrame = {
+        OnNamePlateAdded = function(_, unit)
+            local data = units[unit]
+            local frame = data.nextFrame
+            data.plate.UnitFrame, data.plate.unitToken, frame.unit = frame, unit, unit
+        end,
+        OnNamePlateRemoved = function(_, unit)
+            local plate = units[unit].plate
+            plate.UnitFrame.unit = nil
+            plate.UnitFrame, plate.unitToken = nil, nil
+        end,
+    }
+    local postEvent, dispatches = nil, 0
+    function NamePlateDriverFrame:HookScript(script, fn)
+        assert(script == "OnEvent" and not postEvent)
+        postEvent = fn
+    end
+    S.NameplateUnit = { nameplate3 = true, [token] = true }
+    S.Dispatch = function(fn, ...)
+        dispatches = dispatches + 1
+        return fn(...)
+    end
+    -- Blizzard has a UnitName by the end of SetUnit, but its last text
+    -- update can still have left an empty or hidden label.
+    local resolved = "Stehender Spieler"
+    friend.resolvedName = resolved
+    local function GetText(label) return label.value end
+    local function ShowName() return true end
+    uf.name.GetText, uf.ShouldShowName = GetText, ShowName
+    UnitName = function(unit) return units[unit] and units[unit].resolvedName end
+    securecallfunction = function(fn, ...) return fn(...) end
+    CompactUnitFrame_UpdateName = function(frame)
+        frame.name.value = UnitName(frame.unit)
+        frame.name:Show()
+    end
+    module.config.friendlyNamesOnly = 2
+    events = {}
+    module.active = true
+    module:Enable()
+    local function NativeEvent(event, method, unit)
+        if events[event] then events[event](module, event, unit) end
+        NamePlateDriverFrame[method](NamePlateDriverFrame, unit)
+        if postEvent then postEvent(NamePlateDriverFrame, event, unit) end
+    end
+    NativeEvent("NAME_PLATE_UNIT_REMOVED", "OnNamePlateRemoved", "nameplate3")
+    for i = 1, 2 do
+        uf.name.value = nil
+        uf.name:Hide()
+        NativeEvent("NAME_PLATE_UNIT_ADDED", "OnNamePlateAdded", token)
+        assert(module.activeUnits[token] == uf and private.UnitKinds[uf] == "friendlyPlayer"
+            and uf.name:IsShown() and uf.name.value == resolved,
+            "late-bound friendly player stayed unnamed while stationary")
+        local before = dispatches
+        postEvent(NamePlateDriverFrame, "FORBIDDEN_NAME_PLATE_UNIT_REMOVED", token)
+        postEvent(NamePlateDriverFrame, "NAME_PLATE_UNIT_REMOVED", "target")
+        postEvent(NamePlateDriverFrame, "NAME_PLATE_UNIT_ADDED", secret)
+        assert(module.activeUnits[token] == uf and before == dispatches,
+            "a forbidden event, secret or alias touched the public binding")
+        NativeEvent("NAME_PLATE_UNIT_REMOVED", "OnNamePlateRemoved", token)
+        assert(not module.activeUnits[token], "released friendly player kept its binding")
+    end
+    assert(dispatches == 5, "the driver did not isolate exactly one callback per public plate event")
+    local crowd, frames = {}, {}
+    for i = 21, 150 do
+        local unit = "nameplate" .. i
+        local frame = NewUnitFrame(true, false)
+        frame.name.GetText, frame.ShouldShowName = GetText, ShowName
+        crowd[#crowd + 1], frames[#frames + 1] = unit, frame
+        units[unit] = { plate = {}, level = 90, friendly = true, classification = "normal" }
+        S.NameplateUnit[unit] = true
+    end
+    local getPlates = C_NamePlate.GetNamePlates
+    C_NamePlate.GetNamePlates = function() error("one crowded plate enumerated its neighbors") end
+    for pass = 1, 2 do
+        for index, unit in ipairs(crowd) do
+            local frame = frames[(index - 1 + (pass - 1) * 37) % #frames + 1]
+            units[unit].nextFrame, units[unit].resolvedName = frame, unit .. "-" .. pass
+            frame.name.value = nil
+            frame.name:Hide()
+            NativeEvent("NAME_PLATE_UNIT_ADDED", "OnNamePlateAdded", unit)
+        end
+        for _, unit in ipairs(crowd) do
+            local frame = units[unit].nextFrame
+            assert(module.activeUnits[unit] == frame and frame.name:IsShown()
+                and frame.name.value == units[unit].resolvedName, "missing or stale crowded friendly name: " .. unit)
+        end
+        for index = #crowd, 1, -1 do
+            local unit = crowd[index]
+            NativeEvent("NAME_PLATE_UNIT_REMOVED", "OnNamePlateRemoved", unit)
+            assert(not module.activeUnits[unit], "crowded release retained the prior occupant")
+        end
+    end
+    C_NamePlate.GetNamePlates = getPlates
+    assert(dispatches == 5 + 4 * #crowd, "crowded native events dispatched more than once")
     module:Disable()
 end
 assert(guidReads == 0, "context refresh read group GUIDs")

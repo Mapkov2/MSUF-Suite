@@ -74,6 +74,7 @@ function Roles.RefreshContext()
     local _, instanceType = IsInInstance()
     local public = S.Public(instanceType)
     Roles.inInstance = not public or instanceType ~= "none"
+    Roles.inGroupInstance = public and (instanceType == "party" or instanceType == "raid")
     Roles.instanced = public and (instanceType == "party" or instanceType == "raid" or instanceType == "scenario")
     local pvp = Read(C_PvP.GetZonePVPInfo)
     -- Zone PvP flags describe the outdoor zone and can remain "combat" while

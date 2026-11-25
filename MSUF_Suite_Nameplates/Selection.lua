@@ -18,6 +18,7 @@ private.Selection = Selection
 
 -- Styled regions and the native health backdrop opacity saved for restoration.
 local plates = setmetatable({}, { __mode = "k" })
+local plateRecords = setmetatable({}, { __mode = "k" })
 local badges = setmetatable({}, { __mode = "k" })
 local hookedBadges = setmetatable({}, { __mode = "k" })
 local border, dim, dimAlpha, targetRGB, focusRGB = KEEP, KEEP, 1, nil, nil
@@ -99,8 +100,7 @@ end
 
 local function PaintBorder(owner, state, colorOnly, badge)
     local frame = owner.selectedBorder
-    if not NS.Public(frame) or frame and not Writable(frame) then return false end
-    if not frame then return true end
+    if not Writable(frame) then return NS.Public(frame) and frame == nil end
     local applied
     if not colorOnly then
         state.border, applied = HiddenAlpha(frame, state.border, state.mode == HIDE or state.highlightSelection)
@@ -298,6 +298,10 @@ local function Restore(health, state)
         return
     end
     plates[health], pending[health] = nil, nil
+    -- Only a completely restored border can hand its record back. Hooks
+    -- continue to look up active ownership in plates, even on a pooled bar.
+    state.uf, state.outline, state.levelBadge = nil, nil, nil
+    state.dim, state.highlightSelection, state.mouseover, state.aggro = nil, nil, nil, nil
     if not active and not hideAll and not enemyOff and not friendlyOff
         and not hideEnemyBackground and not hideFriendlyBackground and not scopedOutline and next(plates) == nil then
         Selection.inUse = false
@@ -358,7 +362,8 @@ function Selection.Apply(health, styled, uf, prefix, outline, size, color, scope
         return
     end
     if not state then
-        state = {}
+        state = plateRecords[health]
+        if not state then state = {} plateRecords[health] = state end
         plates[health] = state
     end
     pending[health] = nil
@@ -406,7 +411,7 @@ function Selection.RestoreAll()
             Selection.Restore(health)
         else
             if state.badge then badges[state.badge] = nil end
-            plates[health], pending[health] = nil, nil
+            plates[health], pending[health], plateRecords[health] = nil, nil, nil
         end
     end
 end

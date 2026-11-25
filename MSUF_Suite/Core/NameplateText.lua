@@ -87,7 +87,20 @@ end
 function Text.Format(state, value, look)
     if look.displayName and state.unit then value = look.displayName(value, state.unit) end
     if not look.enabled then return value end
-    return look.formatter.Format(state, value, look.formatID, look.max, look.dots, look.side)
+    if NS.IsSecret(value) then
+        state.formatLook = nil
+        return value
+    end
+    -- Native name repaints can follow unrelated mouseover and soft-target changes.
+    -- Compose first: the host can resolve a formerly unknown first name or surname.
+    if state.formatLook == look and state.formatInput == value then return state.formatOutput end
+    local output = look.formatter.Format(state, value, look.formatID, look.max, look.dots, look.side)
+    if NS.IsSecret(output) then
+        state.formatLook = nil
+    else
+        state.formatLook, state.formatInput, state.formatOutput = look, value, output
+    end
+    return output
 end
 
 function Text.PaintColor(label, state, look, unit)

@@ -226,6 +226,15 @@ do
     Check(w.writes == writes and w.textReads == reads, "an inaccessible label's text was read or written")
 end
 
+do
+    local w = Instance(text, "NameText.lua")
+    w.label.shown = false
+    w.Names.Apply(w.uf, "friendly", "nameplate1")
+    w.label.shown = true
+    w.Native()
+    Check(w.label.r == .1, "the first visible native refresh missed a name bound while hidden")
+end
+
 ------------------------------------------------------------------ mixed sides
 -- Only one side colors its names: the other side stays native and must not
 -- touch the plate at all, from the skin pass or from the native hook.

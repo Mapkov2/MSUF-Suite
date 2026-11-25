@@ -6,10 +6,27 @@ local IsCombatLocked = NS.IsCombatLocked
 local states = setmetatable({}, { __mode = "k" })
 local Names = { states = states, inUse = false }
 private.NameText = Names
-local M, looks, hooked, threatHooked
+local M, looks, hooked, threatHooked, nameClipObserver, clippedNames
 local customNameColors = {}
 
 function Names.Bind(module) M = module end
+
+function Names.ObserveNameClip(observer, observed)
+    nameClipObserver, clippedNames = observer, observed
+end
+
+local function SecretNameWidth(config, look)
+    if not look.enabled or not config.enemy then return end
+    local shared = look.shared
+    local mode = shared and shared.nameDisplayFormat or look.formatID
+    if mode ~= "CUT" and mode ~= "ABBREV_CUT" then return end
+    local max = shared and shared.nameDisplayMax or look.max
+    if not NS.Finite(max) or max <= 0 then return end
+    local size = Text.FontStyle(config, "enemy", shared).size
+    -- A proportional font has no fixed character width. Use an average
+    -- glyph advance and the configured size, with the native size as fallback.
+    return max * (NS.Finite(size) and size > 0 and size or 10) * 0.6
+end
 
 -- The plate Button and its FontString can lose access while still tracked.
 local function ReadLabel(uf)
@@ -70,9 +87,15 @@ local function CaptureColor(state, label)
     state.colorDirty = nil
 end
 
-local function Capture(state, label, raw)
+local function Capture(state, label, raw, look)
     state.raw, state.captured = raw, true
-    CaptureColor(state, label)
+    if look.customColor or look.shared then
+        CaptureColor(state, label)
+    else
+        -- A format-only look never writes color. A future color owner reads
+        -- its baseline from the live label when it first needs it.
+        state.colorDirty = true
+    end
     state.formatted, state.tinted, state.nativeDirty = nil, nil, nil
 end
 
@@ -99,11 +122,69 @@ local function Restore(state, label)
     state.formatted, state.tinted = nil, nil
 end
 
-local function Paint(uf, state, label, look)
+-- A player keeps its class while the nameplate owns the same binding.
+-- NPCs still resolve tap, reaction and classification on each native repaint.
+local function PlayerColorRevision(state, look)
+    local provider, shared = look.colorPainter, look.shared
+    local revision = provider and provider.NameColorRevision
+    local unit = state.unit
+    if not (revision and unit and not state.tintNPC and shared.text and shared.text.nameClassColor and not shared.text.nameColor
+        and not look.customColor and C_Secrets and C_Secrets.ShouldUnitIdentityBeSecret
+        and UnitIsPlayer and UnitPlayerControlled and UnitClass and not IsCombatLocked()) then return end
+    local restricted = C_Secrets.ShouldUnitIdentityBeSecret(unit)
+    if IsSecret(restricted) or restricted ~= false then return end
+    local player = UnitIsPlayer(unit)
+    if IsSecret(player) then return end
+    if player ~= true then
+        state.tintNPC = player == false
+        return
+    end
+    local controlled = UnitPlayerControlled(unit)
+    if IsSecret(controlled) or controlled ~= true then return end
+    return revision()
+end
+
+local function PaintTint(state, label, look, freshNativeColor)
+    local revision
+    if state.tintRevision and state.tintLook == look and state.tintRaw == state.raw then
+        revision = PlayerColorRevision(state, look)
+    end
+    if revision and state.tintRevision == revision then
+        if not freshNativeColor or state.r ~= state.paintR or state.g ~= state.paintG
+            or state.b ~= state.paintB or state.a ~= state.paintA then
+            label:SetTextColor(state.paintR, state.paintG, state.paintB, state.paintA)
+        end
+        state.tinted = true
+        return
+    end
+    state.tintRevision = nil
+    local applied = Text.PaintColor(label, state, look, state.unit)
+    if not applied then RestoreColor(state, label) end
+    local r, g, b, a = label:GetTextColor()
+    if applied and S.Finite(r) and S.Finite(g) and S.Finite(b) and S.Finite(a) then
+        state.paintR, state.paintG, state.paintB, state.paintA = r, g, b, a
+        state.tinted = true
+        -- Do not remember the resolver's fallback while class data is loading.
+        revision = revision or PlayerColorRevision(state, look)
+        if revision then
+            local _, class = UnitClass(state.unit)
+            if not IsSecret(class) and type(class) == "string" and class ~= "" and RAID_CLASS_COLORS[class] then
+                state.tintRevision, state.tintLook, state.tintRaw = revision, look, state.raw
+            end
+        end
+    else
+        state.tinted = nil
+    end
+end
+
+local function Paint(uf, state, label, look, freshNativeColor)
     if look.enabled then
         local output = Text.Format(state, state.raw, look)
         local changed = output ~= state.raw
-        if changed or state.formatted then label:SetText(output) end
+        if changed or state.formatted then
+            label:SetText(output)
+            freshNativeColor = false
+        end
         state.output, state.formatted = output, changed
     elseif state.formatted then
         label:SetText(state.raw)
@@ -115,19 +196,12 @@ local function Paint(uf, state, label, look)
         state.look = look
         return
     end
-    if state.colorDirty then CaptureColor(state, label) end
+    if state.colorDirty and (look.customColor or look.shared) then CaptureColor(state, label) end
     if (look.customColor or look.shared) and state.r then
-        local applied = Text.PaintColor(label, state, look, state.unit)
-        if not applied then RestoreColor(state, label) end
-        local r, g, b, a = label:GetTextColor()
-        if applied and S.Finite(r) and S.Finite(g) and S.Finite(b) and S.Finite(a) then
-            state.paintR, state.paintG, state.paintB, state.paintA = r, g, b, a
-            state.tinted = true
-        else
-            state.tinted = nil
-        end
-    elseif state.tinted then
-        RestoreColor(state, label)
+        PaintTint(state, label, look, freshNativeColor)
+    else
+        state.tintRevision = nil
+        if state.tinted then RestoreColor(state, label) end
     end
     state.look = look
 end
@@ -135,7 +209,7 @@ end
 -- A name can become readable before the next native update. Keep the
 -- combat-end replay even when the current text would be secret.
 local function Defer(uf, state, label)
-    M.pendingPlates[uf], state.look = true, nil
+    M.pendingPlates[uf], state.look, state.tintRevision = true, nil, nil
     if not uf.UpdateNameOverride then
         local shown = label:IsShown()
         if not IsSecret(shown) and shown then state.nativeDirty = true end
@@ -150,20 +224,24 @@ end
 -- passed the mapping test, 10,153 read a secret name).
 local function OnNativeName(uf)
     local state = states[uf]
-    if not state or not M.active then return end
-    local unit = state.unit
-    if M.activeUnits[unit] ~= uf then return end
+    if not state then return end
+    local module = M
+    if not module.active or module.activeUnits[state.unit] ~= uf then return end
     -- looks holds owning scopes only; this test stands in for Names.inUse.
     local look = looks[state.prefix]
-    if not look or not M.config[look.visualSide] then return end
+    if not look or not module.config[look.visualSide] then return end
     local flag = uf:IsForbidden()
     if IsSecret(flag) or flag then
         state.look = nil
         return
     end
     local label = uf.name
-    if label then flag = label:IsForbidden() end
-    if not label or IsSecret(flag) or flag then
+    if not label then
+        state.look = nil
+        return
+    end
+    flag = label:IsForbidden()
+    if IsSecret(flag) or flag then
         state.look = nil
         return
     end
@@ -180,10 +258,12 @@ local function OnNativeName(uf)
     if IsSecret(raw) then
         if state.captured then ForgetPlain(state) end
         state.look, state.nativeDirty = look, nil
+        if clippedNames and not clippedNames[uf] and look.visualSide == "enemy" then nameClipObserver(uf, true) end
         return
     end
-    Capture(state, label, raw)
-    Paint(uf, state, label, look)
+    if clippedNames and clippedNames[uf] then nameClipObserver(uf, false) end
+    Capture(state, label, raw, look)
+    Paint(uf, state, label, look, true)
 end
 
 local function RestoreInactive()
@@ -235,6 +315,8 @@ end
 function Names.Configure(config)
     Names.threatNames = private.EasyFeatures and config.look ~= 2 and config.threatNameColor == true
     local enemy, friendly = Text.Compile(config, "enemy"), Text.Compile(config, "friendly")
+    Names.secretNameWidth = SecretNameWidth(config, enemy)
+    Names.secretNameHealthSize = Names.secretNameWidth and Text.ResolveSize(config, "enemyHealthTextSize", enemy.shared)
     local neutral = Text.Compile(config, "enemy", "neutral")
     local friendlyNeutral = Text.Compile(config, "friendly", "neutral")
     customNameColors.enemy = Text.CustomNameColor and Text.CustomNameColor(enemy)
@@ -281,20 +363,24 @@ function Names.Apply(uf, prefix, unit, kind)
         if scope ~= state.prefix or not look then state.unit, state.prefix = nil, nil end
         return
     end
-    if uf.UpdateNameOverride then return end
-    local shown = label:IsShown()
-    if IsSecret(shown) or not shown then return end
+    -- Blizzard can reveal this label or resolve its name after acquisition.
+    -- Remember the binding so its first ordinary native update can paint it.
     if not state then state = {} states[uf] = state end
     if state.unit ~= unit then Clear(state) end
     state.unit, state.prefix = unit, scope
+    if uf.UpdateNameOverride then return end
+    local shown = label:IsShown()
+    if IsSecret(shown) or not shown then return end
     local current = label:GetText()
     if IsSecret(current) then
         ForgetPlain(state)
         state.look = look
+        if clippedNames and not clippedNames[uf] and look.visualSide == "enemy" then nameClipObserver(uf, true) end
         return
     end
+    if clippedNames and clippedNames[uf] then nameClipObserver(uf, false) end
     if state.nativeDirty or state.raw == nil or current ~= state.output and current ~= state.raw then
-        Capture(state, label, current)
+        Capture(state, label, current, look)
     end
     Paint(uf, state, label, look)
 end
@@ -306,7 +392,7 @@ end
 
 function Names.Invalidate(uf)
     local state = states[uf]
-    if state then state.look = nil end
+    if state then state.look, state.tintRevision = nil, nil end
 end
 
 function Names.ColorOwnerChanged(uf, acquired)
@@ -318,7 +404,7 @@ function Names.ColorOwnerChanged(uf, acquired)
     end
     -- The native hook may have captured the NPC tint while formatting text.
     -- Read the released color before applying or later undoing a shared tint.
-    state.look, state.colorDirty = nil, state.captured
+    state.look, state.colorDirty, state.tintRevision = nil, state.captured, nil
 end
 
 function Names.Suspend(uf)

@@ -585,11 +585,12 @@ local function OnContextChanged(module, event)
         AuraDisplay.Configure(module.config, true)
     end
     local changed = Roles.RefreshContext()
+    local nameClipChanged = Layout.InstanceNameClip(Roles.inGroupInstance)
     Extensions.OnContext(changed, event)
-    if event == "ZONE_CHANGED" and not changed then return end
+    if event == "ZONE_CHANGED" and not changed and not nameClipChanged then return end
     CancelQuestRefresh(module)
     Roles.ClearQuest()
-    RefreshActive(module, not FULL_CONTEXT[event], event == "PLAYER_SPECIALIZATION_CHANGED")
+    RefreshActive(module, not nameClipChanged and not FULL_CONTEXT[event], event == "PLAYER_SPECIALIZATION_CHANGED")
     -- A specialization brings other interrupt spells: casts that already run
     -- take the kick-ready look again (KickReady.Paint).
     if event == "PLAYER_SPECIALIZATION_CHANGED" then CastTime.Repaint() end
@@ -777,8 +778,28 @@ function M:Enable()
         private.HookPlates("ApplyFrameOptions", OnFrameOptions)
         if NamePlateUnitFrameMixin.UpdateShowOnlyName then private.HookPlates("UpdateShowOnlyName", OnNativeShowOnlyName) end
     end
-    Listen(self, "NAME_PLATE_UNIT_ADDED", OnAdded)
-    Listen(self, "NAME_PLATE_UNIT_REMOVED", OnRemoved)
+    -- Both clients dispatch the raw plate events to the driver, which
+    -- acquires, binds and later clears/releases its pooled UnitFrame. An
+    -- independent listener can run before AcquireUnitFrame or SetUnit.
+    local driver = NamePlateDriverFrame
+    if driver and driver.HookScript then
+        if not self.driverHooked then
+            driver:HookScript("OnEvent", function(_, event, unit)
+                if not self.active then return end
+                if event == "NAME_PLATE_UNIT_ADDED" or event == "NAME_PLATE_UNIT_REMOVED" then
+                    -- Forbidden events use the same driver methods. Keep the
+                    -- original event's identity and accept only public tokens.
+                    if not S.Public(unit) or not S.NameplateUnit[unit] then return end
+                    local callback = event == "NAME_PLATE_UNIT_ADDED" and OnAdded or OnRemoved
+                    S.Dispatch(callback, self, event, unit)
+                end
+            end)
+            self.driverHooked = true
+        end
+    else
+        Listen(self, "NAME_PLATE_UNIT_ADDED", OnAdded)
+        Listen(self, "NAME_PLATE_UNIT_REMOVED", OnRemoved)
+    end
     Listen(self, "PLAYER_TARGET_CHANGED", OnTargetChanged)
     Listen(self, "PLAYER_FOCUS_CHANGED", OnFocusChanged)
     self.unitEvents, self.castListening, self.questListening = nil, nil, nil
@@ -828,6 +849,7 @@ function M:Refresh()
     Roles.Configure(self.config)
     Text.Configure(self.config, self.castbarStyle)
     NameText.Configure(self.config)
+    Layout.InstanceNameClip(Roles.inGroupInstance)
     Names.ConfigureNameOnly()
     self.targetConfig = Style.TargetConfig(self.config, bars)
     self.friendlyTargetConfig = Style.TargetConfig(self.config, bars, "friendly")

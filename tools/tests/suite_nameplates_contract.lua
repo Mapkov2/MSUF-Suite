@@ -339,6 +339,8 @@ local uf = {
 uf.CreateTexture, uf.CreateFontString = bar.CreateTexture, bar.CreateFontString
 uf.IsForbidden, uf.IsProtected, uf.GetFrameLevel = bar.IsForbidden, bar.IsProtected, bar.GetFrameLevel
 uf.GetAlpha, uf.SetAlpha = bar.GetAlpha, bar.SetAlpha
+-- This fixture exercises the deferred path for inaccessible native frames.
+function uf:CanBeAccessedInContext() return not combat end
 function uf:UpdateAnchors()
     error("nameplate skin must not reenter native layout")
 end

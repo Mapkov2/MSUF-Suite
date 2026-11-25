@@ -11,6 +11,42 @@ function G.Point(region, point, owner, relative, x, y)
     PixelUtil.SetPoint(region, point, owner, relative, x, y)
 end
 
+local Point = G.Point
+
+local function Accessible(region)
+    return region and not NS.Safety.IsForbidden(region)
+end
+
+-- Restricted nameplate regions cannot be measured, even outside combat.
+-- SetPointsOffset changes their displacement without reading/replacing native
+-- anchors. We store only our own offsets, never GetPoint/GetRect results.
+local function Offset(state, region, x, y, force)
+    local old = state.offsets[region]
+    if x == 0 and y == 0 and not old then return end
+    if not force and old and old[1] == x and old[2] == y then return end
+    if not Accessible(region) then return end
+    region:SetPointsOffset(x, y)
+    if x == 0 and y == 0 then
+        state.offsets[region] = nil
+    else
+        old = old or {}
+        old[1], old[2] = x, y
+        state.offsets[region] = old
+    end
+end
+
+-- A few native regions have anchors to two independently movable elements.
+-- Correct only those links; their public base anchors come from upstream/live
+-- Blizzard_NamePlateUnitFrame:UpdateAnchors and CastingBar:ApplyStyleAndAnchoring
+-- (also present in upstream/forever). No native setup method is invoked.
+local function Link(state, region, point, owner, relative, x, y, dx, dy)
+    if dx == 0 and dy == 0 or not Accessible(region) or not owner then return end
+    state.links[#state.links + 1] = { region, point, owner, relative, x, y }
+    Point(region, point, owner, relative, x - dx, y - dy)
+end
+
+G.Accessible, G.Offset, G.Link = Accessible, Offset, Link
+
 -- Whether the native level badge (PlayerLevelDiffFrame) holds its space on
 -- this plate; nil while that is unknown. On Retail that is its shown state.
 -- Forever reserves the space whenever Camelot's
@@ -50,29 +86,217 @@ function G.LevelReserve(uf, setup)
     if NS.Finite(setup.playerLevelDiffWidth) then return setup.playerLevelDiffWidth + 5 end
 end
 
+local function Writable(frame)
+    if not Accessible(frame) then return false end
+    local allowed = frame:CanBeAccessedInContext()
+    return NS.Public(allowed) and allowed == true
+end
+
+G.Writable = Writable
+
+local spareAuraRows = setmetatable({}, { __mode = "k" })
+
+-- Empty native rows must already carry the configured layout when Blizzard
+-- adds its first icon. Reuse the cleared table after a successful restore.
+-- A refused restore keeps the original values until the row is writable.
+local function ReleaseAuraRow(state, frame, saved)
+    saved.scale, saved.alpha, saved.layer, saved.plan = nil, nil, nil, nil
+    saved.appliedScale, saved.appliedAlpha, saved.appliedLayer = nil, nil, nil
+    state.auraStyles[frame], spareAuraRows[frame] = nil, saved
+end
+
+local function ReleaseEmptyAuraList(state)
+    if state.auraStyles and not next(state.auraStyles) then
+        state.spareAuraStyles, state.auraStyles = state.auraStyles, nil
+    end
+end
+
+local function HasAuraProperties(saved)
+    return saved.scale or saved.alpha or saved.layer
+end
+
+function G.RestoreAuraStyles(state)
+    local complete = true
+    for frame, saved in pairs(state.auraStyles) do
+        if not HasAuraProperties(saved) or Writable(frame) then
+            if saved.scale then frame:SetScale(saved.scale) end
+            if saved.alpha then frame:SetAlpha(saved.alpha) end
+            if saved.layer then frame:SetFrameLevel(saved.layer) end
+            ReleaseAuraRow(state, frame, saved)
+        else
+            complete = false
+        end
+    end
+    ReleaseEmptyAuraList(state)
+    return complete
+end
+
+local function AuraProperty(frame, saved, field, applied, value, get, set, relative)
+    local original = saved[field]
+    if value == nil then
+        if original then set(frame, original) end
+        saved[field], saved[applied] = nil, nil
+        return true
+    end
+    if not original then
+        original = get(frame)
+        if not NS.Finite(original) then return false end
+        saved[field] = original
+    end
+    local result = relative and original + value or original * value
+    if saved[applied] ~= result then
+        set(frame, result)
+        saved[applied] = result
+    end
+    return true
+end
+
+local function StyleAuraRow(state, frame, style)
+    if not frame then return true end
+    local previous = state.auraStyles and state.auraStyles[frame]
+    if not style and not previous or style and previous and previous.plan == style then return true end
+    if not style and not HasAuraProperties(previous) then
+        ReleaseAuraRow(state, frame, previous)
+        return true
+    end
+    if not Writable(frame) then return false end
+    if not previous then
+        previous = spareAuraRows[frame] or {}
+        if not state.auraStyles then
+            state.auraStyles, state.spareAuraStyles = state.spareAuraStyles or {}, nil
+        end
+        state.auraStyles[frame], spareAuraRows[frame] = previous, nil
+    end
+    local scale = AuraProperty(frame, previous, "scale", "appliedScale", style and style.scale, frame.GetScale, frame.SetScale)
+    local alpha = AuraProperty(frame, previous, "alpha", "appliedAlpha", style and style.alpha, frame.GetAlpha, frame.SetAlpha)
+    local layer = AuraProperty(frame, previous, "layer", "appliedLayer", style and style.layer, frame.GetFrameLevel, frame.SetFrameLevel, true)
+    local complete = scale and alpha and layer
+    if style then previous.plan = complete and style or nil else ReleaseAuraRow(state, frame, previous) end
+    return complete
+end
+
+function G.ApplyAuraStyles(state, uf, styles)
+    if not styles then return not state.auraStyles or G.RestoreAuraStyles(state) end
+    local auras = uf.AurasFrame
+    if not Writable(auras) then return false end
+    local complete = true
+    for _, row in ipairs(NS.NameplateAuraDisplay.NativeRows) do
+        local style = styles and styles[row.key]
+        if not StyleAuraRow(state, auras[row.frame], style) then complete = false end
+        if row.playerFrame and not StyleAuraRow(state, auras[row.playerFrame], style) then complete = false end
+    end
+    ReleaseEmptyAuraList(state)
+    return complete
+end
+
+local function NameAnchorWritable(label)
+    if not Writable(label) then return false end
+    local restricted = label:IsAnchoringRestricted()
+    return NS.Public(restricted) and restricted == false
+end
+
+function G.RestoreNameAnchor(state, uf)
+    local saved = state.nameAnchor
+    if not saved then return true end
+    local writable = saved.native and Writable or NameAnchorWritable
+    if not writable(uf.name) then
+        return false
+    end
+    uf.name:ClearAllPoints()
+    if saved.native then
+        -- Blizzard has one or two known five-value anchors. Geometry saves
+        -- both tuples directly on the restore record during acquisition.
+        uf.name:SetPoint(unpack(saved, 1, 5))
+        if saved[6] then uf.name:SetPoint(unpack(saved, 6, 10)) end
+    else
+        for _, point in ipairs(saved.points) do uf.name:SetPoint(unpack(point)) end
+    end
+    uf.name:SetJustifyH(saved.justify)
+    state.nameAnchor = nil
+    return true
+end
+
+local function SetNameSpan(label, point, owner, relative, x, y, width)
+    local edge = point:match("^TOP") or point:match("^BOTTOM") or ""
+    local left = x
+    if point:match("RIGHT$") then left = x - width
+    elseif not point:match("LEFT$") then left = x - width / 2 end
+    label:SetPoint(edge .. "LEFT", owner, relative, left, y)
+    label:SetPoint(edge .. "RIGHT", owner, relative, left + width, y)
+end
+
+function G.ApplyNameAnchor(state, uf, plan, width)
+    local anchor, label, owner = plan.nameAnchor, uf.name, uf.HealthBarsContainer.healthBar
+    if not anchor or private.HealthNameOnly(uf) or not NameAnchorWritable(label) or not Accessible(owner) then return end
+    local points, justify = {}, label:GetJustifyH()
+    if not NS.Public(justify) then return end
+    local count = label:GetNumPoints()
+    if not NS.Finite(count) then return end
+    for index = 1, count do
+        local point, relative, relativePoint, x, y = label:GetPoint(index)
+        if not NS.Public(point) or not NS.Public(relative) or not NS.Public(relativePoint)
+            or not NS.Finite(x) or not NS.Finite(y) then return end
+        points[index] = { point, relative, relativePoint, x, y }
+    end
+    state.nameAnchor = { points = points, justify = justify }
+    label:ClearAllPoints()
+    if width then
+        SetNameSpan(label, anchor, owner, anchor, plan.Name[1], plan.Name[2], width)
+    else
+        Point(label, anchor, owner, anchor, plan.Name[1], plan.Name[2])
+    end
+    label:SetJustifyH(anchor:find("LEFT", 1, true) and "LEFT" or anchor:find("RIGHT", 1, true) and "RIGHT" or "CENTER")
+    return true
+end
+
 -- The native name points from Blizzard_NamePlateUnitFrame:UpdateAnchors.
 -- They can be restored even when FrameMeasurement is blocked for the label.
 local function NativeNamePoints(uf, setup, badgeShown)
     local container = uf.HealthBarsContainer
     local health = container and container.healthBar
     local healthText = health and health.Text
-    if not healthText or NS.Safety.IsForbidden(healthText) then return end
+    if not NS.Public(healthText) or not healthText or NS.Safety.IsForbidden(healthText) then return end
     local style, spacing = setup.unitNameAnchorStyle, setup.healthBarToNameAboveSpacing
     if uf.showOnlyName then
-        if style == 1 then return { { "LEFT", container, "LEFT", 4, 0 }, { "RIGHT", container, "RIGHT", -4, 0 } } end
-        return { { "BOTTOMLEFT", container, "TOPLEFT", 4, 2 }, { "BOTTOMRIGHT", container, "TOPRIGHT", -4, 2 } }
+        if style == 1 then return { "LEFT", container, "LEFT", 4, 0, "RIGHT", container, "RIGHT", -4, 0 } end
+        return { "BOTTOMLEFT", container, "TOPLEFT", 4, 2, "BOTTOMRIGHT", container, "TOPRIGHT", -4, 2 }
     end
-    if style == 1 then return { { "LEFT", container, "LEFT", 4, 0 }, { "RIGHT", healthText, "LEFT", -2, 0 } } end
-    if style == 3 then return { { "BOTTOM", container, "TOP", 0, spacing } } end
+    if style == 1 then return { "LEFT", container, "LEFT", 4, 0, "RIGHT", healthText, "LEFT", -2, 0 } end
+    if not NS.Finite(spacing) then return end
+    if style == 3 then return { "BOTTOM", container, "TOP", 0, spacing } end
     if style ~= 2 then return end
     if not NS.Client.isForever then
-        return { { "BOTTOMLEFT", container, "TOPLEFT", 4, spacing }, { "BOTTOMRIGHT", healthText, "BOTTOMLEFT", -2, 0 } }
+        return { "BOTTOMLEFT", container, "TOPLEFT", 4, spacing, "BOTTOMRIGHT", healthText, "BOTTOMLEFT", -2, 0 }
     end
     local inside = setup.healthTextInsideBarWhenNameAboveHealthBar
     if not NS.Public(inside) or type(inside) ~= "boolean" or badgeShown == nil then return end
-    local right = badgeShown and { "RIGHT", uf.PlayerLevelDiffFrame, "RIGHT", 0, 0 }
-        or inside and { "RIGHT", container, "RIGHT", 0, 0 } or { "RIGHT", healthText, "LEFT", -2, 0 }
-    return { { "BOTTOMLEFT", container, "TOPLEFT", 0, spacing }, right }
+    if badgeShown or inside then
+        local right = container
+        if badgeShown then right = uf.PlayerLevelDiffFrame end
+        return { "BOTTOMLEFT", container, "TOPLEFT", 0, spacing, "RIGHT", right, "RIGHT", 0, 0 }
+    end
+    return { "BOTTOMLEFT", container, "TOPLEFT", 0, spacing, "RIGHT", healthText, "LEFT", -2, 0 }
+end
+
+function G.LimitNativeName(uf, setup, badgeShown, plan, width)
+    local label, points = uf.name, NativeNamePoints(uf, setup, badgeShown)
+    if not points then return end
+    local justify = label:GetJustifyH()
+    if not NS.Public(justify) or type(justify) ~= "string" then return end
+    local healthText = uf.HealthBarsContainer.healthBar.Text
+    local index = 1
+    if points[6] and justify == "RIGHT" and points[7] ~= healthText then index = 6 end
+    local point, owner, relative, x, y = unpack(points, index, index + 4)
+    if uf.showOnlyName and justify == "CENTER" then
+        point, relative, x = setup.unitNameAnchorStyle == 1 and "CENTER" or "BOTTOM",
+            setup.unitNameAnchorStyle == 1 and "CENTER" or "TOP", 0
+    end
+    if not NS.Public(owner) or not Accessible(owner) then return end
+    -- Keep a static edge. HP text can change width during the fight.
+    label:ClearAllPoints()
+    SetNameSpan(label, point, owner, relative, x + plan.Name[1], y + plan.Name[2], width)
+    points.native, points.justify = true, justify
+    return points
 end
 
 function G.CenterEnabled(kind, config)
@@ -89,7 +313,35 @@ function G.CombatWritable(region)
     return NS.Public(protected) and protected == false
 end
 
-function G.CenterName(uf, setup, healthHeight, offsetY, badgeShown, geometry)
+local function CombatPointWritable(region)
+    return G.CombatWritable(region) and NS.Finite(region:GetEffectiveScale())
+end
+
+local function OptionalCombatWritable(region, point)
+    if not NS.Public(region) then return false end
+    return not region or G.CombatWritable(region) and (not point or NS.Finite(region:GetEffectiveScale()))
+end
+
+-- Cast sizing and placement share a container with the health bar.
+-- Preflight every region before applying either half of the layout.
+function G.CombatCast(uf)
+    if not G.CombatWritable(uf) then return end
+    local container = uf.CastBarsContainer
+    if not CombatPointWritable(container) or not CombatPointWritable(uf.HealthBarsContainer) then return end
+    local cast = container.castBar
+    if not CombatPointWritable(cast) or not CombatPointWritable(cast.Icon)
+        or not OptionalCombatWritable(cast.Text) or not OptionalCombatWritable(cast.Border)
+        or not OptionalCombatWritable(cast.BorderShield) or not OptionalCombatWritable(cast.CastTargetNameText, true) then return end
+    return cast
+end
+
+function G.CombatControlAuras(uf)
+    local auras = uf.AurasFrame
+    return NS.Public(auras) and (not auras or OptionalCombatWritable(auras.CrowdControlListFrame, true)
+        and OptionalCombatWritable(auras.LossOfControlFrame, true))
+end
+
+function G.CenterName(uf, setup, healthHeight, offsetY, badgeShown, geometry, width)
     local label = uf.name
     local spacing, gap = setup.castBarToHealthBarSpacing, setup.healthBarToNameAboveSpacing
     local castHeight = geometry and geometry.castHeight or setup.castBarHeight
@@ -106,15 +358,20 @@ function G.CenterName(uf, setup, healthHeight, offsetY, badgeShown, geometry)
     -- AcquireUnitFrame stretches uf across the world-positioned plate. Its
     -- center is stable when either bar or the level badge moves sideways.
     label:ClearAllPoints()
-    label:SetPoint("BOTTOMLEFT", uf, "BOTTOMLEFT", 4, y)
-    label:SetPoint("BOTTOMRIGHT", uf, "BOTTOMRIGHT", -4, y)
+    if width then
+        SetNameSpan(label, "BOTTOM", uf, "BOTTOM", 0, y, width)
+    else
+        label:SetPoint("BOTTOMLEFT", uf, "BOTTOMLEFT", 4, y)
+        label:SetPoint("BOTTOMRIGHT", uf, "BOTTOMRIGHT", -4, y)
+    end
     label:SetJustifyH("CENTER")
-    return { native = true, centered = true, points = points, justify = justify }
+    points.native, points.centered, points.justify = true, true, justify
+    return points
 end
 
 -- With the health text suppressed it must no longer reserve the right edge
 -- of the name. Keep Blizzard's alignment and the user's manual offsets.
-function G.FitNameOnly(uf, setup, x, y, badgeShown, manual)
+function G.FitNameOnly(uf, setup, x, y, badgeShown, manual, width)
     local label, bar = uf.name, uf.HealthBarsContainer
     local original = label:GetJustifyH()
     local style = setup.unitNameAnchorStyle
@@ -133,10 +390,17 @@ function G.FitNameOnly(uf, setup, x, y, badgeShown, manual)
         y = y + (uf.showOnlyName and 2 or setup.healthBarToNameAboveSpacing)
     end
     label:ClearAllPoints()
-    label:SetPoint(edge .. "LEFT", bar, relative .. "LEFT", x, y)
-    label:SetPoint(edge .. "RIGHT", bar, relative .. "RIGHT", x, y)
+    if width then
+        local side = justify ~= "CENTER" and justify or ""
+        local point, target = edge .. side, relative .. side
+        SetNameSpan(label, point ~= "" and point or "CENTER", bar, target ~= "" and target or "CENTER", x, y, width)
+    else
+        label:SetPoint(edge .. "LEFT", bar, relative .. "LEFT", x, y)
+        label:SetPoint(edge .. "RIGHT", bar, relative .. "RIGHT", x, y)
+    end
     label:SetJustifyH(justify)
-    return { native = true, points = points, justify = original }
+    points.native, points.justify = true, original
+    return points
 end
 
 -- The plate width constants carry different names on Retail
@@ -146,6 +410,34 @@ local function NativeWidth(classic)
     local constants = NamePlateConstants
     if classic then return constants.CLASSIC_NAMEPLATE_WIDTH or constants.CLASSIC_NAME_PLATE_WIDTH end
     return constants.NAMEPLATE_WIDTH or constants.NAME_PLATE_WIDTH
+end
+
+function G.NameWidthWithinPlate(width, uf, setup, config, badgeShown, delta, healthFontSize)
+    local scale, inset, classic = setup.horizontalScale, setup.insetWidth, setup.useClassicHealthBar
+    if not NS.Finite(scale) or not NS.Finite(inset) or not NS.Public(classic) then return end
+    local size
+    if NS.Finite(setup.verticalScale) then
+        size = NS.NameplateStyle.BarDimensions(config.barGeometry, config.nativeStyle, scale, setup.verticalScale)
+    end
+    if not size then
+        local native = NativeWidth(classic)
+        if not NS.Finite(native) then return end
+        size = native * scale
+    end
+    local available = size - 2 * inset - 8 + delta
+    if badgeShown ~= false and NS.Client.isForever then
+        local badgeWidth = setup.playerLevelDiffWidth
+        if not NS.Finite(badgeWidth) then return end
+        available = available - badgeWidth - 5
+    end
+    local style, mode = setup.unitNameAnchorStyle, config.enemyTextMode
+    if not uf.showOnlyName and mode ~= 5 and (style == 1 or style == 2) then
+        -- Budget the neighboring HP column from the public text mode/size.
+        -- The native word or number width can itself be restricted.
+        local glyphs = mode == 2 and 5 or mode == 3 and 9 or 15
+        available = available - glyphs * healthFontSize * .75 - 2
+    end
+    if available > 0 then return math.min(width, available) end
 end
 
 -- Native cast and health share the horizontal insets. The health bar also
@@ -258,6 +550,64 @@ function G.CastIconStyle(state, uf, plan)
         G.HideCastIconBorder(state)
     end
     state.castIconStyle = plan.castIconStyle
+    return true
+end
+
+-- Rebuild the native castbar edges with the configured width and position.
+-- Its parent anchors the health bar and keeps its own size.
+local function CastWidth(state, cast, container, setup, plan, delta)
+    local half = delta / 2
+    local x, y = plan.Cast[1], plan.Cast[2]
+    if setup.useClassicCastBar then
+        local h, baseY = setup.horizontalScale, .5 * setup.verticalScale
+        Link(state, cast, "TOPLEFT", container, "TOPLEFT", 20.75 * h, baseY, half - x, -y)
+        Link(state, cast, "BOTTOMRIGHT", container, "BOTTOMRIGHT", -3.5 * h, baseY, -half - x, -y)
+    elseif setup.spellNameInsideCastBar then
+        Link(state, cast, "TOPLEFT", container, "TOPLEFT", 0, 0, half - x, -y)
+        Link(state, cast, "BOTTOMRIGHT", container, "BOTTOMRIGHT", 0, 0, -half - x, -y)
+    else
+        local iconX, iconY = plan.CastIcon[1], plan.CastIcon[2]
+        Link(state, cast, "LEFT", container, "BOTTOMLEFT", 0, 0, half - x, -y)
+        Link(state, cast, "RIGHT", container, "BOTTOMRIGHT", 0, 0, -half - x, -y)
+        Link(state, cast.Icon, "BOTTOMLEFT", container, "BOTTOMLEFT", 0, 0, half - iconX, -iconY)
+        Link(state, cast, "BOTTOM", cast.Icon, "TOP", 0, 0, iconX - half - x, iconY - y)
+    end
+end
+
+function G.CastOffsets(state, uf, plan, setup, force, delta, castTimes)
+    local container = uf.CastBarsContainer
+    local cast = container and container.castBar
+    local customWidth = delta ~= 0
+    local classic, inside = setup.useClassicCastBar == true, setup.spellNameInsideCastBar == true
+    if customWidth and (not Accessible(container) or not Accessible(cast)
+        or not classic and not inside and not Accessible(cast.Icon)) then
+        return false
+    end
+    if not cast then return true end
+    local bar, text, time, icon = plan.Cast, plan.CastText, plan.CastTime, plan.CastIcon
+    local shield, target = plan.CastShield, plan.CastTarget
+    Offset(state, cast, customWidth and 0 or bar[1], customWidth and 0 or bar[2], force)
+    Offset(state, cast.Border, classic and bar[1] or 0, classic and bar[2] or 0, force)
+    if classic or inside then
+        -- Classic's icon follows Border; Modern-inside follows the bar.
+        Offset(state, cast.Icon, icon[1] - bar[1], icon[2] - bar[2], force)
+    elseif customWidth then
+        Offset(state, cast.Icon, 0, 0, force)
+    else
+        Offset(state, cast.Icon, icon[1], icon[2], force)
+        Link(state, cast, "BOTTOM", cast.Icon, "TOP", 0, 0, icon[1], icon[2])
+    end
+    if customWidth then CastWidth(state, cast, container, setup, plan, delta) end
+    local parent = classic and bar or icon
+    Offset(state, cast.Text, text[1] - parent[1], text[2] - parent[2], force)
+    local castTime = castTimes[cast]
+    Offset(state, castTime and castTime.label, time[1] - bar[1], time[2] - bar[2], force)
+    Offset(state, cast.BorderShield, shield[1] - parent[1], shield[2] - parent[2], force)
+    Offset(state, cast.CastTargetNameText, target[1] - bar[1], target[2] - bar[2], force)
+    if not classic then
+        Link(state, cast.CastTargetNameText, "LEFT", cast.Text, "RIGHT", 2, 0,
+            text[1] - bar[1], text[2] - bar[2])
+    end
     return true
 end
 

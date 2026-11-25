@@ -22,6 +22,8 @@ local hovered, color
 local listening, highlight, outline = false, false, false
 local plans, plates = {}, setmetatable({}, { __mode = "k" })
 local animations = setmetatable({}, { __mode = "k" })
+local spareText = setmetatable({}, { __mode = "k" })
+local spareRegions = setmetatable({}, { __mode = "k" })
 local visibilityActive = false
 local opacity = setmetatable({}, { __mode = "k" })
 local ALWAYS = {}
@@ -122,9 +124,15 @@ local function Alpha(region, record, target, duration)
 end
 
 local function ReleaseText(records, region)
+    local record = records[region]
     records[region] = nil
     local cached = animations[region]
     if cached then cached.record = nil end
+    -- Numeric animation endpoints are used only while running. Keep no
+    -- references to a previous rule, animation or denied write on reuse.
+    record.rule, record.previousRule, record.group, record.animation = nil, nil, nil, nil
+    record.previousMultiplier, record.retry, record.running = nil, nil, nil
+    spareText[region] = record
 end
 
 local function Reveal(uf, over, instant)
@@ -137,7 +145,7 @@ local function Reveal(uf, over, instant)
         record.retry = not Alpha(region, record, target, duration)
         if not record.retry and not rule then ReleaseText(records, region) end
     end
-    if not next(records) then plates[uf] = nil end
+    if not next(records) then plates[uf], spareRegions[uf] = nil, records end
 end
 
 local function SetTextHovered(uf)
@@ -200,8 +208,9 @@ local function Claim(records, region, rule, multiplier)
     if not record then
         local alpha = region:GetAlpha()
         if not NS.Finite(alpha) then return end
-        record = { original = alpha, alpha = alpha }
-        records[region] = record
+        record = spareText[region] or {}
+        record.original, record.alpha = alpha, alpha
+        records[region], spareText[region] = record, nil
     end
     record.rule, record.multiplier = rule or ALWAYS, multiplier
 end
@@ -220,8 +229,8 @@ function Hover.Apply(uf, health, prefix, styled)
     local label
     if plan or fade then
         plan = plan or ALWAYS
-        records = records or {}
-        plates[uf] = records
+        records = records or spareRegions[uf] or {}
+        plates[uf], spareRegions[uf] = records, nil
         local text = fade and fade.text
         if not M.friendlyNames[uf.name] and (plan.name or fade and fade.name ~= 1) then
             label = uf.name
@@ -251,7 +260,7 @@ function Hover.Apply(uf, health, prefix, styled)
     elseif pointerNames[uf] then
         StopTrackingName(uf)
     end
-    if not next(records) then plates[uf] = nil end
+    if not next(records) then plates[uf], spareRegions[uf] = nil, records end
     if not visibilityActive and not next(plates) then Hover.textInUse = false end
 end
 
@@ -351,11 +360,15 @@ function Hover.Restore(uf)
     opacity[uf] = nil
     if textHovered == uf then textHovered = nil end
     if pointerNames[uf] then StopTrackingName(uf) end
-    if Safe(uf) and highlight then Hide(uf) end
+    if highlight and Safe(uf) then Hide(uf) end
     local records = plates[uf]
     if records then
-        for _, record in pairs(records) do record.rule, record.multiplier = nil, nil end
-        Reveal(uf, false, true)
+        for region, record in pairs(records) do
+            record.rule, record.multiplier = nil, nil
+            record.retry = not Alpha(region, record, record.original, 0)
+            if not record.retry then ReleaseText(records, region) end
+        end
+        if not next(records) then plates[uf], spareRegions[uf] = nil, records end
     end
     if hovered == uf then hovered = nil end
 end

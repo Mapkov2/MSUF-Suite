@@ -193,11 +193,15 @@ function Style.MirrorHeader(enabled, mode, anchor, namesOnly)
     return enabled == true and mode == 2 and anchor == 2 and namesOnly == false
 end
 
-function Style.PlaceMirroredHeader(name, value, health, container, spacing, nx, ny, hx, hy, point)
+function Style.PlaceMirroredHeader(name, value, health, container, spacing, nx, ny, hx, hy, point, nameWidth)
     name:ClearAllPoints()
     value:ClearAllPoints()
     point(value, "BOTTOMLEFT", health, "TOPLEFT", 4 + hx, 2 + hy)
-    point(name, "BOTTOMLEFT", value, "BOTTOMRIGHT", 2 + nx - hx, ny - hy)
+    if nameWidth then
+        point(name, "BOTTOMLEFT", container, "TOPRIGHT", -4 + nx - nameWidth, spacing + ny)
+    else
+        point(name, "BOTTOMLEFT", value, "BOTTOMRIGHT", 2 + nx - hx, ny - hy)
+    end
     point(name, "BOTTOMRIGHT", container, "TOPRIGHT", -4 + nx, spacing + ny)
 end
 

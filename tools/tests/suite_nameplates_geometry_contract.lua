@@ -35,8 +35,8 @@ assert(loadfile(root .. "/MSUF_Suite/Core/NameplateAuraDisplay.lua"))("MSUF_Suit
 NS.NameplatePortableText = { Stored = function() end, Resolve = function() end }
 assert(loadfile(root .. "/MSUF_Suite/Core/NameplateText.lua"))("MSUF_Suite", NS)
 assert(loadfile(root .. "/MSUF_Suite_Nameplates/Modes.lua"))("MSUF_Suite_Nameplates", private)
-assert(loadfile(root .. "/MSUF_Suite_Nameplates/Geometry.lua"))("MSUF_Suite_Nameplates", private)
-assert(loadfile(root .. "/MSUF_Suite_Nameplates/Layout.lua"))("MSUF_Suite_Nameplates", private)
+assert(loadfile(arg[2] or root .. "/MSUF_Suite_Nameplates/Geometry.lua"))("MSUF_Suite_Nameplates", private)
+assert(loadfile(arg[3] or root .. "/MSUF_Suite_Nameplates/Layout.lua"))("MSUF_Suite_Nameplates", private)
 local function Frame()
     local f = { points = {} }
     function f:SetPoint(point, owner, relative, x, y)
@@ -47,6 +47,8 @@ local function Frame()
     function f:SetSize(w, h) calls = calls + 1; self.width, self.height = w, h end
     function f:SetPointsOffset(x, y) calls = calls + 1; self.x, self.y = x, y end
     function f:IsShown() return self.shown end
+    function f:IsProtected() return self.protected == true end
+    function f:GetEffectiveScale() return self.restrictedScale and "secret" or 1 end
     function f:CanBeAccessedInContext() return not self.restricted end
     function f:GetScale() return self.scale or 1 end
     function f:SetScale(v) calls = calls + 1; self.scale = v end
@@ -73,6 +75,7 @@ local function Native(uf)
     cast:SetHeight(setup.castBarHeight + (setup.spellNameInsideCastBar and 0 or setup.castIconHeight))
     cast.castBar:SetHeight(setup.castBarHeight)
     cast.castBar.Icon:SetSize(setup.castIconWidth, setup.castIconHeight)
+    if cast.castBar.Text then cast.castBar.Text:SetPointsOffset(0, 0) end
     if setup.useClassicCastBar then
         local h, y = setup.horizontalScale, .5 * setup.verticalScale
         cast.castBar:SetPoint("TOPLEFT", cast, "TOPLEFT", 20.75 * h, y)
@@ -129,6 +132,81 @@ for _, forever in ipairs({ false, true }) do
             auras.BuffListFrame, auras.DebuffListFrame = Frame(), Frame()
             auras.CrowdControlListFrame, auras.LossOfControlFrame = Frame(), Frame()
             Native(uf)
+            if style == 0 and scale == 1 then
+                local layout, row = private.Layout, auras.BuffListFrame
+                local auraConfig = { look = 1, enemy = true, barGeometry = 1,
+                    auraEnemyBuffScale = 150, auraEnemyBuffAlpha = 40, auraEnemyBuffLayer = 2 }
+                layout.Configure(auraConfig)
+                row.restricted = true
+                layout.Apply(uf, "enemy", auraConfig)
+                assert(module.pendingPlates[uf] and not row.scale)
+                row.restricted, module.pendingPlates[uf] = nil, nil
+                layout.Apply(uf, "enemy", auraConfig)
+                assert(row.scale == 1.5 and row.alpha == .4 and row.layer == 6,
+                    "a newly accessible native row missed the ordinary pending-plate replay")
+                layout.Restore(uf, true)
+                local getScale = row.GetScale
+                row.GetScale = function() return "secret" end
+                module.pendingPlates[uf] = nil
+                layout.Apply(uf, "enemy", auraConfig)
+                assert(module.pendingPlates[uf] and row.scale == 1 and row.alpha == .4 and row.layer == 6,
+                    "a restricted scale lost its retry or prevented public alpha and layer writes")
+                row.GetScale, module.pendingPlates[uf] = getScale, nil
+                local before = calls
+                layout.Apply(uf, "enemy", auraConfig)
+                assert(row.scale == 1.5 and calls == before + 1, "retry repeated other row or geometry writes")
+                layout.Restore(uf, true)
+                auras.restricted = true
+                layout.Apply(uf, "enemy", auraConfig)
+                auraConfig.auraEnemyBuffScale, auraConfig.auraEnemyBuffAlpha, auraConfig.auraEnemyBuffLayer = 100, 100, 0
+                auraConfig.auraEnemyDebuffScale = 175
+                layout.Configure(auraConfig)
+                layout.Apply(uf, "enemy", auraConfig)
+                auras.restricted = nil
+                layout.Apply(uf, "enemy", auraConfig)
+                assert(auras.DebuffListFrame.scale == 1.75 and row.scale == 1 and row.alpha == 1 and row.layer == 4,
+                    "the container replay applied a stale row plan after a profile change")
+                layout.Restore(uf, true)
+                auras.DebuffListFrame.scale, auraConfig.auraEnemyDebuffScale = nil, nil
+                auraConfig.auraEnemyBuffScale = 150
+                layout.Configure(auraConfig)
+                row.GetScale = function() return "secret" end
+                layout.Apply(uf, "enemy", auraConfig)
+                row.restricted, module.pendingPlates[uf] = true, nil
+                layout.Restore(uf, true)
+                assert(not module.pendingPlates[uf], "a never-owned restricted property demanded a restore")
+                row.restricted, row.GetScale = nil, getScale
+                auraConfig.auraEnemyBuffScale, auraConfig.auraEnemyBuffAlpha, auraConfig.auraEnemyBuffLayer = 150, 40, 2
+                layout.Configure(auraConfig)
+                local function AuraCycle()
+                    layout.Apply(uf, "enemy", auraConfig)
+                    assert(row.scale == 1.5 and row.alpha == .4 and row.layer == 6,
+                        "an empty native row was not ready for Blizzard's first icon")
+                    layout.Restore(uf, true)
+                    assert(row.scale == 1 and row.alpha == 1 and row.layer == 4)
+                end
+                AuraCycle()
+                collectgarbage("collect")
+                collectgarbage("stop")
+                local before = collectgarbage("count")
+                for _ = 1, 100 do AuraCycle() end
+                local growth = collectgarbage("count") - before
+                collectgarbage("restart")
+                print(("100 empty native aura-row leases: %.2f KB"):format(growth))
+                assert(growth < 1, "empty native aura rows reallocated their property snapshots")
+                row.scale, row.alpha, row.layer = 2, .5, 7
+                layout.Apply(uf, "enemy", auraConfig)
+                assert(row.scale == 3 and row.alpha == .2 and row.layer == 9)
+                row.restricted = true
+                layout.Restore(uf, true)
+                assert(row.scale == 3 and module.pendingPlates[uf], "a denied native row restore lost ownership")
+                row.restricted = nil
+                layout.Restore(uf, true)
+                assert(row.scale == 2 and row.alpha == .5 and row.layer == 7,
+                    "row reuse restored the previous occupant's native properties")
+                row.scale, row.alpha, row.layer = nil, nil, nil
+                module.pendingPlates[uf] = nil
+            end
             local config = { look = 4, barGeometry = 2, nativeStyle = style + 2, enemy = true,
                 enemyHealthWidthDelta = 41, enemyHealthHeightDelta = 7 }
             module.config = config
@@ -139,6 +217,83 @@ for _, forever in ipairs({ false, true }) do
                 and layoutHeight == uf.CastBarsContainer.castBar.height,
                 "the first layout pass did not hand its final cast geometry over exactly once")
             if selected == 0 and scale == 1 then
+                local container = uf.CastBarsContainer
+                local cast = container.castBar
+                cast.Text = Frame()
+                config.enemyCastHeight, config.enemyCastTextOffsetY = 16, 13
+                private.Layout.Configure(config)
+                private.Layout.Apply(uf, "enemy", config)
+                private.Layout.InvalidateName(uf)
+                combat = true
+                local stableCalls = calls
+                private.Layout.Apply(uf, "enemy", config)
+                assert(calls == stableCalls, "name invalidation repeated the cast layout without a native rebuild")
+                combat = false
+                private.Layout.Restore(uf, true)
+                combat = true
+                Native(uf)
+                private.Layout.Apply(uf, "enemy", config) -- A cold add in lockdown.
+                assert(cast.height == 16 and cast.Text.y == 13
+                    and container.points.BOTTOMLEFT[3] == setup.insetWidth + (baseWidth - 230) / 2,
+                    "combat acquisition left the native cast size or text position")
+                assert(uf.HealthBarsContainer.height == 27 and uf.HealthBarsContainer.points.BOTTOMLEFT[3] == -41,
+                    "combat cast rebuild dropped the configured health size")
+                if forever then
+                    assert(auras.CrowdControlListFrame.points.LEFT[3] == 5 and auras.LossOfControlFrame.points.LEFT[3] == 5,
+                        "combat cast rebuild displaced the control auras")
+                end
+                combat = false
+                private.Layout.Apply(uf, "enemy", config)
+                assert(cast.height == 16 and cast.Text.y == 13 and uf.HealthBarsContainer.height == 27,
+                    "leaving combat changed a successfully applied cast layout")
+                if forever then
+                    assert(auras.CrowdControlListFrame.points.LEFT[3] == 5
+                        and auras.LossOfControlFrame.points.LEFT[3] == 5,
+                        "leaving combat displaced the control auras")
+                end
+                local afterCombatCalls = calls
+                private.Layout.Apply(uf, "enemy", config)
+                assert(calls == afterCombatCalls, "settled cast layout repeated writes after combat")
+
+                combat = true
+                Native(uf)
+                uf.hook(uf)
+                assert(cast.height == 16 and cast.Text.y == 13,
+                    "combat rebuild lost the configured cast size or text position")
+                local settledCalls = calls
+                private.Layout.Apply(uf, "enemy", config)
+                assert(calls == settledCalls, "unchanged combat cast geometry repeated writes")
+
+                local timeLabel = Frame()
+                cast.CastTargetNameText = Frame()
+                module.castTimes[cast] = { label = timeLabel }
+                local denied = {
+                    { cast.Text, "protected" }, { timeLabel, "protected" },
+                    { container, "restrictedScale" }, { cast.CastTargetNameText, "restrictedScale" },
+                }
+                if forever then
+                    denied[#denied + 1] = { auras.CrowdControlListFrame, "protected" }
+                end
+                for _, deniedRegion in ipairs(denied) do
+                    local region, flag = deniedRegion[1], deniedRegion[2]
+                    module.pendingPlates[uf] = nil
+                    region[flag] = true
+                    Native(uf)
+                    settledCalls = calls
+                    uf.hook(uf)
+                    assert(calls == settledCalls and module.pendingPlates[uf],
+                        "unwritable cast layout changed geometry or lost its retry: " .. flag)
+                    region[flag] = nil
+                end
+                module.castTimes[cast] = nil
+                combat = false
+                private.Layout.Apply(uf, "enemy", config)
+                assert(cast.height == 16 and cast.Text.y == 13, "combat exit did not finish the cast layout")
+                module.pendingPlates[uf] = nil
+                config.enemyCastHeight, config.enemyCastTextOffsetY = nil, nil
+                private.Layout.Configure(config)
+                private.Layout.Apply(uf, "enemy", config)
+
                 local buff, debuff = auras.BuffListFrame, auras.DebuffListFrame
                 local cc, loc = auras.CrowdControlListFrame, auras.LossOfControlFrame
                 cc.restricted = true
@@ -185,6 +340,11 @@ for _, forever in ipairs({ false, true }) do
                 assert(calls - beforeRelease == expected, "recycling rewrote geometry that Blizzard resets")
                 local textures, extensions, skippedWrites, instructions = textureAnchors, extensionAnchors, 0, 0
                 local pooledLayouts = layouts
+                local prefix, prefixReads = private.PlatePrefix, 0
+                private.PlatePrefix = function(frame)
+                    prefixReads = prefixReads + 1
+                    return prefix(frame)
+                end
                 for _ = 1, 3 do
                     Native(uf)
                     local nativeWrites = calls
@@ -196,12 +356,28 @@ for _, forever in ipairs({ false, true }) do
                 print(("Pooled native setup (%s), three hooks: %d geometry writes, %d Lua instructions")
                     :format(forever and "Forever" or "Retail", skippedWrites, instructions))
                 assert(skippedWrites == 0, "pooled setup repeated Suite geometry writes before add")
-                assert(instructions < 350, "pooled setup exceeded the anchor hook instruction budget")
+                private.PlatePrefix = prefix
+                assert(prefixReads == 0, "an unbound returned frame still classified its side on native anchor rebuilds")
+                assert(instructions < 240, "pooled setup exceeded the anchor hook instruction budget")
                 assert(textureAnchors == textures + 3 and extensionAnchors == extensions + 3,
                     "pooled setup stopped notifying texture and extension owners")
                 -- Blizzard's rebuild alone is the texture owner's edge (OnAnchors).
                 assert(layouts == pooledLayouts, "a pass that wrote no Suite geometry handed a layout over")
+                local isSuppressed = private.IsSkinSuppressed
+                private.IsSkinSuppressed = function() return true end
+                extensions = extensionAnchors
+                uf.hook(uf)
+                assert(extensionAnchors == extensions, "a suppressed unbound plate notified extension layout")
+                private.IsSkinSuppressed = isSuppressed
+                combat, module.pendingPlates[uf] = true, nil
+                uf.hook(uf)
+                assert(module.pendingPlates[uf], "cold layout swallowed the combat retry")
+                combat, module.pendingPlates[uf] = false, nil
                 module.activeUnits[uf.unit] = uf
+                -- A native rebuild after the next binding must restore the
+                -- configured geometry even before an explicit skin pass.
+                uf.hook(uf)
+                Check()
                 private.Layout.Apply(uf, "enemy", config)
                 Check()
                 -- A recycled frame can still own fixed XML links after a
@@ -379,5 +555,199 @@ do
     private.Geometry.Restore(state, uf, setup)
     assert(calls - before == 1 and icon.height == 12, "icon restore sized an unchanged castbar")
 end
+
+local function DungeonPlate()
+    local uf, name, health, hpText = Frame(), Frame(), Frame(), Frame()
+    uf.unit, uf.showOnlyName, uf.isFriend, uf.UpdateAnchors = "nameplate1", false, false, function() end
+    uf.name, uf.HealthBarsContainer, uf.CastBarsContainer = name, health, Frame()
+    health.healthBar = Frame()
+    health.healthBar.Text = hpText
+    uf.CastBarsContainer.castBar = Frame()
+    uf.AurasFrame = {}
+    name.shown, name.text, name.reads = true, "secret", 0
+    function name:ClearAllPoints()
+        calls = calls + 1
+        self.points = {}
+    end
+    function name:SetPointsOffset(x, y)
+        calls = calls + 1
+        self.x, self.y = x, y
+        for _, point in pairs(self.points) do point[3], point[4] = x, y end
+    end
+    function name:GetText() self.reads = self.reads + 1; return self.text end
+    function name:GetJustifyH() return self.justify end
+    function name:SetJustifyH(justify) self.justify = justify end
+    local function Reset()
+        name:ClearAllPoints()
+        name:SetPoint("LEFT", health, "LEFT", 4, 0)
+        name:SetPoint("RIGHT", hpText, "LEFT", -2, 0)
+        name:SetJustifyH("LEFT")
+    end
+    Reset()
+    module.activeUnits[uf.unit] = uf
+    return uf, name, hpText, Reset
+end
+
+local function CheckDungeonNameWidth(forever)
+    NS.Client.isForever = forever
+    NamePlateConstants = forever and { NAME_PLATE_WIDTH = 190 } or { NAMEPLATE_WIDTH = 230 }
+    NS.IsSecret = function(value) return value == "secret" end
+    NamePlateSetupOptions = { horizontalScale = 1, insetWidth = 10, unitNameAnchorStyle = 1,
+        useClassicHealthBar = false, useClassicCastBar = false, spellNameInsideCastBar = true,
+        healthBarHeight = 10, castBarHeight = 10, castIconHeight = 12, castBarToHealthBarSpacing = 2 }
+    local config = { look = 4, barGeometry = 1, enemy = true, enemyTextMode = 2 }
+    module.config = config
+    local layout, observer, timer, observed = private.Layout
+    C_Timer = { After = function(delay, fn)
+        assert(delay == 0 and not timer, "secret name changes must coalesce into one layout pass")
+        timer = fn
+    end }
+    local function Flush()
+        local callback = assert(timer)
+        timer = nil
+        callback()
+    end
+    private.NameText = { secretNameWidth = 66, ObserveNameClip = function(fn, marks) observer, observed = fn, marks end }
+    local uf, name, hpText, Reset = DungeonPlate()
+    local function Apply() layout.Apply(uf, "enemy", config) end
+    local function Unclipped() assert(name.points.LEFT[1] == uf.HealthBarsContainer, "native anchor was not restored") end
+    local function Clipped()
+        local left, right = name.points.LEFT, name.points.RIGHT
+        assert(left[1] == uf.HealthBarsContainer and right[1] == left[1]
+            and left[3] == 4 and right[3] == 70,
+            "secret name did not receive a stable 66-unit span")
+    end
+    layout.Configure(config)
+    Apply()
+    Unclipped()
+    assert(name.reads == 0, "outside dungeons layout queried the name")
+    assert(layout.InstanceNameClip, "dungeon name width support missing")
+    local options = NamePlateSetupOptions
+    options.unitNameAnchorStyle, options.healthBarToNameAboveSpacing = 2, "secret"
+    assert(not private.Geometry.LimitNativeName(uf, options, false, { Name = { 0, 0 } }, 66),
+        "the width cap used secret baseline anchor offsets")
+    options.unitNameAnchorStyle, options.healthBarToNameAboveSpacing = 1, nil
+    layout.InstanceNameClip(true)
+    local layoutHandoffs = layouts
+    Apply()
+    Clipped()
+    assert(layouts == layoutHandoffs, "an otherwise inactive plan ran the full layout for a name")
+    local warmReads, warmWrites = name.reads, calls
+    for _ = 1, 100 do Apply() end
+    assert(name.reads == warmReads and calls == warmWrites, "unchanged labels ran native layout work")
+    Reset()
+    uf.hook(uf)
+    Clipped()
+    name.text = "An ordinary name"
+    observer(uf, false)
+    Clipped() -- The native name hook must never write geometry synchronously.
+    Flush()
+    Unclipped()
+    name.text = "secret"
+    observer(uf, true)
+    uf.UpdateNameOverride = true
+    Flush()
+    Unclipped()
+    assert(name.points.RIGHT[1] == hpText, "the native HP text anchor was lost")
+    uf.UpdateNameOverride = nil
+    layout.Reapply(uf, "enemy", config)
+    Clipped()
+    layout.InstanceNameClip(false)
+    Apply()
+    Unclipped()
+
+    layout.InstanceNameClip(true)
+    combat, uf.protected = true, true
+    local before = calls
+    Apply()
+    assert(module.pendingPlates[uf] and calls == before, "protected name anchors were written or lost their retry")
+    combat, uf.protected = false, nil
+    Apply()
+    Clipped()
+    layout.Restore(uf, true)
+    Reset()
+    combat = true
+    Apply()
+    Clipped()
+    warmReads, warmWrites = name.reads, calls
+    for _ = 1, 100 do Apply() end
+    assert(name.reads == warmReads and calls == warmWrites, "combat paint repeated native name layout")
+    combat = false
+    layout.Restore(uf, true)
+    Reset()
+    name.text = "Next pooled occupant"
+    Apply()
+    Unclipped()
+
+    name.text = "secret"
+    config.enemyTextMode = 4
+    private.NameText.secretNameWidth = 1000
+    layout.InstanceNameClip(true)
+    Apply()
+    local available = (forever and 190 or 230) - 20 - 8 - 15 * 10 * .75 - 2
+    assert(name.points.RIGHT[3] - name.points.LEFT[3] == available, "long caps did not reserve the HP column")
+
+    config.enemyTextMode = 2
+    config.enemyNameOffsetX, config.enemyNameOffsetY = 9, -4
+    private.NameText.secretNameWidth = 66
+    name.text = "Public name with custom offsets"
+    layout.Configure(config)
+    layout.InstanceNameClip(true)
+    Apply()
+    assert(name.x == 9 and name.y == -4, "the public name did not acquire its ordinary offset")
+    name.text = "secret"
+    observer(uf, true)
+    Flush()
+    assert(name.points.LEFT[3] == 13 and name.points.RIGHT[3] == 79 and name.points.LEFT[4] == -4
+        and (name.x or 0) == 0, "the capped name lost or doubled its manual offset")
+
+    config.enemyNameRelativeAnchor = 10
+    name.IsAnchoringRestricted = function() return false end
+    name.GetNumPoints = function() return 2 end
+    function name:GetPoint(index)
+        local key = index == 1 and "LEFT" or "RIGHT"
+        return key, unpack(self.points[key])
+    end
+    layout.Configure(config)
+    Apply()
+    local manual, capPoints = NS.NameplateText.NameAnchor(config, "enemy"), name.points
+    combat = true
+    name.text = "First public name after the pull began"
+    observer(uf, false)
+    Flush()
+    assert(name.points == capPoints and module.pendingPlates[uf], "lockdown replaced a manual anchor or lost its replay")
+    combat = false
+    Apply()
+    assert(name.points[manual][1] == uf.HealthBarsContainer.healthBar and name.points ~= capPoints,
+        "combat-end replay did not restore the uncapped manual anchor")
+
+    layout.Restore(uf)
+    module.pendingPlates[uf] = nil
+
+    NS.NameplateExtensions = { OpacityScope = function() return "friendly" end }
+    local friendly, friendlyName = DungeonPlate()
+    friendly.isFriend = true
+    friendlyName.text = "Party Member"
+    private.UnitKinds[friendly] = "friendlyPlayer"
+    config.friendly, config.friendlyCenterName = true, true
+    NamePlateSetupOptions.healthBarToNameAboveSpacing = 2
+    layout.Configure(config)
+    layout.Apply(friendly, "friendly", config)
+    assert(friendlyName.points.BOTTOMLEFT and not observed[friendly] and friendlyName.reads == 0,
+        "a friendly name received the hostile dungeon width state")
+    observer(friendly, true)
+    assert(not observed[friendly] and not timer, "a friendly secrecy notification queued dungeon geometry")
+    local beforeCombat = calls
+    combat = true
+    layout.Apply(friendly, "friendly", config)
+    assert(calls == beforeCombat, "a friendly name unnecessarily reapplied its centre anchor in combat")
+    combat = false
+    layout.InstanceNameClip(false)
+    layout.Restore(friendly)
+    module.pendingPlates[friendly] = nil
+end
+
+CheckDungeonNameWidth(false)
+CheckDungeonNameWidth(true)
 
 print("Mapko dimensions: Retail/Forever, seven styles, four scales, native rebuild, Custom, combat and restoration passed")
