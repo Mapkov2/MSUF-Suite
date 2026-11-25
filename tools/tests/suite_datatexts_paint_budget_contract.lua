@@ -179,4 +179,16 @@ W.Advance(.6)
 assert(CoordinateText() == "54.3, 48.0")
 assert(S.Set("dataTexts", "coordinateDecimals", 2))
 assert(CoordinateText() == "54.34, 48.01")
+-- Exercise the scheduled source -> Fit layout path on a single wide slot.
+-- The text changes width at ten percent, but the configured bar still fits.
+local settings = { bar2Slot1 = W.Suite.DataTextSourceIndex.coordinates, bar2Width = 600, bar2Layout = 2 }
+for i = 2, W.Suite.DataTextSlotLimit do settings["bar2Slot" .. i] = W.Suite.DataTextSourceIndex.none end
+assert(S.SetMany("dataTexts", settings))
+local slot = M.bars[2].slots[1]
+local setPoint, placements = slot.SetPoint, 0
+function slot:SetPoint(...) placements = placements + 1 return setPoint(self, ...) end
+x = .0934
+W.Advance(.6)
+assert(CoordinateText() == "9.34, 48.01" and placements == 0,
+    "scheduled coordinate update repainted unchanged Fit slot geometry")
 print("DataTexts paint budget passed (" .. table.concat(summary, "; ") .. ")")

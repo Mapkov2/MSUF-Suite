@@ -72,4 +72,31 @@ CheckFits(150, 5, 1)
 CheckFits(100, 12, 1)
 CheckFits(125, 7, 0.7)
 CheckFits(155, 12, 0.7, true)
+-- A dynamic value can change measured width while the single Fit slot still
+-- fits within its configured minimum. Its native placement stays valid.
+slot.extra = nil
+bar.length, bar.pixelUnit = 600, 1
+local textWidth, placements = 67, 0
+function slot.label:GetUnboundedStringWidth() return textWidth end
+local nativePlace = slot.SetPoint
+function slot:SetPoint(...) placements = placements + 1 return nativePlace(self, ...) end
+slot.layoutTextWidth = nil
+Layout(bar)
+placements = 0
+local instructions = 0
+debug.sethook(function() instructions = instructions + 100 end, "", 100)
+for i = 1, 100 do
+    textWidth = 67 + i % 2
+    slot.layoutTextWidth = nil
+    Layout(bar, true)
+end
+debug.sethook()
+print(("100 steady Fit layouts: %d slot placements, ~%d VM instructions"):format(placements, instructions))
+assert(placements == 0, "stable Fit geometry reanchored ordinary slots after a text change: " .. placements)
+textWidth, slot.layoutTextWidth = 490, nil
+Layout(bar, true)
+assert(placements == 1 and slot.w * 1.55 > 600, "a growing Fit slot lost its layout update")
+c.bar1Slot1Scale = 100
+Layout(bar)
+assert(slot.w == 600 and placements == 2, "a style change did not invalidate the Fit placement")
 print('datatext geometry PASS')

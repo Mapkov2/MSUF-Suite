@@ -69,8 +69,8 @@ local function Visible(bar)
 end
 
 
-local function Layout(bar)
-    P.DataTextGeometry.Layout(bar, M.config, Extra)
+local function Layout(bar, valueChanged)
+    P.DataTextGeometry.Layout(bar, M.config, Extra, valueChanged)
 end
 
 local function PaintSlot(bar, button, key, label, value, severity, alternate, rested)
@@ -131,7 +131,7 @@ function M:UpdateSource(key, force)
         local button = list[i]
         local bar = button.bar
         if relayout and relayout ~= bar then
-            Layout(relayout)
+            Layout(relayout, true)
             relayout = nil
         end
         if button == bar.badge then
@@ -141,7 +141,7 @@ function M:UpdateSource(key, force)
             relayout = bar
         end
     end
-    if relayout then Layout(relayout) end
+    if relayout then Layout(relayout, true) end
 end
 
 local function NextClock()

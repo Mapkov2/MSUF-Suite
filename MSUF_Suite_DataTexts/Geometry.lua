@@ -15,8 +15,12 @@ local function BrokerLimit(button)
     return extra and extra.kind == "broker" and extra.maxWidth or nil
 end
 
-local function SlotSetting(config, bar, button, index, suffix)
-    return config[bar.prefix .. "Slot" .. (button.slot or index) .. suffix]
+local function ReadSlotSettings(config, bar, button, index)
+    local key = bar.prefix .. "Slot" .. (button.slot or index)
+    button.layoutScale = (config[key .. "Scale"] or 100) / 100
+    button.layoutPadding = config[key .. "Padding"] or bar.style.padding
+    button.layoutWeight = config[key .. "Weight"] or 100
+    button.layoutPlacement = config[key .. "Placement"]
 end
 
 -- The text and font have one writer (DataTexts.lua). A text update
@@ -46,16 +50,16 @@ local function SlotWidths(bar, count, config)
         if fit then
             local textWidth = button.source == "compass" and (bar.vertical and Compass.fallbackWidth or Compass.slotWidth)
                 or button.source == "progressBar" and ProgressWidth or TextWidth(button)
-            local scale = (SlotSetting(config, bar, button, i, "Scale") or 100) / 100
+            local scale = button.layoutScale
             local iconWidth = button.extra and P.DataTextSources.IconWidth(button) or 0
             local padding = iconWidth > 0 and (button.extra.padding or 0)
-                or Snap(SlotSetting(config, bar, button, i, "Padding") or style.padding, pixel / scale)
+                or Snap(button.layoutPadding, pixel / scale)
             -- Text, icon and inset measurements are local to the scaled slot.
             -- Round its demand up in bar pixels before distributing space.
             local demand = (textWidth + iconWidth + 2 * padding) * scale
             widths[i] = ceil(math.max(44, demand) / pixel) * pixel
         else
-            widths[i] = SlotSetting(config, bar, button, i, "Weight") or 100
+            widths[i] = button.layoutWeight
         end
         total = total + widths[i]
     end
@@ -80,12 +84,12 @@ end
 -- A centered slot splits the bar into two disjoint regions. Other slots
 -- retain their order on either side; the first fill slot uses spare space
 -- in its region. Broker limits remain absolute after every redistribution.
-local function Segment(bar, first, last, left, right, gap, config)
+local function Segment(first, last, left, right, gap)
     if first > last then return end
     local total, fill = 0, nil
     for i = first, last do
         total = total + layoutWidths[i]
-        if not fill and SlotSetting(config, bar, layoutSlots[i], i, "Placement") == PLACEMENT.FILL then fill = i end
+        if not fill and layoutSlots[i].layoutPlacement == PLACEMENT.FILL then fill = i end
     end
     local available = math.max(0, right - left - (last - first) * gap)
     if total > available then
@@ -124,12 +128,17 @@ local function PlaceDivider(bar, index, x, height)
     divider:Show()
 end
 
-local function PlaceSlot(bar, button, index, config, extra)
+local function PlaceSlot(bar, button, index, config, extra, valueChanged)
     local style, pixel = bar.style, bar.pixelUnit or 1
     local width = layoutWidths[index]
     local height = Snap(config[bar.heightKey], pixel)
     local left, right = Snap(layoutLeft[index], pixel), Snap(layoutLeft[index] + width, pixel)
-    local scale = (SlotSetting(config, bar, button, index, "Scale") or 100) / 100
+    -- A new text width can still snap to the same placement. Supplemental
+    -- icons, compass and progress have their own layout work on this path.
+    if valueChanged and button.layoutLeft == left and button.layoutRight == right and button.layoutHeight == height
+        and not button.extra and button.source ~= "compass" and button.source ~= "progressBar" then return right, height end
+    button.layoutLeft, button.layoutRight, button.layoutHeight = left, right, height
+    local scale = button.layoutScale
     button:ClearAllPoints()
     if bar.vertical then
         button:SetPoint("TOP", bar.frame, "TOP", 0, -left / scale)
@@ -138,9 +147,8 @@ local function PlaceSlot(bar, button, index, config, extra)
         button:SetPoint("LEFT", bar.frame, "LEFT", left / scale, 0)
         button:SetSize(math.max(0, right - left) / scale, height / scale)
     end
-    local ownPad = SlotSetting(config, bar, button, index, "Padding")
     local labelSpan = (bar.vertical and height or right - left) / scale
-    local inset = Snap(math.max(0, math.min(ownPad or style.padding, floor((labelSpan - 4) / 2))), pixel / scale)
+    local inset = Snap(math.max(0, math.min(button.layoutPadding, floor((labelSpan - 4) / 2))), pixel / scale)
     button.labelInset = inset
     button.label:ClearAllPoints()
     button.label:SetPoint("LEFT", button, "LEFT", inset, 0)
@@ -156,7 +164,7 @@ end
 
 -- Auto-layout bars relayout on value changes, so this allocates nothing.
 -- Every frame it moves is an ordinary frame: layout is allowed in combat.
-function Geometry.Layout(bar, config, extra)
+function Geometry.Layout(bar, config, extra, valueChanged)
     local style, slots, widths = bar.style, layoutSlots, layoutWidths
     local pixel = bar.pixelUnit or 1
     local count = 0
@@ -164,6 +172,7 @@ function Geometry.Layout(bar, config, extra)
         local button = bar.slots[i]
         if button.source then
             count = count + 1
+            if not valueChanged or not button.layoutScale then ReadSlotSettings(config, bar, button, i) end
             slots[count] = button
         end
     end
@@ -175,7 +184,7 @@ function Geometry.Layout(bar, config, extra)
     local gap = Snap(style.gap, pixel)
     local center
     for i = 1, count do
-        if SlotSetting(config, bar, slots[i], i, "Placement") == PLACEMENT.CENTER then
+        if slots[i].layoutPlacement == PLACEMENT.CENTER then
             center = i
             break
         end
@@ -184,13 +193,13 @@ function Geometry.Layout(bar, config, extra)
         widths[center] = math.min(widths[center], math.max(0, length - 2 * start))
         local left = (length - widths[center]) / 2
         layoutLeft[center] = left
-        Segment(bar, 1, center - 1, start, left - gap, gap, config)
-        Segment(bar, center + 1, count, left + widths[center] + gap, length, gap, config)
+        Segment(1, center - 1, start, left - gap, gap)
+        Segment(center + 1, count, left + widths[center] + gap, length, gap)
     else
-        Segment(bar, 1, count, start, length, gap, config)
+        Segment(1, count, start, length, gap)
     end
     for i = 1, count do
-        local right, height = PlaceSlot(bar, slots[i], i, config, extra)
+        local right, height = PlaceSlot(bar, slots[i], i, config, extra, valueChanged)
         if i < count and style.separatorEnabled then PlaceDivider(bar, i, right, height) end
     end
 end
