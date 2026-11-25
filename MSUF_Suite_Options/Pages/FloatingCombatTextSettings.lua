@@ -73,12 +73,29 @@ local function BuildPanel(view, panel, key, groups, preview, prepare)
     if preview and preview.BuildSamples then y = preview.BuildSamples(panel, key, y) end
     if key == "gains" then y = AddGainActions(view, panel, y) end
     y = Grid(view, panel, groups[key], y, prepare)
-    if key == "hits" and #groups.blizzard > 0 then
-        local title = P.Text(panel, "Blizzard", 16, y - 8, view.width)
-        y = y - math.max(16, math.ceil(title:GetStringHeight() or 16)) - 16
-        y = Grid(view, panel, groups.blizzard, y, prepare)
-    end
     panel:SetHeight(math.max(1, -y))
+end
+
+local function BuildBlizzardSettings(view, body, panels, rules, prepare)
+    if #rules == 0 then return end
+    -- Both tabs display the same bound widgets. Exact search still opens Enemy hits.
+    local blizzard = CreateFrame("Frame", nil, body)
+    blizzard:SetWidth(view.width + 32)
+    local title = P.Text(blizzard, "Blizzard", 16, -8, view.width)
+    local y = -math.max(16, math.ceil(title:GetStringHeight() or 16)) - 16
+    local height = -Grid(view, blizzard, rules, y, prepare)
+    blizzard:SetHeight(height)
+
+    local offsets = { hits = -panels.hits:GetHeight(), gains = -panels.gains:GetHeight() }
+    for key, top in pairs(offsets) do panels[key]:SetHeight(height - top) end
+    return function(key)
+        local top = offsets[key]
+        if top then
+            blizzard:ClearAllPoints()
+            blizzard:SetPoint("TOPLEFT", panels[key], "TOPLEFT", 0, top)
+        end
+        blizzard:SetShown(top ~= nil)
+    end
 end
 
 function P.BuildFloatingCombatTextSettings(ctx, body, y, width, page, section, sections, preview, register, resize)
@@ -94,8 +111,9 @@ function P.BuildFloatingCombatTextSettings(ctx, body, y, width, page, section, s
         values[#values + 1] = { value = key, text = P.Tr(tab[2]) }
         BuildPanel(view, panel, key, groups, preview, function() choose(key) end)
     end
+    local selectBlizzard = BuildBlizzardSettings(view, body, panels, groups.blizzard, function() choose("hits") end)
 
     local bottom
-    bottom, choose = P.MenuWorkspace.FeatureTabs(ctx, body, page, ID, width, y, values, panels, resize)
+    bottom, choose = P.MenuWorkspace.FeatureTabs(ctx, body, page, ID, width, y, values, panels, resize, selectBlizzard)
     return bottom
 end

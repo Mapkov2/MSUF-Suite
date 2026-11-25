@@ -245,7 +245,7 @@ end
 
 -- Settings inside one accordion keep the preview and section actions above
 -- the tabs. Report only the selected panel's height to the accordion.
-function Workspace.FeatureTabs(ctx, body, page, module, width, y, values, panels, resize)
+function Workspace.FeatureTabs(ctx, body, page, module, width, y, values, panels, resize, selectShared)
     local picker = { ctx = ctx, header = body, width = width + 32, selected = values[1].value,
         spec = { page = page, module = module } }
     local row, top, bottom
@@ -268,6 +268,7 @@ function Workspace.FeatureTabs(ctx, body, page, module, width, y, values, panels
         picker.selected = key
         for id, panel in pairs(panels) do panel:SetShown(id == key) end
         Layout()
+        if selectShared then selectShared(key) end
         return true
     end
     local choose

@@ -13,6 +13,7 @@ function Frame:GetHeight() return self.height or 26 end
 function Frame:GetStringHeight() return 16 end
 function Frame:SetShown(shown) self.shown = shown end
 function Frame:IsVisible() return self.shown and (not self.parent or self.parent:IsVisible()) end
+function Frame:GetParent() return self.parent end
 function Frame:ClearAllPoints() end
 function Frame:SetPoint(...) self.anchor = { ... } end
 function Frame:HookScript(script, callback) self[script] = callback end
@@ -90,6 +91,22 @@ local function Run(forever)
     assert(not enable:IsVisible() and not disable:IsVisible())
     controls.xpSide.prepare()
     assert(picker.selected == "gains" and enable:IsVisible() and disable:IsVisible())
+    local damage = controls.hideBlizzard.widget
+    local worldText = controls.hideBlizzardWorldText and controls.hideBlizzardWorldText.widget
+    assert(damage:IsVisible() and (not worldText or worldText:IsVisible()), "Gains must show the Blizzard controls")
+    assert((worldText ~= nil) == forever, "World text availability follows the client")
+    local blizzard = damage:GetParent()
+    local gains = controls.xpSide.widget:GetParent()
+    assert(blizzard.anchor[2] == gains and -blizzard.anchor[5] + blizzard:GetHeight() <= gains:GetHeight(),
+        "Gains must reserve room for the Blizzard controls")
+    controls.hideBlizzard.prepare()
+    assert(picker.selected == "hits" and damage:IsVisible() and (not worldText or worldText:IsVisible()),
+        "Exact search must show the same Blizzard controls in Enemy hits")
+    local hits = controls.showHits.widget:GetParent()
+    assert(blizzard.anchor[2] == hits and -blizzard.anchor[5] + blizzard:GetHeight() <= hits:GetHeight(),
+        "Enemy hits must reserve room for the Blizzard controls")
+    choose("gains")
+    assert(damage:IsVisible() and blizzard.anchor[2] == gains and (not worldText or worldText:IsVisible()))
     assert(enable.enabled() and disable.enabled())
     enable.click()
     assert(#batches == 1 and not enable.enabled() and disable.enabled())
@@ -111,6 +128,7 @@ local function Run(forever)
     end
     controls.combatSide.prepare()
     assert(picker.selected == "combat" and controls.showCombatState.widget:IsVisible() and not enable:IsVisible())
+    assert(not damage:IsVisible() and (not worldText or not worldText:IsVisible()))
     assert(#sizes > 0 and sizes[#sizes] > bottom, "the shorter Combat tab should shrink its section")
     choose("gains")
     combat = true
