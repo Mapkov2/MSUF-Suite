@@ -45,6 +45,9 @@ UpdateAddOnMemoryUsage = function() reads = reads + 1 end
 local names, amounts = { "Small", "Beta", "Alpha", "Zero", "Invalid", "secret" }, { 512, 2048, 2048, 0, 0/0, 200 }
 C_AddOns = { GetNumAddOns = function() return #names end, GetAddOnInfo = function(i) return names[i] end }
 GetAddOnMemoryUsage = function(i) return amounts[i] end
+GetTime = function() return 0 end
+EventRegistry = { RegisterFrameEventAndCallback = function() end }
+Load("MSUF_Suite_Modules/DataSources.lua", private)
 Load("MSUF_Suite_DataTexts/Memory.lua", private)
 assert(reads == 0, "loading memory tooltip sampled APIs")
 local rows = {}

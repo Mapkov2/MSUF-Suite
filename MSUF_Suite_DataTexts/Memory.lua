@@ -8,8 +8,7 @@ end
 -- upstream/ptr PerformanceDocumentation and AddOnsDocumentation:
 -- memory usage is KB; the refresh is a global API, addon metadata uses C_AddOns.
 function P.MemoryTooltip(tooltip)
-    if not (UpdateAddOnMemoryUsage and GetAddOnMemoryUsage) then return end
-    UpdateAddOnMemoryUsage()
+    if not S.RefreshAddonMemory() then return end
     local rows, total = {}, 0
     for index = 1, C_AddOns.GetNumAddOns() do
         local kb = GetAddOnMemoryUsage(index)

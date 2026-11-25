@@ -57,6 +57,7 @@ end
 local function ReadMap(self, readWaypoint)
     local ready, changed = self.map:SelectArt()
     if not ready then return false end
+    if changed then S.InvalidateSharedData("coordinates") end
     if changed or readWaypoint then self.map:UpdateWaypoint(self.config.showMarkers and self.config.showWaypoint) end
     return self.map:Sample()
 end
@@ -72,8 +73,10 @@ local function Sample(self, bearing)
             ready = self.map:Sample()
         end
     end
-    if PaintLive(self, ready, self.config.showCompass, bearing) then Markers.Sync(self) end
-    if not self.mapLive and not self.compassLive then Heading.Watch(self) end
+    if PaintLive(self, ready, self.config.showCompass, bearing) then
+        Markers.Sync(self)
+        if not self.mapLive then Heading.Watch(self, self.compassLive and Sample or nil, self.markerBearing) end
+    end
 end
 
 local function StopSurfaces(self)
@@ -152,7 +155,7 @@ local function RefreshVisibility(self, event)
     self.artTicks = 0
     local mapReady, compassWanted = self.mapRequested and ReadMap(self, true) or false, self.config.showCompass
     PaintLive(self, mapReady, compassWanted, (mapReady or compassWanted) and Heading.Read() or nil)
-    Heading.Watch(self, (self.mapLive or self.compassLive) and Sample or nil)
+    Heading.Watch(self, (self.mapLive or self.compassLive) and Sample or nil, not self.mapLive and self.markerBearing or nil)
     Markers.Sync(self, event)
 end
 
@@ -173,6 +176,7 @@ local function Layout(self)
 end
 
 local function OnContextChanged(self, event)
+    S.InvalidateSharedData("coordinates")
     if event == "ADDON_RESTRICTION_STATE_CHANGED" then
         Stop(self)
         self.context:After(0, RefreshVisibility)

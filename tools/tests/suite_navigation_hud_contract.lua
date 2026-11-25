@@ -10,6 +10,11 @@ world.shiftM = zoneMap
 local failNextFontString
 world.waypoint = { uiMapID = 1, position = { x = .51, y = .49 } }
 local function Public(value) return value ~= secret end
+function hasanysecretvalues(...)
+    for i = 1, select("#", ...) do if not Public((select(i, ...))) then return true end end
+    return false
+end
+local function GetXY(vector) return vector.x, vector.y end
 local function Finite(value)
     return Public(value) and type(value) == "number" and value == value and math.abs(value) < math.huge
 end
@@ -162,7 +167,10 @@ C_Map = {
     GetPlayerMapPosition = function(map)
         assert(Finite(map))
         calls.positions = calls.positions + 1
-        if map == world.map then return world.position end
+        if map == world.map then
+            if Public(world.position) and world.position then world.position.GetXY = GetXY end
+            return world.position
+        end
     end,
     GetUserWaypoint = function() return world.waypoint end,
 }
@@ -185,6 +193,7 @@ local NS = { Suite = S, Text = S.Text, RGB = S.RGB, Client = { isForever = true,
     InCombat = function(event) return event == "PLAYER_REGEN_DISABLED" or world.combat == true end }
 local private = { Suite = S, NS = NS }
 assert(loadfile(root .. "/MSUF_Suite/Core/Compass.lua"))("Core", NS)
+assert(loadfile(root .. "/MSUF_Suite_Modules/DataSources.lua"))("Modules", private)
 assert(loadfile(root .. "/MSUF_Suite_Modules/CompassHeading.lua"))("Modules", private)
 assert(loadfile(root .. "/MSUF_Suite_QualityOfLife/NavigationHUDMap.lua"))("QoL", private)
 S.PublicText = function(value) return Public(value) and type(value) == "string" and value ~= "" and value or nil end
@@ -434,7 +443,13 @@ assert(not hud:ToggleMap())
 Present(false, true)
 assert(calls.sounds == 1, "visibility recovery and closing must stay silent")
 positionCalls = calls.positions
-Tick()
+do
+    local dispatch, count = S.Dispatch, 0
+    S.Dispatch = function(...) count = count + 1; return dispatch(...) end
+    for _ = 1, 20 do Tick() end
+    S.Dispatch = dispatch
+    assert(count == 0, "the compass-only HUD dispatched a stationary bearing to the renderer")
+end
 assert(calls.positions == positionCalls and not ctx.events.USER_WAYPOINT_UPDATED, "compass alone uses the map API")
 hud.config.showCompass = false
 hud:Refresh()
@@ -909,3 +924,58 @@ hud.active = false
 hud:Disable()
 assert(not handyWatch and not questieWatch and not ctx.markerTick)
 print("PASS optional addon sources, late load, dedup, minimap ownership, and combat idle")
+
+do
+    local now, wx, wy, wz, continent, probes, instances = 0, 10, 30, 11, 0, 0, 0
+    GetTime = function() return now end
+    UnitPosition = function(unit) assert(unit == "player"); probes = probes + 1; return wx, wy, wz, continent end
+    IsInInstance = function() instances = instances + 1; return world.instance end
+    world.map, world.instance, world.position = 1, false, { x = .3, y = .4 }
+    local Position = private.NavigationHUDPoints.Position
+    local before = calls.positions
+    for i = 0, 99 do
+        now = i / 20
+        assert(Position(world.map) == .3)
+        assert(S.ReadInfoSource("coordinates") == .3)
+    end
+    assert(calls.positions - before == 5, "stationary markers and datatext must share one native vector per second")
+    now, world.position.x = 5, .305
+    assert(Position(world.map) == .305, "same-map phasing never refreshed a stationary projection")
+    wx, world.position.x = wx + .01, .31
+    assert(Position(world.map) == .31, "movement used a stale projection")
+    wz, world.position.x = wz + 1, .32
+    assert(Position(world.map) == .32, "a floor change used a stale projection")
+    continent, world.position.x = 1, .33
+    assert(Position(world.map) == .33, "a world change used a stale projection")
+    world.map, world.position.x = 2, .34
+    assert(Position(world.map) == .34, "a UI map change used a stale projection")
+    world.position = nil
+    S.InvalidateSharedData("coordinates")
+    assert(not Position(world.map), "invalidating the map kept a stale position")
+    world.position = { x = .35, y = .5 }
+    assert(Position(world.map) == .35, "a missing position failed to recover")
+    wx, world.position = secret, secret
+    assert(not Position(world.map), "a restricted position reused public coordinates")
+    wx, wy, world.position = 0, 0, { x = .35, y = .5 }
+    assert(Position(world.map) == .35)
+    world.position.x = .355
+    assert(Position(world.map) == .355, "an unavailable world origin was treated as a movement signal")
+    world.instance, wx, world.position = true, 10, { x = .36, y = .5 }
+    assert(Position(world.map) == .36)
+    world.position = nil
+    assert(not Position(world.map), "positions were cached across restrictions in an instance")
+    world.instance, world.position = false, { x = .4, y = .5 }
+    now = 10
+    S.InvalidateSharedData("coordinates")
+    probes, instances, before = 0, 0, calls.positions
+    for i = 0, 99 do
+        now, wx, world.position.x = 10 + i / 20, wx + 1, .4 + i / 1000
+        assert(Position(world.map, true) == world.position.x, "movement delayed a native projection")
+        -- A second consumer can see a same-frame teleport, even at the same GetTime.
+        wx, world.position.x = wx + 10, world.position.x + .01
+        assert(Position(world.map) == world.position.x, "same-frame movement reused the first consumer's projection")
+    end
+    assert(calls.positions - before == 200 and probes <= 6 and instances <= 5,
+        ("moving budget: %d projections, %d world probes, %d instance probes"):format(calls.positions - before, probes, instances))
+end
+print("PASS shared stationary projection budget and immediate movement, map, floor, restriction and recovery updates")

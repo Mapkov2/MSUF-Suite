@@ -241,6 +241,7 @@ local H=dofile(root..'/tools/tests/suite_minimap_harness.lua')
 local W=H.New(root,arg[3] or 'Mainline',{beforeModules=function(world)
     world.G.GetFramerate=function() return 80 end
     world.G.GetNetStats=function() return 0,0,30,50 end
+    world.G.EventRegistry.RegisterFrameEventAndCallback=world.G.EventRegistry.RegisterCallback
     world.G.UpdateAddOnMemoryUsage=function() end
     world.G.GetAddOnMemoryUsage=function() return 14940 end
     world.G.C_AddOns.GetNumAddOns=function() return 1 end

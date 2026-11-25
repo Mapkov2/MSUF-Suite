@@ -28,9 +28,7 @@ local function Coordinates(vector)
     if Fraction(x) and Fraction(y) then return x, y end
 end
 
-function Points.Position(map)
-    return Coordinates(C_Map.GetPlayerMapPosition(map, "player"))
-end
+Points.Position = S.ReadPlayerMapPosition
 
 function Points.PlayerMap()
     local map = C_Map.GetBestMapForUnit("player")

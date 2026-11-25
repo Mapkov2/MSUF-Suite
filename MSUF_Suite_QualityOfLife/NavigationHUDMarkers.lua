@@ -466,7 +466,7 @@ Tick = function(owner)
         state.mapID = mapID
         state.width, state.height = Points.Size(mapID)
     end
-    local rebuilt = RefreshSources(state, mapID)
+    local rebuilt = Dirty(state) and RefreshSources(state, mapID)
     local mapPoints = HasPoints(state.points) or HasPoints(state.offerPoints) or HasPoints(state.servicePoints)
     local main = state.wantMap or state.wantCompass or state.compactViews
     local addonPoints = state.addonMinimapCount > 0 or main and state.addonCount > 0
@@ -477,7 +477,7 @@ Tick = function(owner)
         return
     end
     local x, y
-    if art then x, y = map.playerX, map.playerY else x, y = Points.Position(mapID) end
+    if art then x, y = map.playerX, map.playerY else x, y = Points.Position(mapID, true) end
     if not x or (not state.wantMap and not state.width) then
         WaitForPosition(owner, state)
         return

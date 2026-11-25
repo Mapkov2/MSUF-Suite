@@ -2,6 +2,7 @@ local _, Private = ...
 local S, NS = Private.Suite, Private.NS
 local Dispatch, Finite, PublicText = S.Dispatch, S.Finite, S.PublicText
 local max, abs = math.max, math.abs
+local HasSecret = hasanysecretvalues
 
 -- All Suite information displays share one deadline timer. A display owns one
 -- reusable task per owner key; the native timer exists only while a task is due.
@@ -116,12 +117,15 @@ function S.ScheduleDataTick(owner, delay, callback)
     task.due = GetTime() + max(0.05, delay)
     task.callback = callback
     tasks[owner] = task
-    if not dispatching then Arm() end
+    if not dispatching then Arm(task) end
     return task
 end
 
 ------------------------------------------------------------------ shared samples
 local snapshots = {}
+local memoryScanTime, memoryTotalTime, memoryLoadObserver
+local positionMap, positionUntil, positionX, positionY, movingUntil
+local worldX, worldY, worldZ, worldInstance
 
 -- Readers return at most a few values. Reject secret results before reusing
 -- the existing tuple, so steady refreshes allocate no Lua tables and a secret
@@ -157,13 +161,84 @@ end
 
 function S.InvalidateSharedData(key)
     snapshots[key] = nil
+    if key == "coordinates" then positionMap, movingUntil = nil, nil end
+    if key == "memory" then memoryScanTime, memoryTotalTime = nil, nil end
+end
+
+local function Project(map)
+    local position = C_Map.GetPlayerMapPosition(map, "player")
+    if not S.Public(position) or type(position) ~= "table" then return end
+    local px, py = position:GetXY()
+    if Finite(px) and px >= 0 and px <= 1 and Finite(py) and py >= 0 and py <= 1 then return px, py end
+end
+
+-- The native map projection returns a new Vector2D. In the open world its
+-- result can be shared while the public world position is exactly the same.
+-- Reproject at least once a second for same-map phasing. While moving use
+-- fresh projections directly and check for a stationary interval once per second.
+function S.ReadPlayerMapPosition(map, openWorld)
+    if not Finite(map) or map <= 0 then return end
+    if not UnitPosition then return Project(map) end
+    local now = GetTime()
+    if movingUntil and now < movingUntil then return Project(map) end
+    if not openWorld then
+        local inside = IsInInstance()
+        if not S.Public(inside) or inside ~= false then
+            positionMap = nil
+            return Project(map)
+        end
+    end
+    local x, y, z, instance = UnitPosition("player")
+    if HasSecret(x, y, z, instance) then
+        positionMap = nil
+        return Project(map)
+    end
+    local sameMap = positionMap == map
+    local samePosition = sameMap and x == worldX and y == worldY and z == worldZ and instance == worldInstance
+    if samePosition and now < positionUntil then return positionX, positionY end
+    if not (Finite(x) and Finite(y) and Finite(z) and Finite(instance)) or instance < 0 or (x == 0 and y == 0) then
+        positionMap = nil
+        return Project(map)
+    end
+    if sameMap and not samePosition then movingUntil = now + 1 end
+    local px, py = Project(map)
+    positionMap = nil
+    if px then
+        worldX, worldY, worldZ, worldInstance = x, y, z, instance
+        positionMap, positionUntil, positionX, positionY = map, now + 1, px, py
+    end
+    return px, py
+end
+
+local function AddonLoaded()
+    if memoryScanTime ~= GetTime() then return end
+    -- A load can split a total and a tooltip within their shared frame.
+    -- Older totals keep their regular 30-second deadline.
+    if memoryTotalTime == memoryScanTime then snapshots.memory = nil end
+    memoryScanTime = nil
+end
+
+-- The total and the detail tooltip read the same global measurement. A new
+-- frame or a load-on-demand addon invalidates it even during a single hover.
+function S.RefreshAddonMemory()
+    if not (GetAddOnMemoryUsage and UpdateAddOnMemoryUsage) then return end
+    if not memoryLoadObserver then
+        EventRegistry:RegisterFrameEventAndCallback("ADDON_LOADED", AddonLoaded, S)
+        memoryLoadObserver = true
+    end
+    local now = GetTime()
+    if memoryScanTime ~= now then
+        UpdateAddOnMemoryUsage()
+        memoryScanTime = now
+    end
+    return true
 end
 
 -- The readers call client APIs Retail and Forever both have; results that
 -- are secret or out of range read as nil.
 local function AddonMemory()
-    if not (GetAddOnMemoryUsage and UpdateAddOnMemoryUsage) then return nil end
-    UpdateAddOnMemoryUsage()
+    if not S.RefreshAddonMemory() then return nil end
+    memoryTotalTime = memoryScanTime
     local total, count = 0, C_AddOns.GetNumAddOns()
     if not Finite(count) then return nil end
     for index = 1, count do
@@ -194,14 +269,7 @@ local readers = {
         return Finite(stamp) and stamp or nil
     end,
     coordinates = function()
-        local mapID = C_Map.GetBestMapForUnit("player")
-        if not Finite(mapID) or mapID <= 0 then return nil end
-        -- nil where the map has no player position (instances).
-        local position = C_Map.GetPlayerMapPosition(mapID, "player")
-        if not position then return nil end
-        local x, y = position:GetXY()
-        return Finite(x) and x >= 0 and x <= 1 and x or nil,
-            Finite(y) and y >= 0 and y <= 1 and y or nil
+        return S.ReadPlayerMapPosition(C_Map.GetBestMapForUnit("player"))
     end,
     durability = function()
         local low, total, maximumTotal = nil, 0, 0
