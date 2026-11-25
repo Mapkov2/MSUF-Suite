@@ -1,15 +1,17 @@
 local _, NS = ...
 
--- Exact art suppression for the Group Finder family. The identifiers below
--- are clean-room mappings verified against Gethe/wow-ui-source upstream/live
--- at 710f59e457317676c0f699e6addaf2c405c2a1a4:
+-- Retail Group Finder chrome, verified against Gethe/wow-ui-source upstream/live
+-- at ab5cb850a3f65e742959e379c4689353a2f4549f (12.1.5.70961):
 --
---   Blizzard_GroupFinder/Mainline/PVEFrame.xml
+--   Blizzard_GroupFinder/Blizzard_GroupFinder_Mainline.toc
+--   Blizzard_GroupFinder/Mainline/PVEFrame.{xml,lua}
 --   Blizzard_GroupFinder/Mainline/LFDFrame.xml
+--   Blizzard_GroupFinder/Mainline/LFGFrame.xml
 --   Blizzard_GroupFinder/Mainline/LFGList.xml
---   Blizzard_GroupFinder/Mainline/LFGList.lua
 --   Blizzard_GroupFinder/Shared/RaidFinder.xml
 --   Blizzard_GroupFinder/Shared/ScenarioFinder.xml
+--   Blizzard_Menu/Mainline/MenuTemplates.xml
+--   Blizzard_SharedXML/{Mainline/SharedUIPanelTemplates,Shared/InputBox/InputBoxTemplates}.xml
 --
 -- No Blizzard method, script, mixin, or frame field is replaced. The module
 -- only addresses explicitly named globals/parentKey paths and subscribes to
@@ -19,6 +21,8 @@ local CommonArt = {
     scrollBoxes = setmetatable({}, { __mode = "k" }),
     navigationIndicators = setmetatable({}, { __mode = "k" }),
     categoryUpdateHooked = false,
+    groupShowHooked = false,
+    waitingForGroupFinder = false,
 }
 NS.CommonArt = CommonArt
 
@@ -27,8 +31,11 @@ local Dispatch = NS.Safety.Dispatch
 local Kit = NS.AdapterKit
 local Fade = Kit.Fade
 local SurfaceSpec = Kit.SurfaceSpec
+local Read = NS.Safety.Read
+local SkinControl = Kit.SkinControl
 
 local DEFAULT_OWNER = "blizzardWindows"
+local GROUP_FINDER_ADDON = "Blizzard_GroupFinder"
 
 -- These are XML regions with a global $parent-derived name and no parentKey.
 -- A bounded child walk cannot resolve them through PVEFrame fields.
@@ -59,10 +66,12 @@ local exactGlobalRegions = {
 -- have no GetName() value, so GenericWindows' name-token panel classifier
 -- cannot identify them. Semantic dungeon/activity/role textures are omitted.
 local panelSpecs = {
+    { root = "PVEFrame", path = { "Inset" }, role = "panel", nineSlice = true },
     { root = "LFDParentFrame", role = "panel", fade = { "TopTileStreaks" } },
     { root = "LFDParentFrame", path = { "Inset" }, role = "card", nineSlice = true },
     { root = "RaidFinderFrame", role = "panel" },
     { root = "RaidFinderFrame", path = { "Inset" }, role = "card", nineSlice = true },
+    { root = "RaidFinderFrameBottomInset", role = "card", nineSlice = true },
     { root = "ScenarioFinderFrame", role = "panel" },
     { root = "ScenarioFinderFrame", path = { "Inset" }, role = "card", nineSlice = true },
     { root = "ScenarioFinderFrame", path = { "Queue" }, role = "panel", fade = { "Bg" } },
@@ -89,6 +98,12 @@ local panelSpecs = {
         path = { "SearchPanel", "ResultsInset" },
         role = "card",
         nineSlice = true,
+    },
+    {
+        root = "LFGListFrame",
+        path = { "SearchPanel", "AutoCompleteFrame" },
+        role = "popup",
+        fade = { "BottomLeftBorder", "BottomRightBorder", "BottomBorder", "LeftBorder", "RightBorder" },
     },
     { root = "LFGListFrame", path = { "ApplicationViewer" }, role = "panel", fade = { "InfoBackground" } },
     {
@@ -145,6 +160,9 @@ local navigationPanels = {
 }
 
 local scrollBoxSpecs = {
+    { root = "LFDQueueFrame", path = { "Specific", "ScrollBox" }, kind = "dungeon" },
+    { root = "LFDQueueFrame", path = { "Follower", "ScrollBox" }, kind = "dungeon" },
+    { root = "ScenarioQueueFrame", path = { "Specific", "ScrollFrame" }, kind = "dungeon" },
     {
         root = "LFGListFrame",
         path = { "SearchPanel", "ScrollBox" },
@@ -166,6 +184,39 @@ local scrollBoxSpecs = {
 }
 
 local SHELL_SPEC = SurfaceSpec("shell", 8, 0)
+local DESCRIPTION_SPEC = SurfaceSpec("input", 4, 0)
+local DESCRIPTION_BORDER = {
+    "TopLeftTex", "TopRightTex", "TopTex", "BottomLeftTex", "BottomRightTex", "BottomTex", "LeftTex", "RightTex",
+}
+
+local BUTTON_SPEC = { role = "button", useControlShape = true, radius = 4, inset = 1, pillHeight = 24 }
+local DROPDOWN_SPEC = {
+    role = "button", useControlShape = true, radius = 4, inset = 1, pillHeight = 24, regions = { "Background" },
+}
+local INPUT_SPEC = { role = "input", useControlShape = true, radius = 4, inset = 0, pillHeight = 22 }
+local STRETCH_BUTTON_SPEC = {
+    role = "button", useControlShape = true, radius = 4, inset = 1, pillHeight = 24,
+    regions = {
+        "TopLeft", "TopMiddle", "TopRight", "MiddleLeft", "MiddleMiddle",
+        "MiddleRight", "BottomLeft", "BottomMiddle", "BottomRight",
+    },
+}
+local CHECKBOX_SPEC = { role = "input", shape = "continuous", radius = 4, inset = 2 }
+
+local QUEUE_ROLES = { "RoleButtonTank", "RoleButtonHealer", "RoleButtonDPS", "RoleButtonLeader" }
+local APPLICATION_ROLES = { "TankButton", "HealerButton", "DamagerButton" }
+local CATEGORY_BUTTONS = { "StartGroupButton", "FindGroupButton" }
+local SEARCH_BUTTONS = { "BackButton", "BackToGroupButton", "SignUpButton" }
+local VIEWER_BUTTONS = {
+    "RemoveEntryButton", "EditButton", "BrowseGroupsButton",
+    "NameColumnHeader", "RoleColumnHeader", "ItemLevelColumnHeader", "RatingColumnHeader",
+}
+local ENTRY_BUTTONS = { "ListGroupButton", "CancelButton" }
+local ENTRY_DROPDOWNS = { "GroupDropdown", "ActivityDropdown", "PlayStyleDropdown" }
+local ENTRY_REQUIREMENTS = { "ItemLevel", "PvpItemLevel", "PVPRating", "MythicPlusRating", "VoiceChat" }
+local ACTIVITY_BUTTONS = { "SelectButton", "CancelButton" }
+local APPLICANT_BUTTONS = { "InviteButton", "InviteButtonSmall", "DeclineButton" }
+local READY_ART = { "background", "bottomArt" }
 
 local NAVIGATION_SPEC = {
     role = "navigation",
@@ -229,7 +280,12 @@ local function Resolve(rootName, path)
 end
 
 -- Deferral keys are common-art:<owner>:<suffix>.
-local Owners = Kit.NewOwners({ prefix = "common-art", default = DEFAULT_OWNER, surfaces = true })
+local Owners = Kit.NewOwners({
+    prefix = "common-art",
+    default = DEFAULT_OWNER,
+    surfaces = true,
+    init = function(state) state.rowButtons = Kit.WeakSet() end,
+})
 CommonArt.owners = Owners.owners
 
 local function CategoryCardSelected(selection, button)
@@ -270,6 +326,7 @@ local ApplyDeferred
 local function SkinCardsOf(state, selection)
     local root = Resolve("PVEFrame")
     if Kit.IsHidden(root) then
+        state.painted = false
         Kit.DeferHidden(root, state, ApplyDeferred, state, nil, nil, 20)
         return
     end
@@ -341,18 +398,130 @@ local function ApplyPanelSpec(spec, state)
     for index = 1, nineSliceFields and #nineSliceFields or 0 do
         local field = Field(target, nineSliceFields[index])
         Kit.FadeNineSlice(state, field)
+        Kit.FadeNineSlice(state, Field(field, "NineSlice"))
         Kit.FadeFields(state, field, panelArtFields)
     end
     return true
 end
 
+local function SkinButtons(state, frame, fields, spec)
+    for index = 1, #fields do SkinControl(state, Field(frame, fields[index]), spec or BUTTON_SPEC) end
+end
+
+local function SkinIconButton(state, button, spec)
+    local normal = NS.Safety.Call(button, "GetNormalTexture")
+    if not SkinControl(state, button, spec) then return false end
+    Fade(state, normal)
+    return true
+end
+
+local function SkinDescription(state, description)
+    -- Skin InputScrollFrame's outer shell. The EditBox keeps its native text and permissions.
+    if Kit.Attach(state, description, DESCRIPTION_SPEC) then
+        Kit.FadeFields(state, description, DESCRIPTION_BORDER)
+    end
+end
+
+local function SkinQueueControls(state)
+    SkinControl(state, LFDQueueFrameFindGroupButton, BUTTON_SPEC)
+    SkinControl(state, RaidFinderFrameFindRaidButton, BUTTON_SPEC)
+    SkinControl(state, ScenarioQueueFrameFindGroupButton, BUTTON_SPEC)
+    SkinControl(state, Field(LFDQueueFrame, "TypeDropdown"), DROPDOWN_SPEC)
+    SkinControl(state, Field(RaidFinderQueueFrame, "SelectionDropdown"), DROPDOWN_SPEC)
+    SkinControl(state, Field(ScenarioQueueFrame, "Dropdown"), DROPDOWN_SPEC)
+    for index = 1, #QUEUE_ROLES do
+        local name = QUEUE_ROLES[index]
+        local dungeon, raid = Resolve("LFDQueueFrame" .. name), Resolve("RaidFinderQueueFrame" .. name)
+        Fade(state, Field(dungeon, "background"))
+        Fade(state, Field(raid, "background"))
+        SkinIconButton(state, Field(dungeon, "checkButton"), CHECKBOX_SPEC)
+        SkinIconButton(state, Field(raid, "checkButton"), CHECKBOX_SPEC)
+    end
+    Kit.FadeAtlas(state, Field(LFDQueueFrame, "Follower"), "spec-dividerline")
+end
+
+local function SkinPremadeSearch(state, search, viewer)
+    SkinControl(state, Field(search, "SearchBox"), INPUT_SPEC, "ApplySearchBox")
+    SkinControl(state, Field(search, "FilterButton"), DROPDOWN_SPEC)
+    SkinControl(state, Field(Field(search, "ScrollBox"), "StartGroupButton"), BUTTON_SPEC)
+    SkinButtons(state, search, SEARCH_BUTTONS)
+    SkinIconButton(state, Field(search, "RefreshButton"), BUTTON_SPEC)
+    SkinIconButton(state, Field(viewer, "RefreshButton"), BUTTON_SPEC)
+    SkinIconButton(state, Field(viewer, "AutoAcceptButton"), CHECKBOX_SPEC)
+    SkinButtons(state, viewer, VIEWER_BUTTONS)
+end
+
+local function SkinPremadeEntry(state, entry)
+    SkinButtons(state, entry, ENTRY_BUTTONS)
+    SkinButtons(state, entry, ENTRY_DROPDOWNS, DROPDOWN_SPEC)
+    SkinControl(state, Field(entry, "Name"), INPUT_SPEC, "ApplySearchBox")
+    SkinDescription(state, Field(entry, "Description"))
+    for index = 1, #ENTRY_REQUIREMENTS do
+        local requirement = Field(entry, ENTRY_REQUIREMENTS[index])
+        SkinIconButton(state, Field(requirement, "CheckButton"), CHECKBOX_SPEC)
+        SkinControl(state, Field(requirement, "EditBox"), INPUT_SPEC, "ApplySearchBox")
+    end
+    SkinIconButton(state, Kit.Path(entry, "CrossFactionGroup", "CheckButton"), CHECKBOX_SPEC)
+    SkinIconButton(state, Kit.Path(entry, "PrivateGroup", "CheckButton"), CHECKBOX_SPEC)
+    local dialog = Kit.Path(entry, "ActivityFinder", "Dialog")
+    SkinControl(state, Field(dialog, "EntryBox"), INPUT_SPEC, "ApplySearchBox")
+    SkinButtons(state, dialog, ACTIVITY_BUTTONS)
+end
+
+local function SkinPremadeControls(state, list)
+    local selection = Field(list, "CategorySelection")
+    SkinButtons(state, selection, CATEGORY_BUTTONS)
+    SkinPremadeSearch(state, Field(list, "SearchPanel"), Field(list, "ApplicationViewer"))
+    SkinPremadeEntry(state, Field(list, "EntryCreation"))
+    local application = LFGListApplicationDialog
+    SkinDescription(state, Field(application, "Description"))
+    for index = 1, #APPLICATION_ROLES do
+        SkinIconButton(state, Kit.Path(application, APPLICATION_ROLES[index], "CheckButton"), CHECKBOX_SPEC)
+    end
+end
+
+local function SkinDungeonReady(state)
+    local dialog = LFGDungeonReadyDialog
+    Kit.FadeFields(state, dialog, READY_ART)
+    SkinControl(state, Field(dialog, "enterButton"), BUTTON_SPEC)
+    SkinControl(state, Field(dialog, "leaveButton"), BUTTON_SPEC)
+end
+
+local function ScheduleDungeonReady(state)
+    if not state.active or not LFGDungeonReadyPopup then return end
+    if Kit.DeferHidden(LFGDungeonReadyPopup, state, ScheduleDungeonReady, state, nil, nil, 20) then return end
+    Owners.RunOrDefer(state, "dungeon-ready", SkinDungeonReady)
+end
+
+local function SkinRowButton(state, button, spec)
+    -- These child controls live for the pooled frame's lifetime. Rebinding
+    -- an element only changes the native check or icon state.
+    if button and not state.rowButtons[button] and SkinIconButton(state, button, spec) then
+        state.rowButtons[button] = true
+    end
+end
+
+local function SkinFinderRow(state, row, kind)
+    if kind == "dungeon" then
+        SkinRowButton(state, Field(row, "enableButton"), CHECKBOX_SPEC)
+        NS.Checkmarks.TrackButton(Field(row, "expandOrCollapseButton"), state.owner)
+        return
+    end
+    SkinControl(state, row, rowSpecs[kind])
+    if kind == "searchResult" then
+        SkinRowButton(state, Field(row, "CancelButton"), STRETCH_BUTTON_SPEC)
+    elseif kind == "applicant" then
+        for index = 1, #APPLICANT_BUTTONS do
+            SkinRowButton(state, Field(row, APPLICANT_BUTTONS[index]), STRETCH_BUTTON_SPEC)
+        end
+    end
+end
+
 local function SkinRowForOwners(row, kind)
-    -- The finder can remain visible while combat starts. Dynamic cosmetic rows
-    -- are optional, so never enqueue traversal or mutate them in combat.
     if not row or NS.IsCombatLocked() then return end
     for _, state in pairs(CommonArt.owners) do
         if state.active then
-            Kit.SkinControl(state, row, rowSpecs[kind])
+            SkinFinderRow(state, row, kind)
         end
     end
 end
@@ -361,7 +530,13 @@ local RefreshScrollBox
 
 -- Registered once per ScrollBox as callback(registration, row).
 local function OnRowInitialized(registration, row)
-    if NS.IsCombatLocked() then return end
+    if NS.IsCombatLocked() then
+        if not registration.catchUp then
+            registration.catchUp = true
+            RefreshScrollBox(registration)
+        end
+        return
+    end
     if registration.catchUp or Kit.IsHidden(registration.box[1]) then
         registration.catchUp = true
         RefreshScrollBox(registration)
@@ -399,12 +574,11 @@ local function RegisterScrollBox(scrollBox, kind)
 end
 
 local function ApplyNow(state)
-    if not state.active then
-        return false, "disabled"
-    end
+    if not state.active or state.painted then return end
 
     if Kit.DeferHidden(Resolve("PVEFrame"), state, ApplyDeferred, state, nil, nil, 20) then return true, "waiting" end
     Kit.Attach(state, _G.PVEFrame, SHELL_SPEC)
+    Fade(state, Field(PVEFrame, "shadows"))
     for index = 1, #exactGlobalRegions do
         Fade(state, _G[exactGlobalRegions[index]])
     end
@@ -412,36 +586,69 @@ local function ApplyNow(state)
     for index = 1, #panelSpecs do
         ApplyPanelSpec(panelSpecs[index], state)
     end
+    SkinQueueControls(state)
+    SkinPremadeControls(state, LFGListFrame)
     InstallCategoryUpdateHook()
     ScheduleCategoryCards(Resolve("LFGListFrame", { "CategorySelection" }), state)
     for index = 1, #scrollBoxSpecs do
         local spec = scrollBoxSpecs[index]
         RegisterScrollBox(Resolve(spec.root, spec.path), spec.kind)
     end
-    -- Forever lacks PVEFrame: Blizzard_GroupFinder excludes the camelot game type.
-    return _G.PVEFrame ~= nil, _G.PVEFrame and "applied" or "missing"
+    state.painted = true
 end
 
 ApplyDeferred = function(state)
-    return Owners.RunOrDefer(state, "visible", ApplyNow)
+    if not state.active or state.painted or state.paintScheduled then return end
+    if not state.paintJob then
+        state.paintJob = function()
+            state.paintScheduled = false
+            Owners.RunOrDefer(state, "visible", ApplyNow)
+        end
+    end
+    state.paintScheduled = true
+    C_Timer.After(0, state.paintJob)
+end
+
+local function OnNativeGroupShown()
+    for _, state in pairs(CommonArt.owners) do Dispatch(ApplyDeferred, state) end
+end
+
+local function ArmFinder(state)
+    if not CommonArt.groupShowHooked then
+        -- PVEFrame_ShowFrame shows the shell before it selects and shows the
+        -- group page. Queue the paint outside that native call stack.
+        CommonArt.groupShowHooked = Kit.HookGlobal("GroupFinderFrame_ShowGroupFrame", OnNativeGroupShown)
+    end
+    ScheduleDungeonReady(state)
+    if not Kit.DeferHidden(Resolve("PVEFrame"), state, ApplyDeferred, state, nil, nil, 20) then
+        ApplyDeferred(state)
+    end
+    return true, "waiting"
+end
+
+local function OnGroupFinderLoaded()
+    CommonArt.waitingForGroupFinder = false
+    if not PVEFrame then return end
+    for _, state in pairs(CommonArt.owners) do
+        if state.active then Dispatch(ArmFinder, state) end
+    end
 end
 
 function CommonArt.Apply(owner)
+    if NS.Client.isForever then return true, "disabled" end
     local state = Owners.State(owner)
     if not state.active then
         state.active = true
         CommonArt.activeOwnerCount = CommonArt.activeOwnerCount + 1
     end
-    -- Blizzard_GroupFinder is a non-LoD Mainline addon. A missing root here is
-    -- therefore an incompatible/missing client surface, not a reason to keep a
-    -- second ADDON_LOADED dispatcher alive.
-    if not _G.PVEFrame then
-        return false, "missing"
+    state.painted = false
+    if PVEFrame then return ArmFinder(state) end
+    if NS.Client.IsAddOnLoaded(GROUP_FINDER_ADDON) then return false, "missing" end
+    if not CommonArt.waitingForGroupFinder then
+        CommonArt.waitingForGroupFinder = true
+        EventUtil.ContinueOnAddOnLoaded(GROUP_FINDER_ADDON, OnGroupFinderLoaded)
     end
-    if NS.IsCombatLocked() then
-        return false, "combat"
-    end
-    return ApplyNow(state)
+    return true, "waiting"
 end
 
 local function UnregisterScrollBoxes()

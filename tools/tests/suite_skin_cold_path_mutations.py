@@ -49,9 +49,8 @@ CASES = [
      '        NS.CombatGate.RunOrDefer(registration.key, registration.refreshRows)', '',
      "combat first show lost the pending ScrollBox catchup", False),
     ("common-final-order", "CommonArt.lua",
-     'if Kit.DeferHidden(Resolve("PVEFrame"), state, ApplyDeferred, state, nil, nil, 20) then return true, "waiting" end',
-     'if Kit.DeferHidden(Resolve("PVEFrame"), state, ApplyDeferred, state, nil, nil, -20) then return true, "waiting" end',
-     "hidden Group Finder reversed the final CommonArt navigation style", False),
+     '    C_Timer.After(0, state.paintJob)', '    state.paintJob()',
+     "Group Finder painted before Blizzard's opening returned", False),
     ("common-lost-combat", "CommonArt.lua",
      '        NS.CombatGate.RunOrDefer(registration.key, registration.refreshRows)', '',
      "CommonArt did not restore every deferred row after combat", False),
@@ -63,11 +62,12 @@ CASES = [
      "sibling reveal erased a deferred frame error", False),
     ("common-card-cancellation", "CommonArt.lua",
      '''    if Kit.IsHidden(root) then
+        state.painted = false
         Kit.DeferHidden(root, state, ApplyDeferred, state, nil, nil, 20)
         return
     end''',
      '    if Kit.DeferHidden(root, state, ApplyDeferred, state, nil, nil, 20) then return end',
-     "hidden Group Finder reversed the final CommonArt navigation style", False),
+     "Group Finder lost a category updated while hidden", False),
     ("retained-catalog-metrics", "GenericWindowsCatalog.lua",
      '    result.applied, result.reason = applied, reason',
      '    result.applied, result.reason = applied, reason\n    result.retained = metrics',

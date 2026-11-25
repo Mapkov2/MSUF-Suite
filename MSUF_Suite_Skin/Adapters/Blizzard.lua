@@ -291,6 +291,13 @@ end
 
 local RunPart
 
+local function ApplyRetailGroupFinder(owner)
+    if not NS.Client.isForever and NS.GenericWindows.IsCategoryEnabled("group") then
+        return RunPart("CommonArt", "Apply", owner)
+    end
+    return true
+end
+
 local function AttachCombatWindow(definition)
     if definition and definition.id == "playerSpells" and NS.DB.enabled and DefinitionEnabled(definition) then
         local frame = NS.Safety.Field(_G, "PlayerSpellsFrame")
@@ -298,6 +305,7 @@ local function AttachCombatWindow(definition)
     elseif definition and definition.id == "worldMap" and NS.DB.enabled and DefinitionEnabled(definition) then
         NS.WorldMapSkin.AttachCombatQuestLog(NS.Safety.Field(_G, "WorldMapFrame"), definition.id)
     elseif definition and definition.id == "blizzardWindows" and NS.DB.enabled and DefinitionEnabled(definition) then
+        ApplyRetailGroupFinder(definition.id)
         RunPart("GenericWindows", "PrepareInteractionWindows", definition.id)
         if NS.GenericWindows.IsCategoryEnabled("social") then RunPart("SocialUISkin", "Apply", definition.id) end
     end
@@ -422,8 +430,6 @@ local windowParts = {
     { module = "SocialUISkin", tolerated = COMBAT_OR_WAITING, category = "social" },
     { module = "MajorWindows", tolerated = COMBAT_OR_WAITING },
     { module = "LegacyWindows", tolerated = COMBAT_OR_WAITING },
-    -- Forever's group finder has its own adapter below.
-    { module = "CommonArt", tolerated = COMBAT_ONLY, category = "group", excludeForever = true },
     { module = "ForeverGroupFinder", tolerated = COMBAT_ONLY },
     { module = "ForeverLegacyTree", tolerated = COMBAT_OR_WAITING },
 }
@@ -436,9 +442,6 @@ local windowPartsDisableOrder = {
 }
 
 local function PartEnabled(part)
-    if part.excludeForever and NS.Client.isForever then
-        return false
-    end
     return not part.category or NS.GenericWindows.IsCategoryEnabled(part.category)
 end
 
@@ -507,6 +510,8 @@ Adapters.Register({
     labelKey = "SKIN_BLIZZARD_WINDOWS",
     resolve = function() return NS.BlizzardCatalog end,
     apply = function(_, owner)
+        -- Arm the precise Retail pass before walking the full catalog.
+        local finderApplied, finderReason = ApplyRetailGroupFinder(owner)
         local genericApplied, genericReason = RunPart("GenericWindows", "ApplyAll", owner)
         if NS.TutorialPointers then
             if NS.GenericWindows.IsCategoryEnabled("tutorial") then
@@ -521,7 +526,7 @@ Adapters.Register({
         if not genericApplied then
             return false, genericReason
         end
-        if ApplyWindowParts(owner) then
+        if ApplyWindowParts(owner) or (not finderApplied and not COMBAT_OR_WAITING[finderReason]) then
             return true, "partial"
         end
         return true, genericReason

@@ -3355,6 +3355,8 @@ end)
 
 Section("common art", function()
     Load("CommonArt.lua")
+    local previousTimer = C_Timer
+    C_Timer = { After = function(_, callback) callback() end }
     _G.PVEFrame = Frame("PVEFrame")
     local list = Frame("LFGListFrame")
     _G.LFGListFrame = list
@@ -3372,6 +3374,7 @@ Section("common art", function()
         "a raising category card pass escaped into Blizzard's caller")
     NS.CommonArt.Disable("art")
     _G.PVEFrame, _G.LFGListFrame, _G.LFGListCategorySelection_UpdateCategoryButtons = nil, nil, nil
+    C_Timer = previousTimer
 end)
 
 Section("micro menu", function()
@@ -4906,6 +4909,13 @@ Section("hidden windows defer cosmetic work until visible", function()
     NS.CombatGate = savedGate
 
     Load("CommonArt.lua")
+    local previousFinderTimer, finderJobs = C_Timer, {}
+    C_Timer = { After = function(_, callback) finderJobs[#finderJobs + 1] = callback end }
+    local function RunFinderJobs()
+        local waiting = finderJobs
+        finderJobs = {}
+        for _, callback in ipairs(waiting) do callback() end
+    end
     local oldCategoryHook = _G.LFGListCategorySelection_UpdateCategoryButtons
     _G.LFGListCategorySelection_UpdateCategoryButtons = function() end
     local oldPVE, oldNavigation, oldButton = _G.PVEFrame, _G.GroupFinderFrame, NS.ControlSkin.ApplyButton
@@ -4924,6 +4934,8 @@ Section("hidden windows defer cosmetic work until visible", function()
         NS.MajorWindows.Apply(owner)
         NS.CommonArt.Apply(owner)
         if not shown then finder:Display(true) end
+        Expect(#finderJobs == 1, "Group Finder painted before Blizzard's opening returned")
+        RunFinderJobs()
         local spec = navigation.groupButton1.lastSpec
         Expect(spec and spec.radius == 8 and spec.pillHeight == 48 and spec.activeRole == nil,
             "hidden Group Finder reversed the final CommonArt navigation style")
@@ -4933,9 +4945,20 @@ Section("hidden windows defer cosmetic work until visible", function()
         NS.CommonArt.Apply(owner)
         navigation.groupButton1.lastSpec = nil
         finder:Display(true)
+        RunFinderJobs()
         spec = navigation.groupButton1.lastSpec
         Expect(spec and spec.radius == 8 and spec.pillHeight == 48,
             "hidden settings refresh changed the Group Finder's final navigation style")
+        local previousList = _G.LFGListFrame
+        local category = Frame("LatePremadeCategory")
+        local selection = { CategoryButtons = { category } }
+        _G.LFGListFrame = { CategorySelection = selection }
+        finder:Display(false)
+        _G.LFGListCategorySelection_UpdateCategoryButtons(selection)
+        finder:Display(true)
+        RunFinderJobs()
+        Expect(category.lastSpec, "Group Finder lost a category updated while hidden")
+        _G.LFGListFrame = previousList
         NS.CommonArt.Disable(owner)
         NS.MajorWindows.Disable(owner)
         GenericWindows.Disable(owner)
@@ -4961,6 +4984,7 @@ Section("hidden windows defer cosmetic work until visible", function()
     }
     GenericWindows.ApplyFrame(Frame("GenericRowsHost", { pooled }), "shared-rows", MODE)
     NS.CommonArt.Apply("shared-rows")
+    RunFinderJobs()
     pooled:Initialize(pooled.rows[1])
     Expect(not pooled.rows[1].lastSpec and not pooled.rows[2].lastSpec, "CommonArt painted hidden finder rows")
     locked = true
@@ -4985,6 +5009,7 @@ Section("hidden windows defer cosmetic work until visible", function()
     Expect(pooled.rows[1].lastSpec == nil and next(rowJobs) == nil, "disabled CommonArt retained row work")
     NS.CombatGate, _G.LFGListFrame = nativeGate, oldList
     _G.LFGListCategorySelection_UpdateCategoryButtons = oldCategoryHook
+    C_Timer = previousFinderTimer
 
     local retained = setmetatable({}, { __mode = "v" })
     local metricOwner = { deferred = {} }
