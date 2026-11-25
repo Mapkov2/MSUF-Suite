@@ -6,7 +6,8 @@ local BAG = Enum.BagIndex.ReagentBag
 
 function Reagent.Enabled(c)
     local view, modes = c.inventoryView, NS.BagsView
-    return view ~= modes.BLIZZARD_GRID and (view == modes.SINGLE or c.combineReagentBag == true) and not S.GamepadUI()
+    return view ~= modes.BLIZZARD_GRID and (NS.BagsViewsWithReagents[view] or c.combineReagentBag == true)
+        and not S.GamepadUI()
 end
 
 local function Changed()

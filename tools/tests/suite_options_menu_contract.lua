@@ -988,6 +988,11 @@ do
         shortcut.scripts.OnClick(shortcut)
         assert(target == "msufsuite.bags.inventoryView" and bags.inventoryView == views.SINGLE,
             "One bag did not focus the inventory view before the disabled merge switch")
+        target, bags.inventoryView, bags.combineReagentBag = nil, views.REAGENT_SECTION, false
+        optionsNS.Refresh()
+        shortcut.scripts.OnClick(shortcut)
+        assert(target == "msufsuite.bags.inventoryView" and not optionsNS.RuleEnabled("bags", position),
+            "the reagent section did not link back to the inventory view")
         M.SearchBridge.OpenSearchTarget = function() return true, true, false, false end
         ctx.suiteWorkspace.select("layout")
         shortcut.scripts.OnClick(shortcut)

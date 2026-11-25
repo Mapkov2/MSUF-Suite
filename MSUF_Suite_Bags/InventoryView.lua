@@ -2,6 +2,7 @@ local _, P = ...
 local NS, S, M = P.NS, P.Suite, P.BagsModule
 local Model, Index, Grid, FreeSlots = P.InventoryModel, P.InventoryIndex, P.GridView, P.FreeSlots
 local VIEW, Keyring = NS.BagsView, P.KeyringInventory
+local ONE_BAG = NS.BagsViewsWithReagents
 -- Recorded inventories (OfflineInventory.lua); absent in partial loads.
 local Offline = P.BagOffline
 local Recent = P.BagRecentCounts
@@ -119,7 +120,9 @@ Render = function(delta)
 end
 
 local function BuildModel(state)
-    if M.config.inventoryView == VIEW.SINGLE or M.config.inventoryView == VIEW.CATEGORIES and M.config.collapseCategorySidebar then
+    local config = M.config
+    local mode = config.inventoryView
+    if ONE_BAG[mode] or mode == VIEW.CATEGORIES and config.collapseCategorySidebar then
         InventoryView.selected = "all"
     end
     -- A recorded inventory (OfflineInventory.lua) builds the same model from
@@ -136,7 +139,7 @@ local function BuildModel(state)
     InventoryView.context.query = InventoryView.smartQuery
     InventoryView.context.hasKeyring = InventoryView.index.hasKeyring
     InventoryView.context.hasReagent = P.ReagentInventory and P.ReagentInventory.active
-    InventoryView.selected = Grid.Build(Model, InventoryView.model, InventoryView.index.items, M.config, state, InventoryView.context, InventoryView.selected)
+    InventoryView.selected = Grid.Build(Model, InventoryView.model, InventoryView.index.items, config, state, InventoryView.context, InventoryView.selected)
 end
 
 -- event is the client event that asked for this pass, if any.
@@ -155,7 +158,8 @@ Flush = function(event)
     end
     local state = State()
     if not state then return end
-    if P.ReagentInventory and (M.config.combineReagentBag or M.config.inventoryView == VIEW.SINGLE or P.ReagentInventory.active) then
+    if P.ReagentInventory and (M.config.combineReagentBag or ONE_BAG[M.config.inventoryView]
+        or P.ReagentInventory.active) then
         P.ReagentInventory.Prepare()
     end
     Index.ReadContainer(InventoryView.index, InventoryView.frame, Index.Recent())

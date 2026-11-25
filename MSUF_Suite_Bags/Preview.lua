@@ -1,5 +1,5 @@
 local _, P = ...
-local S, Model = P.Suite, P.InventoryModel
+local NS, S, Model = P.NS, P.Suite, P.InventoryModel
 local SAMPLES = {
     { 135274, 4, 450, 1, 4, "INVTYPE_HEAD", true },
     { 132529, 3, 437, 1, 4, "INVTYPE_HEAD" },
@@ -30,16 +30,27 @@ function S.BagsNewPreview()
         item.bag, item.bagName, item.reagentBag = Enum.BagIndex.ReagentBag, S.Text("Reagent bag"), true
         preview.reagentItems[i] = item
     end
+    if NS.Client.isForever then
+        local key = #SAMPLES + #preview.reagentItems + 1
+        preview.keyringItem = {
+            itemID = key, key = key, slot = 1, bag = KEYRING_CONTAINER, keyring = true,
+            bagName = KEYRING, name = KEYRING, icon = 134235, quality = 1, count = 1,
+        }
+    end
     return preview
 end
 
 function S.BagsPreviewLayout(preview, config, bank, geometry)
     local c = preview.config
     for key, value in pairs(config) do c[key] = value end
-    local reagent = not bank and (c.combineReagentBag or c.inventoryView == P.NS.BagsView.SINGLE)
+    local oneBag = NS.BagsViewsWithReagents[c.inventoryView]
+    local reagent = not bank and (c.combineReagentBag or oneBag)
     for i = 1, #preview.reagentItems do
         preview.items[#SAMPLES + i] = reagent and preview.reagentItems[i] or nil
     end
+    local sectioned = not bank and c.inventoryView == NS.BagsView.REAGENT_SECTION
+    local keyring = sectioned and preview.keyringItem or nil
+    preview.items[#SAMPLES + #preview.reagentItems + 1] = keyring
     if bank then
         Model.BankConfig(c, config)
         local view = P.BankInventory
@@ -48,10 +59,12 @@ function S.BagsPreviewLayout(preview, config, bank, geometry)
     else
         preview.width = nil
         if geometry then c.inventoryColumns = geometry.columns end
-        if P.BagPresentation.IsPanel(c) or c.inventoryView == P.NS.BagsView.SINGLE then c.compactGroups = false end
+        if P.BagPresentation.IsPanel(c) or oneBag then c.compactGroups = false end
     end
     preview.context = preview.context or {}
     preview.context.hasReagent = reagent
+    preview.context.hasKeyring = keyring ~= nil
+    preview.context.physicalSlots = sectioned and NS.BagsPhysicalOrder(c)
     Model.Build(preview.model, preview.items, c, preview.state, preview.context)
     return Model.Layout(preview.model, c.inventoryColumns, c.compactGroups)
 end

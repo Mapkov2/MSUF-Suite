@@ -16,9 +16,12 @@ Enum = { ItemClass = { Consumable = 0, Container = 1, Weapon = 2, Gem = 3, Armor
 -- Each named mode is the position of its label in the setting's choice list.
 do
     local rules = catalog.SuiteCatalog.bags.rules
+    local _, forever = Support.CatalogDefaults(root, "bags", nil, { isForever = true })
+    assert(forever.SuiteCatalog.bags.rules.inventoryView.choices[catalog.BagsView.REAGENT_SECTION]
+        == "One bag, reagent bag and keyring", "Forever's sectioned view must name the keyring at the saved choice index")
     local NAMES = {
         { "inventoryView", catalog.BagsView, { ALL = "All items", BY_BAG = "By bag", CATEGORIES = "Categories",
-            BLIZZARD_GRID = "Blizzard grid", SINGLE = "One bag" } },
+            BLIZZARD_GRID = "Blizzard grid", SINGLE = "One bag", REAGENT_SECTION = "One bag with reagent section" } },
         { "bankView", catalog.BagsBankView, { TABS = "Bank tabs", CHARACTER = "Combined bank",
             WARBANK = "Combined warbank", CATEGORIES = "Bank categories" } },
         { "sortDirection", catalog.BagsSortDirection, { BLIZZARD = "Blizzard setting", FROM_TOP = "Fill from the top",

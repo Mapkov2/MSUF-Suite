@@ -2,7 +2,8 @@ local _, P = ...
 local NS, S, M = P.NS, P.Suite, P.BagsModule
 local Grid, Model, Index = P.GridView, P.InventoryModel, P.InventoryIndex
 local Font, Button, VIEW = Grid.Font, Grid.Button, NS.BagsView
-local VIEW_NAMES = { "All items", "By bag", "Categories", "Blizzard grid", "One bag" }
+local ONE_BAG = NS.BagsViewsWithReagents
+local TAB_NAMES = { "All items", "By bag", "Categories" }
 local ALL, PINNED = { label = "All items", translate = true }, { label = "Pinned items", translate = true }
 local Controls = {}
 P.InventoryControls = Controls
@@ -206,12 +207,16 @@ local function BagSettings(_, menu)
         for view = VIEW.ALL, VIEW.CATEGORIES do
             local choice = view
             if choice ~= M.config.inventoryView then
-                menu:CreateButton(S.Text(VIEW_NAMES[choice]), function() SelectView(choice) end)
+                menu:CreateButton(S.Text(TAB_NAMES[choice]), function() SelectView(choice) end)
             end
         end
     end
     if M.config.inventoryView ~= VIEW.SINGLE then
         menu:CreateButton(S.Text("One bag"), function() SelectView(VIEW.SINGLE) end)
+    end
+    if M.config.inventoryView ~= VIEW.REAGENT_SECTION then
+        local choices = NS.SuiteCatalog.bags.rules.inventoryView.choices
+        menu:CreateButton(S.Text(choices[VIEW.REAGENT_SECTION]), function() SelectView(VIEW.REAGENT_SECTION) end)
     end
     menu:CreateButton(S.Text("Edit categories"), EditCategories)
     if CanClearRecent() then
@@ -275,7 +280,7 @@ function Controls.Create()
     InventoryView.tabs = {}
     -- The Suite views: the first three inventoryView choices.
     for view = VIEW.ALL, VIEW.CATEGORIES do
-        local button = Button(InventoryView.chrome, VIEW_NAMES[view], 88, ViewSelected)
+        local button = Button(InventoryView.chrome, TAB_NAMES[view], 88, ViewSelected)
         button.view, button.bagNavigation = view, true
         button:HookScript("OnEnter", ViewTip)
         button:HookScript("OnLeave", GameTooltip_Hide)
@@ -305,7 +310,9 @@ function Controls.Create()
 end
 
 function Controls.Sidebar()
-    if M.config.inventoryView == VIEW.SINGLE or M.config.inventoryView == VIEW.CATEGORIES and M.config.collapseCategorySidebar then
+    local config = M.config
+    local mode = config.inventoryView
+    if ONE_BAG[mode] or mode == VIEW.CATEGORIES and config.collapseCategorySidebar then
         P.BagTabSelection.HideList(InventoryView)
         return
     end

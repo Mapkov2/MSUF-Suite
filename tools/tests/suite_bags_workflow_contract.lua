@@ -303,6 +303,12 @@ for _, presentation in ipairs({ 1, 2 }) do
     W.Settle()
     assert(V.model.flat and #W.taint == 0 and #W.combatLayout == 0, "one bag lost its combat recovery")
     Click(W, V.manage)
+    local sectionedLabel = W.NS.Client.isForever and "One bag, reagent bag and keyring" or "One bag with reagent section"
+    assert(menus[sectionedLabel], "the gear did not show the catalog's sectioned view label")()
+    W.Settle()
+    assert(W.config.inventoryView == modes.REAGENT_SECTION and V.model.groupsByKey.reagentBag,
+        "the labelled option did not open the sectioned view")
+    Click(W, V.manage)
     assert(menus["Categories"], "one bag has no way back to categories")
     menus["Categories"]()
     W.Settle()

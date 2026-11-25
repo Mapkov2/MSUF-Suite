@@ -140,13 +140,14 @@ Constants = { InventoryConstants = { NumBagSlots = 4, NumReagentBagSlots = 1 } }
 local _, catalog = dofile(root .. "/tools/tests/suite_test_support.lua").CatalogDefaults(root, "bags")
 local P = { Suite = S, NS = { Safety = {IsForbidden=function() return false end}, IsSecret = function() return false end, IsCombatLocked = function() return combat end, BagsPresentation = catalog.BagsPresentation, BagsView = catalog.BagsView,
     BagsSort = catalog.BagsSort, BagsPhysicalOrder = catalog.BagsPhysicalOrder,
+    BagsViewsWithReagents = catalog.BagsViewsWithReagents,
     InCombat = function(event)
         if event == "PLAYER_REGEN_DISABLED" then return true end
         if event == "PLAYER_REGEN_ENABLED" then return false end
         return combat
     end,
     Client = { SupportsEvent = function() return true end } }, BagsModule = module,
-    BagMotion = { StopAll = function() end },
+    BagMotion = { StopAll = function() end, UpdateNextHint = function() end, StopNextHint = function() end },
     -- This fixture isolates grid/coalescing; real tab motion uses the full harness.
     BagTabSelection = { Refresh = function() end, List = function() end, HideList = function() end },
     BagFinance = { Refresh = function() end },

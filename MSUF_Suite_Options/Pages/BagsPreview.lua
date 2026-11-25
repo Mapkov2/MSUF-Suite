@@ -140,7 +140,8 @@ end
 
 local function PaintItem(slot, item, c, bank, native)
     slot.icon:SetTexture(item.icon)
-    slot.level:SetText(item.itemLevel > 0 and tostring(item.itemLevel) or "")
+    local itemLevel = item.itemLevel
+    slot.level:SetText(itemLevel and itemLevel > 0 and tostring(itemLevel) or "")
     slot.count:SetText(item.count > 1 and tostring(item.count) or "")
     slot.level:SetShown(bank and c.showBankItemLevel or not bank and c.showItemLevel)
     slot.arrow:SetShown(not native and c.showUpgradeMarker and item.upgrade == true)

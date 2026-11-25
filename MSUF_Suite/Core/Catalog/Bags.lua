@@ -31,7 +31,8 @@ NS.BagsAnimation = { OFF = 1, SIMPLE = 2, FULL = 3 }
 NS.BagsPresentation = { WINDOW = 1, PANEL = 2 }
 NS.BagsBorderStyle = { DEFAULT = 1, CUSTOM = 2 }
 NS.BagsGoldPeriod = { SESSION = 1, TODAY = 2, BOTH = 3 }
-NS.BagsView = { ALL = 1, BY_BAG = 2, CATEGORIES = 3, BLIZZARD_GRID = 4, SINGLE = 5 }
+NS.BagsView = { ALL = 1, BY_BAG = 2, CATEGORIES = 3, BLIZZARD_GRID = 4, SINGLE = 5, REAGENT_SECTION = 6 }
+NS.BagsViewsWithReagents = { [NS.BagsView.SINGLE] = true, [NS.BagsView.REAGENT_SECTION] = true }
 NS.BagsBarVisibility = { ALWAYS = 1, OUT_OF_COMBAT = 2, IN_COMBAT = 3, MOUSEOVER = 4, NEVER = 5 }
 -- Unit-frame conditions that the secure macro parser can evaluate on both clients.
 NS.BagsBarConditions = {
@@ -56,7 +57,7 @@ end
 B.Section("bags", "bagBar", "Visibility State Driver", bagBarRules)
 function NS.BagsPhysicalOrder(config)
     local view = config.inventoryView
-    return NS.Client.isForever and (view == NS.BagsView.ALL or view == NS.BagsView.SINGLE)
+    return NS.Client.isForever and (view == NS.BagsView.ALL or NS.BagsViewsWithReagents[view] == true)
 end
 NS.BagsBankView = { TABS = 1, CHARACTER = 2, WARBANK = 3, CATEGORIES = 4 }
 NS.BagsSortDirection = { BLIZZARD = 1, FROM_TOP = 2, FROM_BOTTOM = 3 }
@@ -147,6 +148,7 @@ B.Section("bags", "window", "Combined bag window", {
 B.Section("bags", "organisation", "Inventory organisation", {
     B.Choice("inventoryView", "Default inventory view", NS.BagsView.ALL, {
         "All items", "By bag", "Categories", "Blizzard grid", "One bag",
+        NS.Client.isForever and "One bag, reagent bag and keyring" or "One bag with reagent section",
     }),
     B.Bool("collapseCategorySidebar", "Collapse category sidebar"),
     B.Bool("combineReagentBag", "Combine reagent bag with backpack"),
@@ -261,6 +263,7 @@ if NS.Client.isForever and UnitClass and NS.Public then
 end
 rules.desaturateInactiveQuestItems.requiresChoice = { key = "inventoryView", values = {
     [NS.BagsView.ALL] = true, [NS.BagsView.BY_BAG] = true, [NS.BagsView.CATEGORIES] = true, [NS.BagsView.SINGLE] = true,
+    [NS.BagsView.REAGENT_SECTION] = true,
 } }
 -- The bank views and the bank window exist on Retail only.
 for _, key in ipairs({ "bankWindowScale", "bankWindowMoved", "bankWindowX", "bankWindowY" }) do
@@ -282,6 +285,7 @@ rules.panelFullHeight.requiresChoice = { key = "windowPresentation", values = { 
 -- The bag list replaces a Suite grid; Blizzard's own grid has none.
 rules.listView.requiresChoice = { key = "inventoryView", values = {
     [NS.BagsView.ALL] = true, [NS.BagsView.BY_BAG] = true, [NS.BagsView.CATEGORIES] = true, [NS.BagsView.SINGLE] = true,
+    [NS.BagsView.REAGENT_SECTION] = true,
 } }
 rules.bankListView.requiresChoice = { key = "bankView", values = {
     [NS.BagsBankView.CHARACTER] = true, [NS.BagsBankView.WARBANK] = true, [NS.BagsBankView.CATEGORIES] = true,

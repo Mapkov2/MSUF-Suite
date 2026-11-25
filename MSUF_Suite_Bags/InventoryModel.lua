@@ -459,6 +459,11 @@ local function PhysicalGroup(item)
     return "all", "All items", 2, nil, true
 end
 
+local function ReagentSectionGroup(item)
+    if item.reagentBag then return "reagentBag", "Reagent bag", 180, nil, true end
+    return PhysicalGroup(item)
+end
+
 local function FlatGroup()
     return "all", "All items", 2, nil, true
 end
@@ -558,8 +563,8 @@ function Model.Build(model, items, config, state, context)
         KeyCategories(model)
         if state.collapsed then PruneCollapsed(model, state.collapsed) end
     end
-    -- The Forever One Bag renders the same stable slots that Blizzard sorts.
-    -- Other views can group items or show a combined count over multiple slots.
+    -- Physical views follow the slots that Blizzard sorts. Other views can
+    -- show a combined count over multiple slots.
     local physical = context and context.physicalSlots
     local merge
     if not physical and not (context and context.transactions) then
@@ -571,8 +576,9 @@ function Model.Build(model, items, config, state, context)
         end
     end
     local selected = context and context.selected
-    local categories = config.inventoryView == CATEGORIES
-    model.flat = config.inventoryView == VIEW.SINGLE
+    local mode = config.inventoryView
+    local categories = mode == CATEGORIES
+    model.flat = mode == VIEW.SINGLE
     local showSets = categories and config.groupEquipmentSets and config.category_equipment ~= false
     local query = context and context.query
     if query and not query:find("%S") then query = nil end
@@ -582,7 +588,9 @@ function Model.Build(model, items, config, state, context)
     -- searching: Blizzard's search marks non-matching slots isFiltered.
     local searching = context and context.searching
     local special = context and (context.hasKeyring or context.hasReagent)
-    local groupForItem = model.flat and FlatGroup or physical and (context.hasReagent and PhysicalReagentGroup or PhysicalGroup)
+    local groupForItem = model.flat and FlatGroup
+        or mode == VIEW.REAGENT_SECTION and ReagentSectionGroup
+        or physical and (context.hasReagent and PhysicalReagentGroup or PhysicalGroup)
         or special and ItemGroupWithKeyring or ItemGroup
     for i = 1, #items do
         local item = items[i]

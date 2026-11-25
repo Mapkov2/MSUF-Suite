@@ -70,7 +70,7 @@ end
 local function ReagentPositionBlocker()
     local view, modes = P.Get(ID, "inventoryView"), P.Suite.BagsView
     if view == modes.BLIZZARD_GRID or not OpensBags() then return end
-    if view == modes.SINGLE then return "inventoryView" end
+    if P.Suite.BagsViewsWithReagents[view] then return "inventoryView" end
     if P.Get(ID, "combineReagentBag") then return "combineReagentBag" end
 end
 

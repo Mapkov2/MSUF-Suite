@@ -258,5 +258,19 @@ W.config.combineReagentBag=true;ui.refreshPreview()
 assert(preview.snapshot.model.groupsByKey.reagentBag,"combined reagent section missing from preview")
 W.config.combineReagentBag=false;ui.refreshPreview()
 assert(not preview.snapshot.model.groupsByKey.reagentBag,"disabled integration persists in preview")
+W.config.inventoryView = W.NS.BagsView.REAGENT_SECTION
+W.config.inventoryRows = 8
+ui.refreshPreview()
+local groups = preview.snapshot.model.groups
+assert(groups[1].key == "all" and groups[2].key == "reagentBag", "sectioned preview did not place reagents below the bags")
+if W.NS.Client.isForever then
+ assert(groups[3] and groups[3].key == "keyring", "Forever preview did not place the keyring below reagents")
+ local key = preview.snapshot.keyringItem
+ local slot = preview.slots[key.itemID]
+ assert(slot and slot:IsVisible() and slot.icon:GetTexture() == key.icon, "the preview did not render the key")
+ assert(slot.level:GetText() == "", "the preview key showed an item level")
+else
+ assert(#groups == 2, "Retail preview showed a keyring")
+end
 assert(W.calls.info==0 and W.calls.quest==0,"representative menu preview scans inventory")
 print("independent Bags menu geometry/routing/cold/hidden/provider checks passed: "..(arg[2] or "Mainline"))

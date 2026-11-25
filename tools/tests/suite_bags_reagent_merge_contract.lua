@@ -33,6 +33,53 @@ local function Merged(W)
         assert(button:IsVisible(),"reagent slot is unreachable")
     end
 end
+
+do
+    local savedKeyring, savedSize = KEYRING_CONTAINER, GetKeyRingSize
+    KEYRING_CONTAINER = -2
+    local W = Ready(false, false)
+    local view, modes = W.P.InventoryView, W.NS.BagsView
+    W.config.compactGroups = true
+    local keyring = W.NS.Client.isForever
+    local nativeShouldShow, nativeCVar = C_ActionBar.ShouldShowKeyring, GetCVarBool
+    if keyring then
+        C_ActionBar.ShouldShowKeyring = function() return true end
+        GetCVarBool = function(name) return name == "showKeyring" or nativeCVar(name) end
+        GetKeyRingSize = function() return W.sizes[KEYRING_CONTAINER] end
+        W.sizes[KEYRING_CONTAINER] = 2
+        W.Define(103, { name = "Key" })
+        W.Put(KEYRING_CONTAINER, 1, 103)
+    end
+    assert(W.S.Set("bags", "inventoryView", modes.REAGENT_SECTION))
+    W.OpenBags(); W.Settle()
+    local groups = view.model.groups
+    assert(W.P.ReagentInventory.active and W.Reagent:GetAlpha() == 0 and not W.config.combineReagentBag,
+        "the sectioned view did not integrate reagents independently")
+    assert(groups[1].key == "all" and #groups[1].rows == 8
+        and groups[2].key == "reagentBag" and #groups[2].rows == 4
+        and #groups == (keyring and 3 or 2), "ordinary and reagent slots did not stay in their own sections")
+    if keyring then assert(groups[3].key == "keyring" and #groups[3].rows == 2, "the keyring did not follow reagents") end
+    local headers = {}
+    for _, cell in ipairs(view.model.layout) do
+        if not cell.row then headers[#headers + 1] = cell end
+    end
+    assert(#headers == #groups and headers[2].line > headers[1].line and headers[2].column == 0,
+        "compact grouping placed the reagent header beside ordinary slots")
+    if keyring then assert(headers[3].line > headers[2].line and headers[3].column == 0) end
+    W.Search(function(item) return item.id == 102 end); W.Settle()
+    assert(#groups == 1 and groups[1].key == "reagentBag", "search showed sections without matches")
+    W.Search(nil); W.Settle()
+    W.EnterCombat(); W.LeaveCombat(); W.Settle()
+    assert(groups[2].key == "reagentBag", "combat recovery lost the reagent section")
+    assert(W.S.Set("bags", "inventoryView", modes.ALL))
+    W.Settle()
+    assert(not W.P.ReagentInventory.active and W.Reagent.Items[1]:GetParent() == W.Reagent,
+        "returning to All items retained the integrated slots")
+    Clean(W)
+    KEYRING_CONTAINER, GetKeyRingSize = savedKeyring, savedSize
+    C_ActionBar.ShouldShowKeyring, GetCVarBool = nativeShouldShow, nativeCVar
+end
+
 for _, view in ipairs({1,2,3}) do
     local W = World(false)
     W.config.inventoryView=view

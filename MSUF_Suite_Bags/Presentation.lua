@@ -1,5 +1,6 @@
 local _, P = ...
 local NS = P.NS
+local ONE_BAG = NS.BagsViewsWithReagents
 local Presentation = { CELL = 40, RAIL = 112, PAD = 16 }
 P.BagPresentation = Presentation
 local max, min, floor, ceil = math.max, math.min, math.floor, math.ceil
@@ -13,7 +14,7 @@ function Presentation.HasSidebar(c)
 end
 
 function Presentation.Rail(c)
-    if Presentation.IsPanel(c) and c.inventoryView ~= NS.BagsView.SINGLE
+    if Presentation.IsPanel(c) and not ONE_BAG[c.inventoryView]
         and not (c.inventoryView == NS.BagsView.CATEGORIES and c.collapseCategorySidebar) then
         return Presentation.RAIL
     end
@@ -89,11 +90,12 @@ function Presentation.Measure(out, c, width, available, money, lines, drawer)
     end
     out.minimum, out.fullHeight = minimum, full
     out.panel, out.rail, out.top, out.bottom = panel, rail, top, bottom
-    out.sidebarShown, out.hideTabs = sidebarShown, c.inventoryView == NS.BagsView.SINGLE or panel and rail == 0
+    local oneBag = ONE_BAG[c.inventoryView]
+    out.sidebarShown, out.hideTabs = sidebarShown, oneBag or panel and rail == 0
     out.columns, out.sidebar, out.rows = columns, sidebar, rows
     out.width = panel and rail + columns * 40 + 32 or max(620, sidebar + columns * 40 + 12)
     out.height = height
-    out.compact = not panel and c.compactGroups and c.inventoryView ~= NS.BagsView.SINGLE
+    out.compact = not panel and c.compactGroups and not oneBag
     return out
 end
 
