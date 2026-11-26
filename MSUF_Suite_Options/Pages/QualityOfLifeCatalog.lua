@@ -124,6 +124,8 @@ local GROUPS = {
     { id = "combatPetStatus", title = "Pet status warning", switch = "enabled", sections = { "pet_status" } },
     { id = "professionAppearance", title = "Profession appearance remover (Retail)", switch = "enabled",
         sections = { "profession_outfits" } },
+    { id = "professionHints", title = "Profession hints (Forever)", switch = "enabled",
+        sections = { "profession_hints" }, aliases = { "profession leveling", "skill bar", "berufshinweise", "berufe leveln" } },
     { id = "combatMovementCue", title = "Movement ability cue (Retail)", switch = "enabled",
         sections = { "movement_cue" } },
     { id = "burningRushCue", title = "Burning Rush cue (Retail Warlock)", switch = "enabled",
@@ -195,7 +197,7 @@ return {
     } },
     { id = "questsProfessions", title = "Quests & Professions", subgroups = {
         Subgroup("quests", "Quests", "quests dialogKeys questRewardValue worldQuestTab"),
-        Subgroup("professions", "Professions", "trainerLearnAll fishingComfort professionAppearance gatheringTooltips"),
+        Subgroup("professions", "Professions", "trainerLearnAll fishingComfort professionAppearance gatheringTooltips professionHints"),
     } },
     { id = "groups", title = "Groups", subgroups = {
         Subgroup("groupRaid", "Group & Raid", "groupRaidShortcuts trustedPartyInvites autoResponses releaseProtection"),

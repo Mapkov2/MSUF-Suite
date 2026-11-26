@@ -49,6 +49,10 @@ TrainerLearnAll.lua
 AutoUprank.lua
 CharacterUpgradeWindow.lua
 ProfessionAppearance.lua
+ProfessionHintRecipes.lua
+ProfessionHintData.lua
+ProfessionHintAdvice.lua
+ProfessionHints.lua
 SharedItems.lua
 CheapestItem.lua
 InventoryToolsUI.lua

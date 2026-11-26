@@ -28,6 +28,12 @@ B.Module("foreverPartyMap", {
     defaultEnabled = true, page = "suite_qualityOfLife", available = Forever,
 })
 
+B.Module("professionHints", {
+    title = "Profession hints (Forever)",
+    description = "Hover over a profession skill bar for recipes, gathering zones, and where to learn the next rank.",
+    optIn = true, defaultEnabled = NS.Client.isForever == true, page = "suite_qualityOfLife", available = Forever,
+})
+
 Tooltips.Module("gatheringTooltips", {
     title = "Gathering tooltips (Forever)",
     description = "Show the required and current profession skill for known herbs and ore deposits.",

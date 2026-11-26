@@ -10,6 +10,7 @@ local HELP = {
         .. "Closing the window cancels your countdown when Blizzard allows it. Start the keystone with Blizzard's Start button.",
     forever_world_map = "Show known travel stops and roads on the world map. Click a marker to place a waypoint.",
     gathering_tooltips = "Red means your skill is too low. The other colors show how far you are above the requirement.",
+    profession_hints = "Hover over a profession skill bar for recipes, gathering zones, and where to learn the next rank.",
     castbar_art = "Adds a thin castbar frame and a dark spell-name panel below it. The Blizzard setup enables this artwork. "
         .. "Disable it to keep the MSUF castbar appearance.",
     glimmer_objects = "Quest item sparkle enables the game's own golden particles on eligible quest objects, including during "
