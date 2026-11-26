@@ -23,8 +23,8 @@ Standard.SOURCES = {
     fps = true, latency = true, coordinates = true, location = true, xp = true,
     date = true, fpsLatency = true, memory = true, homeLatency = true, progressBar = true, compass = true,
 }
-Standard.SAMPLED = { clock = true, coordinates = true, date = true, memory = true }
-Standard.INTERVAL = { coordinates = 0.5, memory = 30 }
+Standard.SAMPLED = { clock = true, coordinates = true, date = true }
+Standard.INTERVAL = { coordinates = 0.5 }
 -- Frame rate and latency retain the last reading between player and pointer
 -- events. World and combat visibility routes also sample when a bar shows.
 Standard.TELEMETRY = { fps = true, latency = true, homeLatency = true, fpsLatency = true }

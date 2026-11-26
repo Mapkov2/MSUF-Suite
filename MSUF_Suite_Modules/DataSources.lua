@@ -123,7 +123,7 @@ end
 
 ------------------------------------------------------------------ shared samples
 local snapshots = {}
-local memoryScanTime, memoryTotalTime, memoryLoadObserver
+local memoryScanTime, memoryTotal, memoryRows, listedMemory
 local positionMap, positionUntil, positionX, positionY, movingUntil
 local worldX, worldY, worldZ, worldInstance
 
@@ -162,7 +162,6 @@ end
 function S.InvalidateSharedData(key)
     snapshots[key] = nil
     if key == "coordinates" then positionMap, movingUntil = nil, nil end
-    if key == "memory" then memoryScanTime, memoryTotalTime = nil, nil end
 end
 
 local function Project(map)
@@ -210,47 +209,39 @@ function S.ReadPlayerMapPosition(map, openWorld)
     return px, py
 end
 
-local function AddonLoaded()
-    if memoryScanTime ~= GetTime() then return end
-    -- A load can split a total and a tooltip within their shared frame.
-    -- Older totals keep their regular 30-second deadline.
-    if memoryTotalTime == memoryScanTime then snapshots.memory = nil end
-    memoryScanTime = nil
-end
-
--- The total and the detail tooltip read the same global measurement. A new
--- frame or a load-on-demand addon invalidates it even during a single hover.
+-- Blizzard's process-wide sample is synchronous. Only an explicit request
+-- takes it. The data text and the tooltip share the resulting snapshot.
 function S.RefreshAddonMemory()
     if not (GetAddOnMemoryUsage and UpdateAddOnMemoryUsage) then return end
-    if not memoryLoadObserver then
-        EventRegistry:RegisterFrameEventAndCallback("ADDON_LOADED", AddonLoaded, S)
-        memoryLoadObserver = true
-    end
     local now = GetTime()
-    if memoryScanTime ~= now then
-        UpdateAddOnMemoryUsage()
-        memoryScanTime = now
+    if memoryScanTime == now then return true end
+    local count = C_AddOns.GetNumAddOns()
+    if not Finite(count) then return end
+    UpdateAddOnMemoryUsage()
+    local rows, total, listed, complete = {}, 0, 0, true
+    for index = 1, count do
+        local usage = GetAddOnMemoryUsage(index)
+        if not Finite(usage) or usage < 0 then
+            complete = false
+        elseif usage > 0 then
+            total = total + usage
+            local name = C_AddOns.GetAddOnInfo(index)
+            if S.Public(name) and type(name) == "string" then
+                rows[#rows + 1] = { name = name, kb = usage }
+                listed = listed + usage
+            end
+        end
     end
+    memoryScanTime, memoryRows, listedMemory = now, rows, listed
+    memoryTotal = complete and total / 1024 or nil
     return true
 end
 
--- The readers call client APIs Retail and Forever both have; results that
--- are secret or out of range read as nil.
-local function AddonMemory()
-    if not S.RefreshAddonMemory() then return nil end
-    memoryTotalTime = memoryScanTime
-    local total, count = 0, C_AddOns.GetNumAddOns()
-    if not Finite(count) then return nil end
-    for index = 1, count do
-        local usage = GetAddOnMemoryUsage(index)
-        if not Finite(usage) or usage < 0 then return nil end
-        total = total + usage
-    end
-    return total / 1024
+function S.GetAddonMemoryReport()
+    return memoryRows, listedMemory
 end
 
 local readers = {
-    memory = AddonMemory,
     fps = function()
         local value = GetFramerate()
         return Finite(value) and value >= 0 and value or nil
@@ -315,7 +306,8 @@ local readers = {
 }
 
 function S.ReadInfoSource(key)
+    if key == "memory" then return memoryTotal end
     local reader = readers[key]
     if not reader then return nil end
-    return S.ReadSharedData(key, key == "memory" and 30 or .05, reader)
+    return S.ReadSharedData(key, .05, reader)
 end

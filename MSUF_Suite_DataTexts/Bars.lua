@@ -90,6 +90,11 @@ local function Click(button, mouse)
     if not button.source then return end
     if button.extra then
         Actions.Click(button, mouse or "LeftButton")
+    elseif button.source == "memory" then
+        if not M.paused and mouse == "LeftButton" and S.RefreshAddonMemory() then
+            M:UpdateSource("memory")
+            if GameTooltip:IsOwned(button) then Tooltip(button) end
+        end
     elseif not NS.IsCombatLocked() then
         Standard.Click(button, mouse)
     end

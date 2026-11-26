@@ -5,22 +5,14 @@ local function Descending(a, b)
     return a.kb > b.kb
 end
 
--- upstream/ptr PerformanceDocumentation and AddOnsDocumentation:
--- memory usage is KB; the refresh is a global API, addon metadata uses C_AddOns.
 function P.MemoryTooltip(tooltip)
-    if not S.RefreshAddonMemory() then return end
-    local rows, total = {}, 0
-    for index = 1, C_AddOns.GetNumAddOns() do
-        local kb = GetAddOnMemoryUsage(index)
-        if S.Finite(kb) and kb > 0 then
-            local name = C_AddOns.GetAddOnInfo(index)
-            if S.Public(name) and type(name) == "string" then
-                rows[#rows + 1] = { name = name, kb = kb }
-                total = total + kb
-            end
-        end
+    tooltip:AddLine(S.Text("Left-click") .. " - " .. S.Text("Refresh"), .7, .7, .7)
+    local rows, total = S.GetAddonMemoryReport()
+    if not rows then return end
+    if not rows.sorted then
+        table.sort(rows, Descending)
+        rows.sorted = true
     end
-    table.sort(rows, Descending)
     for _, row in ipairs(rows) do
         local share = row.kb / math.max(1, total)
         local unit = row.kb < 1024 and "KB" or "MB"
