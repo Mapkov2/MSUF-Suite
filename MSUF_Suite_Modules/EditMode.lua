@@ -234,7 +234,7 @@ local function Element(id, elementID, spec)
             return S.states[id].active and (not spec.isEnabled or spec.isEnabled())
                 and (not spec.visible or spec.visible()) and Frame() ~= nil
         end,
-        openSettings = function() return S.Open(id) end,
+        openSettings = spec.openSettings or function() return S.Open(id) end,
     }
     -- false drops the popup's W/H readout (hosts without the field show it).
     if spec.sizeSummary == false then element.sizeSummary = false end
@@ -269,7 +269,7 @@ end
 -- onPreviewMove() updates dependent surfaces after standard placement,
 -- move(x, y, request) handles a compound move or returns nil for the normal path,
 -- capture(origin) (live drag start x/y; undo keeps the saved values),
--- sizeSummary=false hides the popup's W/H readout where the controls say more.
+-- sizeSummary=false hides the popup's W/H readout. openSettings can route to this element's own page.
 -- Native owners supply nativePosition = { capture, restore, move } instead
 -- of profile keys and can provide their own extraControls.
 -- Returns true when MSUF Edit Mode accepted the element.

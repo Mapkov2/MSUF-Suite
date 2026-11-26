@@ -82,6 +82,9 @@ function methods:SetHeight(v) self.height = v end
 function methods:GetHeight() return self.height end
 function methods:SetSize(a, b) self.width, self.height = a, b end
 function methods:GetLeft() return self.left end
+function methods:GetRight() return self.right end
+function methods:GetFrameStrata() return self.strata or "MEDIUM" end
+function methods:SetFrameStrata(value) self.strata = value end
 function methods:GetStringHeight() return 14 end
 function methods:SetScript(name, fn) self.scripts[name] = fn end
 function methods:GetScript(name) return self.scripts[name] end
@@ -316,14 +319,6 @@ M.MenuTimer = { After = function(_, fn)
     tasks[task] = true
     return task
 end }
-M.PreviewSelectionBar = {
-    Create = function(box, deps) box.selectionDeps = deps; local bar = Widget("SelectionBar", box); box.selectionBar = bar; return bar end,
-    Refresh = function(box)
-        local handle = box._selectedHandle
-        if handle then box.selectionX, box.selectionY = box.selectionDeps.ReadOffsets(box, handle) else box.selectionX, box.selectionY = nil, nil end
-    end,
-    SetShown = function(box, shown) if box.selectionBar then box.selectionBar:SetShown(shown) end end,
-}
 M.ShouldExpandFixedPreview = function() return true end
 M.pages = {}
 M.Tr = function(text) return L[text] end
@@ -628,9 +623,30 @@ InstallRuntime = function()
         runtime.simulate = on == true and not runtime.refuse and not combat
         return runtime.simulate
     end
-    S.CooldownManagerSetPreview = function(on)
+    runtime.hud = {}
+    for _, slot in ipairs({ "ess", "buf", "c6" }) do
+        local anchor = Widget("Frame", UIParent)
+        local icon = Widget("Icon", anchor)
+        local key = slot == "ess" and "b1" or slot == "buf" and "b10" or false
+        runtime.hud[slot] = { anchor = anchor, icon = icon, key = key }
+    end
+    S.CooldownManagerEditorBar = function(slot, out)
+        local hud = runtime.hud[slot]
+        if not (hud and runtime.previewOn and Config()[slot .. "_on"]) then return false end
+        out.anchor, out.count, out.kind = hud.anchor, hud.count or 1, slot == "ess" and 1 or 2
+        local spell = hud.key and CATALOG[hud.key]
+        out.items[1], out.keys[1] = hud.icon, hud.key
+        out.tiles[1] = spell and { key = hud.key, name = spell.name, family = spell.family, texture = spell.texture } or nil
+        return true
+    end
+    S.CooldownManagerSetPreview = function(on, select, editor)
         if on and (runtime.inactive or combat) then return false end
-        runtime.previewOn = on == true
+        local previous = runtime.editor
+        runtime.previewOn, runtime.editor = on == true, on and editor or nil
+        if previous ~= runtime.editor then
+            if previous then previous(false) end
+            if runtime.editor then runtime.editor(true) end
+        end
         return true
     end
     S.CooldownManagerSpec = function() return runtime.specID, "Arcane", 135932 end
@@ -655,7 +671,7 @@ for _, file in ipairs({ "Menu/Bridge.lua", "Menu/MediaValues.lua", "Menu/Control
     "Pages/CooldownManagerBars.lua", "Pages/CooldownManagerFrames.lua", "Pages/CooldownManagerSections.lua", "Pages/CooldownManagerWidgets.lua", "Pages/CooldownManagerPicker.lua",
     "Pages/CooldownManagerSounds.lua", "Pages/CooldownManagerPopoverFields.lua",
     "Pages/CooldownManagerPopoverInputs.lua", "Pages/CooldownManagerPopover.lua",
-    "Pages/CooldownManagerPreviewIcons.lua", "Pages/CooldownManagerPreview.lua", "Pages/CooldownManagerOverrides.lua", "Pages/CooldownManagerInspection.lua", "Pages/CooldownManager.lua",
+    "Pages/CooldownManagerPreviewIcons.lua", "Pages/CooldownManagerScreen.lua", "Pages/CooldownManagerPreview.lua", "Pages/CooldownManagerOverrides.lua", "Pages/CooldownManagerInspection.lua", "Pages/CooldownManager.lua",
     "Pages/AppearanceKit.lua", "Pages/Appearance.lua", "Pages/Gameplay.lua", "Pages/NameplateFonts.lua", "Pages/QualityOfLifeOwners.lua", "Menu/Register.lua" }) do
     local chunk = assert(loadfile(root .. "/MSUF_Suite_Options/" .. file))
     if file:find("CooldownManager", 1, true) then setfenv(chunk, strict) end
@@ -686,7 +702,7 @@ spec.build(ctx)
 assert(ctx.pageItems[1] == "fixed-preview", "the docked preview must be the first page item")
 assert(ctx.sections[1].sectionId == PAGE .. "_cooldownManager_module" and ctx.sections[1].headerSwitch, "module card must follow the preview")
 -- Navigation clicks never take Menu2's full settings snapshot. Basics
--- is one block: the two module actions, the rules for every bar, then the
+-- is one block with module actions, the rules for every bar, then the
 -- bar choice (selector, + Add bar, Bar actions, name and type) and the
 -- selected bar's summary.
 local cardButtons = 0
@@ -718,6 +734,22 @@ M.RequestRefresh()
 assert(runtime.rendered and runtime.rendered.slot == "ess", "preview did not render the selected bar")
 assert(runtime.frame.points[1][1] == "CENTER", "preview frame is not centered on the stage")
 local ui = Page.ui
+do
+    function runtime.Surface(slot)
+        local anchor = runtime.hud[slot].anchor
+        for _, canvas in ipairs(anchor.children) do
+            for _, child in ipairs(canvas.children or {}) do
+                if child.ui and child.ui.slot == slot then return child.ui end
+            end
+        end
+    end
+    local essential, buff = assert(runtime.Surface("ess")), assert(runtime.Surface("buf"))
+    assert(essential.hits[1]:IsVisible() and essential.hits[1].points[1][2] == runtime.hud.ess.icon
+        and buff.hits[1].points[1][2] == runtime.hud.buf.icon and essential.plus:IsVisible(),
+        "opening CDM must mount buttons on its actual, visible icons")
+    assert(essential.hits[1].ui.drag.host.scripts.OnUpdate == nil and ui.screenEditor, "live editing armed idle work")
+    assert(registered["menu2." .. PAGE .. ".cooldownManager.action.editOnScreen"] == nil, "live editing needs no opt-in")
+end
 assert(ui.chips.ess.shown and ui.chips.ess.active and ui.chips.c1.shown == false and ui.addChip.shown,
     "bar chips must show enabled bars, the selection and + Add bar")
 assert(ui.addChip.role == "success"
@@ -887,27 +919,29 @@ for i, section in ipairs(ctx.sections) do
     order[i] = section.sectionId:gsub("^suite_cooldownManager_", "")
     if section.defaultOpen then openSections[#openSections + 1] = order[i] end
 end
-assert(table.concat(order, ",") == "cooldownManager_module,basics,spells,overrides,layout,look,text,effects,buffs,barstyle,visibility",
+assert(table.concat(order, ",") == "cooldownManager_module,basics,spells,layout,look,text,effects,buffs,barstyle,visibility",
     "unexpected section order: " .. table.concat(order, ","))
 assert(table.concat(openSections, ",") == "cooldownManager_module,basics", "only the module and bar Basics start open: "
     .. table.concat(openSections, ","))
-assert(ctx.sections[3].title == "Spell list", "the tile section is the Spell list")
-assert(ctx.sections[10].title == "Timer bar style", "the timer bar section says what it styles")
+assert(ctx.sections[3].title == "All spells", "the full list needs a distinct caption")
+assert(registered["menu2." .. PAGE .. ".cooldownManager.spells.add"] == ui.grid.plus,
+    "the grid plus must be the only Add spells target in its section")
+assert(ui.sections.barstyle.title == "Timer bar style", "the timer bar section says what it styles")
 assert(ctx.sections[2]._msuf2CollapsibleEntry.label.text == "Basics: Utility cooldowns"
-    and ctx.sections[5]._msuf2CollapsibleEntry.label.text:find("Utility cooldowns", 1, true),
+    and ui.sections.layout._msuf2CollapsibleEntry.label.text:find("Utility cooldowns", 1, true),
     "section headers do not name the selected bar")
 -- Basics holds the most used settings of the bar, the attachment complete.
 for _, suffix in ipairs({ "on", "size", "perRow", "laterPerRow", "laterSize", "maxIcons", "anchor", "side", "gap", "align", "alpha" }) do
     assert(Control(suffix).parent == ctx.sections[2], "Basics lacks " .. suffix)
 end
-assert(Control("grow").parent == ctx.sections[5] and Control("zoom").parent == ctx.sections[6],
+assert(Control("grow").parent == ui.sections.layout and Control("zoom").parent == ui.sections.look,
     "Layout and Look keep the rest")
 -- Opacity out of combat sits with the other visibility rules; the text
 -- switches and Text on top in Text.
-assert(Control("oocAlpha").parent == ctx.sections[11] and Control("vis").parent == ctx.sections[11],
+assert(Control("oocAlpha").parent == ui.sections.visibility and Control("vis").parent == ui.sections.visibility,
     "Visibility holds the fade out of combat")
 for _, suffix in ipairs({ "cdText", "stackText", "textTop", "stackPos" }) do
-    assert(Control(suffix).parent == ctx.sections[7], "Text lacks " .. suffix)
+    assert(Control(suffix).parent == ui.sections.text, "Text lacks " .. suffix)
 end
 local textTop = Control("textTop").row.values
 assert(#textTop == 2 and textTop[1].text == "Stacks" and textTop[2].text == "Countdown", "Text on top choices")
@@ -1070,7 +1104,7 @@ do
     for _, spec in ipairs(Page.SECTIONS) do if spec.id == "buffs" then listed = table.concat(spec.suffixes, ",") end end
     assert(listed and listed:find("pandemic,pandemicStyle,pandemicColor,pandemicSize", 1, true),
         "the pandemic window's style, color and thickness follow its switch in Buffs: " .. tostring(listed))
-    local look, buffs = ctx.sections[6], ctx.sections[9]
+    local look, buffs = ui.sections.look, ui.sections.buffs
     assert(look.title == "Look" and buffs.title == "Buffs", "unexpected section order for the reset check")
     Config().c1_zoom, Config().c1_border, Config().c1_pandemic = 20, 3, false
     Config().bar_strata, Config().ess_pandemic, Config().ess_pandemicStyle, Config().ess_pandemicSize = 1, false, 1, 6
@@ -1465,10 +1499,19 @@ do
     grid:Refresh()
 end
 
--- The Spell list's list-wide actions say what they drop, are one history
--- entry each and offer Undo (also one entry).
+-- The list menu explains each operation and preserves one history entry per gesture.
 do
-    local buttons = ui.spellButtons
+    local actions = assert(registered["menu2." .. PAGE .. ".cooldownManager.spells.actions"])
+    local function Item(value)
+        Click(actions, "LeftButton")
+        assert(lastDropdown.owner == actions, "list actions used the wrong anchor")
+        for _, row in ipairs(lastDropdown.values) do if row.value == value then return row end end
+        error("missing list action: " .. value)
+    end
+    local function Pick(value)
+        assert(not Item(value).disabled, "list action is disabled: " .. value)
+        lastDropdown.onSelect(value)
+    end
     assert(Page.ClearLabel("uti") == "Restore spec defaults"
         and Page.ClearLabel("buf") == "Restore spec defaults"
         and Page.ClearLabel("bar") == "Restore spec defaults", "spec profile reset labels")
@@ -1476,14 +1519,13 @@ do
     assert(Page.ClearLabel("uti") == "Reset to Blizzard's list", "native reset label")
     Config().raidEssentials = true
     M.RequestRefresh()
-    assert(buttons.clear.text == "Restore raid essentials" and buttons.clear.enabled and buttons.copy.enabled
-        and not buttons.restore.enabled, "Spell list actions on a built-in bar")
-    Fire(buttons.clear, "OnEnter")
-    assert(tooltip.text == "Restore raid essentials" and tooltip.line:find("other bars", 1, true), "the reset must say what it drops")
-    Fire(buttons.clear, "OnLeave")
+    local clear = Item("clear")
+    assert(clear.text == "Restore raid essentials" and not clear.disabled and not Item("copy").disabled
+        and Item("restore").disabled, "list actions on a built-in bar")
+    assert(clear.tooltip:find("other bars", 1, true), "the reset must say what it drops")
     local listsNow = Config().listsData
     local writes = historyWrites
-    Click(buttons.clear, "LeftButton")
+    Pick("clear")
     assert(not (Lists().specs[62] and Lists().specs[62].ess) and historyWrites == writes + 1
         and Page.note == "Essential cooldowns is back to its raid essentials." and Page.undo, "restore raid essentials")
     Page.RunUndo()
@@ -1493,33 +1535,32 @@ do
     assert(Page.RemoveEntry("ess", "b2"))
     local hiddenNow = Config().listsData
     M.RequestRefresh()
-    assert(buttons.restore.enabled and buttons.restore.text == "Show removed spells, all bars (1)", "restore count")
-    Click(buttons.restore, "LeftButton")
+    local restore = Item("restore")
+    assert(not restore.disabled and restore.text == "Restore removed spells from all bars (1)", "restore count")
+    Pick("restore")
     assert(not Lists().hidden[62] and Page.note == "Brought back the removed spells (1)." and Page.undo, "show removed spells")
     Page.RunUndo()
     assert(Config().listsData == hiddenNow, "undo did not hide the spells again")
     Config().listsData = listsNow
     -- The player's own entries go to the same bar in the other specializations.
-    Fire(buttons.copy, "OnEnter")
-    assert(tooltip.line:find("other specializations", 1, true), "the copy must say what it copies")
-    Fire(buttons.copy, "OnLeave")
+    assert(Item("copy").tooltip:find("other specializations", 1, true), "the copy must say what it copies")
     writes = historyWrites
-    Click(buttons.copy, "LeftButton")
+    Pick("copy")
     assert(Lists().specs[63].ess[1] == "i5512" and Lists().specs[64].ess[1] == "i5512" and #Lists().specs[63].ess == 1
         and historyWrites == writes + 1 and Page.note == "Copied 2 entries to 2 other specializations.", "copy the bar's list")
-    Click(buttons.copy, "LeftButton")
+    Pick("copy")
     assert(historyWrites == writes + 1 and Page.note == "Your other specializations have them already." and not Page.undo,
         "a second copy must change nothing")
     Config().listsData = listsNow
     picker.set("uti")
     M.RequestRefresh()
-    assert(not buttons.copy.enabled, "a bar without entries of your own has nothing to copy")
+    assert(Item("copy").disabled, "a bar without entries of your own has nothing to copy")
     picker.set("c3")
     M.RequestRefresh()
-    assert(buttons.clear.text == "Remove all spells", "custom bars empty their list")
+    assert(Item("clear").text == "Remove all spells", "custom bars empty their list")
     picker.set("def")
     M.RequestRefresh()
-    assert(buttons.clear.text == "Restore default spells", "Defensives go back to their preset")
+    assert(Item("clear").text == "Restore default spells", "Defensives go back to their preset")
     picker.set("ess")
     Page.ClearNote()
     M.RequestRefresh()
@@ -2352,8 +2393,7 @@ M.RequestRefresh()
 -- runtime drew and never hooks the drawing itself.
 do
     local SEPARATOR = " - "
-    local HINT = "Click a spell for its settings" .. SEPARATOR .. "drag to reorder or onto a bar above" .. SEPARATOR
-        .. "middle-click removes" .. SEPARATOR .. "+ adds"
+    local HINT = "Click HUD icons or preview icons to edit. Use + to add spells."
     local TIP = "Click: settings" .. SEPARATOR .. "Drag: reorder" .. SEPARATOR .. "Middle-click: remove"
     local listsBefore = Config().listsData
     local hits, drag, canvas = ui.hits, ui.drag, runtime.frame
@@ -2394,8 +2434,7 @@ do
     M.RequestRefresh()
     ui.stage.SetScale, ui.canvas.SetHeight, ui.strip.SetHeight = nil, nil, nil
     assert(writesSeen == 0 and ui.chips.ess.points == chipPoints, "a repaint of the same preview wrote layout")
-    -- The preview buttons are the kit host's pool: a warm repaint shows and hides nothing, and the
-    -- bar's handle is the kit's, with a drag and no keys.
+    -- The preview buttons are pooled; a warm repaint shows and hides nothing.
     local shown, hidden = 0, 0
     for _, hit in ipairs(hits) do
         local show, hide = hit.Show, hit.Hide
@@ -2405,7 +2444,7 @@ do
     M.RequestRefresh()
     for _, hit in ipairs(hits) do hit.Show, hit.Hide = nil, nil end
     assert(shown == 0 and hidden == 0, "a warm repaint showed or hid pooled preview buttons")
-    assert(ui.host:List("hit") == hits and ui.kit.entries.bar.region == ui.handle, "the preview runs on the kit")
+    assert(ui.host:List("hit") == hits, "the preview must use the kit pool")
     assert(ui.handle.scripts.OnKeyDown == nil and ui.previewBody.scripts.OnKeyDown == nil, "the bar handle took the keys")
 
     -- Hover: outline and a short tooltip, allocation-free.
@@ -2910,7 +2949,7 @@ do
         end
         return ""
     end
-    local effects, text = ctx.sections[8], ctx.sections[7]
+    local effects, text = ui.sections.effects, ui.sections.text
     Page.Select("bar")
     M.RequestRefresh()
     assert(effects._msuf2CollapsibleEntry.label.text == "Cooldown effects: Buff bars"
@@ -2948,23 +2987,29 @@ do
 end
 Page.selected = "c1"
 M.RequestRefresh()
--- Attached to a bar that is off: the summary and the drag refusal say so,
--- and Edit Mode opens on a bar it can move.
+-- Attached to a bar that is off: the summary says so, and the shortcut retains the selection.
 Config().ess_on = false
 assert(Page.Summary("uti"):find("anchor off; takes the place of Essential cooldowns", 1, true),
     "summary hides that the parent bar is off: " .. Page.Summary("uti"))
-assert(Page.AttachedText("uti"):find("Essential cooldowns", 1, true), "drag refusal must name the bar that is off")
 assert(Page.Summary("buf"):find("Utility cooldowns", 1, true) and not Page.Summary("buf"):find("(off)", 1, true),
     "a bar on a shown parent is attached as usual")
 local opened
-S.OpenEditMode = function(_, element) opened = element; return false end
+S.OpenEditMode = function(_, element, strict, popup)
+    assert(strict and popup, "the selected Edit Mode mover must open with its size controls")
+    opened = element
+    return false
+end
 Page.selected = "ess"
 M.RequestRefresh()
 local move = registered["menu2." .. PAGE .. ".cooldownManager.action.move"]
-assert(move and move.enabled, "Move bars on screen must stay available while another bar can move")
+assert(move and not move.enabled, "an off bar cannot move")
 Fire(move, "OnClick")
-assert(opened == "uti", "Edit Mode must open on a bar that is on and movable, not " .. tostring(opened))
+assert(opened == nil, "an off bar must not open another mover")
 Config().ess_on = true
+assert(Page.Select("uti"))
+assert(move.enabled)
+Fire(move, "OnClick")
+assert(opened == "uti", "Edit Mode must open on the requested bar")
 S.OpenEditMode = nil
 Page.selected = "c1"
 M.RequestRefresh()
@@ -2973,83 +3018,36 @@ assert(Page.selected == "ess", "chip click did not select its bar")
 M.RequestRefresh()
 assert(Page.OpenBlizzardSettings() and toggledBlizzard == 1 and not M.frame.shown, "Blizzard's Cooldown Settings did not open")
 M.frame:Show()
--- Preview handle: click focuses the layout, drag moves free bars.
+-- The dock opens Basics on click. Position edits belong to the Edit Mode mover.
 local handle = ui.handle
 assert(handle.shown, "preview handle missing")
-Fire(handle, "OnMouseDown", "LeftButton")
-Fire(handle, "OnMouseUp", "LeftButton")
-assert(focused == PAGE .. "_basics", "clicking the preview did not open Basics")
-assert(handle.scripts.OnUpdate == nil, "a click left the drag driver running")
-Config().ess_anchor = 1
-local x, y = Config().ess_x, Config().ess_y
-cursorX, cursorY = 100, 100
-Fire(handle, "OnMouseDown", "LeftButton")
-assert(handle.scripts.OnUpdate, "the drawing must follow the cursor while the bar is dragged")
-cursorX, cursorY = 130, 90
-Fire(handle, "OnUpdate", 0.01)
-local point = runtime.frame.points[1]
--- The drawing rests left of center by half the + tile beside it.
-local baseX = handle.baseX
-assert(type(baseX) == "number" and baseX < 0, "the drawing and its + tile are not centered together")
-assert(point[1] == "CENTER" and point[4] == baseX + 30 and point[5] == -10, "the drawing did not follow the cursor")
-Fire(handle, "OnMouseUp", "LeftButton")
-assert(Config().ess_x == x + 30 and Config().ess_y == y - 10, "dragging the preview did not move the bar")
-point = runtime.frame.points[1]
-assert(handle.scripts.OnUpdate == nil and point[4] == baseX and point[5] == 0, "the drop left the drag running or the drawing off center")
-M.RequestRefresh()
-assert(ui.previewBody._selectedHandle == handle and ui.previewBody.selectionX == Config().ess_x, "selection bar lost the free bar")
-Config().ess_anchor = 2
-M.RequestRefresh()
-assert(ui.previewBody._selectedHandle == handle, "attached bars nudge their offset from the anchor")
-S.CooldownManagerMovable = function(slot) return slot ~= "ess" end
-M.RequestRefresh()
-assert(ui.previewBody._selectedHandle == nil, "the Essential bar riding Blizzard's bar offers no nudging")
-x, y = Config().ess_x, Config().ess_y
-cursorX, cursorY = 100, 100
-Fire(handle, "OnMouseDown", "LeftButton")
-assert(handle.scripts.OnUpdate == nil, "a bar that cannot move must not follow the cursor")
-cursorX, cursorY = 140, 100
-Fire(handle, "OnMouseUp", "LeftButton")
-assert(Config().ess_x == x and Page.noteError and Page.note:find("Blizzard's Edit Mode", 1, true),
-    "dragging a bar that cannot move must say why")
-S.CooldownManagerMovable = nil
-M.RequestRefresh()
--- Order, as the old code did it: the drag flag and the follow are gone before the write, the click opens
--- Basics on release and not on press, and a repaint in the middle of a drag leaves the drawing under the cursor.
+focused = nil
 do
-    Config().ess_anchor = 1
-    M.RequestRefresh()
-    local log = {}
-    local setMany = P.SetMany
-    P.SetMany = function(id, values)
-        log[#log + 1] = "write"
-        log[#log + 1] = handle.dragging and "dragging" or "idle"
-        log[#log + 1] = handle.scripts.OnUpdate and "following" or "still"
-        return setMany(id, values)
+    local x, y = Config().ess_x, Config().ess_y
+    local point = runtime.frame.points[1]
+    Fire(handle, "OnMouseDown", "LeftButton")
+    assert(not focused and not handle.scripts.OnUpdate and point[1] == "CENTER" and point[4] < 0)
+    Fire(handle, "OnClick", "LeftButton")
+    assert(focused == PAGE .. "_basics" and Config().ess_x == x and Config().ess_y == y,
+        "the preview rim must open Basics without writing coordinates")
+end
+do
+    local open = _G.MSUF2_Open
+    local scope = Page.spellSpecScope
+    _G.MSUF2_Open = function(key) return key == PAGE end
+    local loaded = Suite.Client.IsAddOnLoaded
+    Suite.Client.IsAddOnLoaded = function() return false end
+    assert(Page.SelectSpec(266))
+    for _, slot in ipairs({ "ess", "uti", "buf", "c1" }) do
+        focused = nil
+        assert(Suite.Menu.OpenCooldownBar(slot) and Page.selected == slot and focused == PAGE .. "_basics" and not Page.ForeignSpec(),
+            "Edit Mode deep link must select and focus " .. slot)
+        assert(ui.sections.basics._msuf2CollapsibleEntry.label.text == "Basics: " .. Page.BarName(slot))
     end
-    local x0 = Config().ess_x
-    focused = nil
-    cursorX, cursorY = 100, 100
-    Fire(handle, "OnMouseDown", "LeftButton")
-    assert(focused == nil and #log == 0, "pressing the bar opened Basics or wrote")
-    cursorX = 130
-    Fire(handle, "OnUpdate", 0.01)
-    local baseX = handle.baseX
-    assert(runtime.frame.points[1][4] == baseX + 30, "the drawing did not follow the cursor")
-    M.RequestRefresh()
-    assert(runtime.frame.points[1][4] == baseX + 30, "a repaint in the middle of the drag took the drawing from the cursor")
-    Fire(handle, "OnMouseUp", "LeftButton")
-    assert(table.concat(log, " ") == "write idle still", "the write came before the drag flag and the follow were gone: " .. table.concat(log, " "))
-    assert(Config().ess_x == x0 + 30 and focused == nil, "a drag opened Basics or lost its offset")
-    -- A click opens Basics on release, and writes nothing.
-    log = {}
-    cursorX, cursorY = 100, 100
-    Fire(handle, "OnMouseDown", "LeftButton")
-    assert(focused == nil, "pressing the bar opened Basics")
-    Fire(handle, "OnMouseUp", "LeftButton")
-    assert(focused == PAGE .. "_basics" and #log == 0, "a click did not open Basics, or wrote")
-    P.SetMany = setMany
-    Config().ess_x = x0
+    assert(not Suite.Menu.OpenCooldownBar("missing") and Page.selected == "c1", "an invalid route selected another bar")
+    _G.MSUF2_Open, Suite.Client.IsAddOnLoaded = open, loaded
+    Page.spellSpecScope = scope
+    assert(Page.Select("ess"))
 end
 
 ------------------------------------------------------------------ simulation and preview mode
@@ -3080,8 +3078,6 @@ do
             local expandLeft, expandRight = Span(expander.button, width)
             assert(simulateLeft >= 0 and expandRight <= width and simulateRight + 6 <= expandLeft,
                 "preview toolbar buttons overlap in " .. mode .. " at width " .. width)
-            local _, hintRight = Span(ui.previewHint, width)
-            assert(hintRight + 10 <= simulateLeft, "preview hint overlaps the toolbar buttons")
         end
     end
     -- Relative anchors also follow a wider label/font without a new layout.
@@ -3146,17 +3142,10 @@ assert(pop.shown, "popover should be open before combat")
 local watcher
 for _, frame in ipairs(frames) do if frame.events.PLAYER_REGEN_DISABLED then watcher = frame end end
 assert(watcher and watcher.events.GLOBAL_MOUSE_DOWN, "popups do not listen for combat and outside clicks")
-cursorX, cursorY = 100, 100
-Fire(handle, "OnMouseDown", "LeftButton")
-cursorX, cursorY = 150, 100
-Fire(handle, "OnUpdate", 0.01)
-assert(handle.dragging and runtime.frame.points[1][4] == handle.baseX + 50, "preview drag did not start")
 combat = true
-Fire(handle, "OnUpdate", 0.01)
-assert(handle.scripts.OnUpdate == nil and not handle.dragging and runtime.frame.points[1][4] == handle.baseX,
-    "combat must end a preview drag and center the drawing")
-Fire(handle, "OnMouseDown", "LeftButton")
-assert(handle.scripts.OnUpdate == nil, "preview drag armed in combat")
+focused = nil
+Click(handle, "LeftButton")
+assert(focused == nil and handle.scripts.OnUpdate == nil, "preview handle accepted combat input")
 Fire(watcher, "OnEvent", "PLAYER_REGEN_DISABLED")
 assert(not pop.shown and not watcher.events.PLAYER_REGEN_DISABLED, "combat did not close the popups")
 assert(not Page.AddEntry("ess", "b5", 1) and not Page.RemoveEntry("ess", "b1") and not Page.MoveEntry("b1", "uti"),
@@ -3196,6 +3185,72 @@ host:Hide()
 assert(PendingTasks() == 0 and host.scripts.OnUpdate == nil, "hiding the page left a timer or drag driver")
 assert(not pop.shown and not watcher.events.PLAYER_REGEN_DISABLED and not watcher.events.GLOBAL_MOUSE_DOWN, "popups outlived the page")
 assert(runtime.previewOn == false and runtime.simulate == false and runtime.released > 0, "preview mode outlived the page")
+
+------------------------------------------------------------------ live HUD editor
+do
+    local buff = assert(runtime.Surface("buf"))
+    assert(not buff.hits[1]:IsVisible() and not buff.plus:IsVisible(), "the HUD editor outlived the menu")
+    local buffOn, emptyOn = Config().buf_on, Config().c6_on
+    local slot, target, scope = Page.selected, Page.targetSpec, Page.spellSpecScope
+    Config().buf_on, Page.targetSpec = true, nil
+    ui.previewBody:Show()
+    ctx.fixedPreview.record.onActivate()
+    assert(runtime.Surface("buf") == buff and buff.hits[1]:IsVisible(), "cached activation must reuse hit frames")
+
+    Click(buff.hits[1], "LeftButton")
+    assert(Page.selected == "buf" and Page.popover:IsShown() and Page.popover.anchor == buff.hits[1]
+        and Page.popover.key == "b10", "a HUD click must select the right bar and open the exact spell")
+    local entries = Page.Entries
+    Page.Entries = function() return {} end
+    ui.grid.valid = false
+    ui.grid:Refresh()
+    assert(Page.popover:IsShown(), "a live HUD spell may be absent from the list grid")
+    Page.Entries, ui.grid.valid = entries, false
+    assert(Page.SelectSpec(266) and not buff.hits[1]:IsVisible() and not Page.popover:IsShown(),
+        "an offline specialization must release the live hit targets")
+    assert(Page.SelectSpec(nil) and runtime.Surface("buf") == buff and buff.hits[1]:IsVisible(),
+        "returning to the live spec must reuse the HUD controls")
+    cursorX, cursorY = 100, 100
+    Fire(buff.hits[1], "OnMouseDown", "LeftButton")
+    cursorX = 125
+    Fire(buff.drag.host, "OnUpdate", 0.01)
+    assert(buff.drag.active)
+    runtime.hud.buf.count = 0
+    runtime.editor(true)
+    assert(not buff.drag.active and not buff.drag.host.scripts.OnUpdate and buff.plus:IsVisible(),
+        "releasing a live target must end its drag while the bar stays editable")
+    runtime.hud.buf.count = nil
+    runtime.editor(true)
+
+    Config().c6_on = true
+    runtime.hud.c6.anchor.right = UIParent:GetWidth() - 2
+    runtime.editor(true)
+    local empty = assert(runtime.Surface("c6"))
+    assert(empty.plus:IsVisible() and empty.plus.points[1][1] == "RIGHT", "the add button must stay on screen")
+    Click(empty.plus, "LeftButton")
+    local picker = assert(Page.picker)
+    assert(Page.selected == "c6" and picker:IsShown() and picker.anchor == empty.plus,
+        "an empty live bar must open its own spell picker")
+    Config().c6_on = false
+    runtime.editor(true)
+    assert(not picker:IsShown() and not empty.plus:IsVisible(), "a hidden bar must release the live picker")
+    S.editMode = true
+    runtime.editor(true)
+    assert(buff.canvas:GetFrameStrata() == "FULLSCREEN" and buff.hits[1]:GetFrameLevel() > 300,
+        "Edit Mode movers would swallow live spell clicks")
+    S.editMode = nil
+    runtime.editor(true)
+    assert(buff.canvas:GetFrameStrata() == "MEDIUM", "leaving Edit Mode must restore the HUD layer")
+    combat = true
+    runtime.editor(false)
+    assert(not buff.hits[1]:IsVisible() and not buff.plus:IsVisible(), "combat must hide the live editor")
+    combat = false
+    runtime.editor(true)
+    assert(runtime.Surface("buf") == buff and buff.hits[1]:IsVisible(), "regen must restore the active HUD editor")
+    Config().buf_on, Config().c6_on = buffOn, emptyOn
+    Page.selected, Page.targetSpec, Page.spellSpecScope = slot, target, scope
+    ui.previewBody:Hide()
+end
 
 ------------------------------------------------------------------ runtime canvas
 -- The real Preview.lua publishes what the page lays its buttons on: items
@@ -3339,7 +3394,7 @@ do
 end
 -- Each page file keeps real headroom below Lua 5.1's 200 locals per chunk.
 for _, file in ipairs({ "CooldownManagerData", "CooldownManagerBars", "CooldownManagerWidgets", "CooldownManagerPicker", "CooldownManagerPopover",
-    "CooldownManagerPreviewIcons", "CooldownManagerPreview", "CooldownManager" }) do
+    "CooldownManagerPreviewIcons", "CooldownManagerScreen", "CooldownManagerPreview", "CooldownManager" }) do
     local handle = assert(io.open(root .. "/MSUF_Suite_Options/Pages/" .. file .. ".lua", "rb"))
     local names = 0
     for line in handle:read("*a"):gmatch("[^\r\n]+") do

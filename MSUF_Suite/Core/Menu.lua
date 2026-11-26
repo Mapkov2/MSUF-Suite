@@ -64,6 +64,12 @@ function Menu.Open(page, moduleID)
     return true
 end
 
+-- The options page resolves the requested slot after its cold or cached layout is visible.
+function Menu.OpenCooldownBar(slot)
+    if Suite.InCombat() or not Menu.Open("suite_cooldownManager") then return false end
+    return Menu.FocusCooldownBar and Menu.FocusCooldownBar(slot) == true or false
+end
+
 SLASH_MSUFSUITEMACROBUILDER1 = "/msufmacro"
 SlashCmdList.MSUFSUITEMACROBUILDER = function() Menu.Open("suite_macros") end
 

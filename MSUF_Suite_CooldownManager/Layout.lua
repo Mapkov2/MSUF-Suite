@@ -288,7 +288,7 @@ function Layout.Free(slot)
     if standIn ~= nil then return false end
     return not FollowsViewer(slot)
 end
--- Draggable in Edit Mode and the preview: free bars move, attached bars and
+-- Draggable in Edit Mode: free bars move, attached bars and
 -- the Essential bar riding Blizzard's bar shift by an offset from it.
 function Layout.Movable(slot)
     if C.views[slot] == nil then return false end

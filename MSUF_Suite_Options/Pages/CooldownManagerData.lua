@@ -115,27 +115,13 @@ function Page.Movable(slot)
     local movable = S.CooldownManagerMovable
     return not movable or movable(slot) ~= false
 end
--- Why a bar cannot be dragged; already translated.
-function Page.AttachedText(slot)
-    local _, standIn = Page.Chain(slot)
-    if standIn then
-        return format(Tr("This bar takes the place of %s, which is off. Move that bar, or attach this one elsewhere."),
-            Page.BarName(standIn))
-    end
-    return Tr("This bar sits on Blizzard's Essential bar, which your MSUF frames follow. Move it in Blizzard's Edit Mode.")
-end
 -- The module runs (live bars exist, the simulation can play).
 function Page.Running()
     return S.states[ID].active == true
 end
--- Edit Mode opens on the selected bar, or on the first bar it can move.
 function Page.MoveTarget()
-    local selected = Page.selected
-    if Page.IsOn(selected) and Page.Movable(selected) then return selected end
-    for i = 1, #SLOTS do
-        local slot = SLOTS[i].key
-        if Page.IsOn(slot) and Page.Movable(slot) then return slot end
-    end
+    local slot = Page.selected
+    if Page.IsOn(slot) and Page.Movable(slot) then return slot end
 end
 function Page.BarName(slot)
     local info = Page.SlotInfo(slot)

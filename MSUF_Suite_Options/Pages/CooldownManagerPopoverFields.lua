@@ -59,8 +59,10 @@ local function BuildFields()
           help = "Icon opacity while the spell is on cooldown. Shift steps by 5, Ctrl by 10." },
         { key = "showAura", label = "Show active buff duration", kind = "bool", cd = true, spellOnly = true, bar = "showAura",
           help = "While the buff of this spell lasts, the icon shows its duration and stacks instead of the cooldown." },
+        { key = "totemPulse", label = "Estimated next totem pulse", kind = "bool", switch = true,
+          help = "Shows the time until the next estimated Healing Stream or Mana Tide pulse when the game exposes the timing." },
         { key = "totemCoverage", label = "Show totem coverage", kind = "bool", switch = true,
-          help = "Show who has your Windfury or Strength of Earth buff. Report the current count when the game makes it available." },
+          help = "Show who has your Windfury, Strength of Earth or Grounding buff. Report the count when the game makes it available." },
         { key = "showMissing", label = "Show dimmed when missing", kind = "bool", aura = true, bar = "showMissing",
           help = "Keep the icon in its place, dimmed, while the buff is missing." },
         { key = "auraUnit", label = "Track on", kind = "choice", stack = true,
@@ -252,7 +254,8 @@ function Page.PreparePopoverFields()
         { label = "Appearance",
           keys = "showGCD chargeSwipe chargeEdge swipe desat hideReady hideAvailableCharges usableOnly procOnly readyAlpha cdAlpha "
               .. "showMissing barColor barText icon" },
-        { label = "Buff and stacks", keys = "showAura replaceAura itemAura auraUnit stackGlow stackGlowOp stackColorAt pandemic activeBorder totemCoverage" },
+        { label = "Buff and stacks",
+          keys = "showAura replaceAura itemAura auraUnit stackGlow stackGlowOp stackColorAt pandemic activeBorder totemCoverage totemPulse" },
         { label = "Action bars",
           keys = "actionUsableGlow actionGlowSpell actionGlowUnit actionGlowMode actionGlowRequireSpell actionAuraDisplay "
               .. "actionAuraGlow" },

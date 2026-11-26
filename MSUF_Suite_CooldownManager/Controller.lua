@@ -73,7 +73,12 @@ end
 -- MSUF Edit Mode wins over the options page; both suspend the bar rules.
 local function ApplyPreview()
     local mode = (S.editMode == true and "edit") or (optionsPreview and "options") or nil
-    if C.Preview.SetMode(mode) then PreviewChanged() end
+    local before = C.Preview.mode
+    if C.Preview.SetMode(mode) then
+        PreviewChanged()
+    elseif mode and mode ~= before and C.Preview.editor then
+        C.Preview.PaintLabels(true)
+    end
 end
 
 ------------------------------------------------------------------ lifecycle
@@ -200,10 +205,10 @@ end
 -- The options page keeps every bar visible while it is open. A request made
 -- while the module is off is kept and applies once it is enabled; the
 -- result says whether the preview runs now.
-function S.CooldownManagerSetPreview(on, select)
+function S.CooldownManagerSetPreview(on, select, editor)
     on = on == true
-    if on and NS.IsCombatLocked() then return false end
-    C.Preview.LabelBars(on and select or nil)
+    if on and NS.InCombat() then return false end
+    C.Preview.LabelBars(on and select or nil, on and editor or nil)
     if optionsPreview ~= on then
         optionsPreview = on
         if M.active then ApplyPreview() end

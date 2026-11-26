@@ -19,7 +19,7 @@ local HELP = {
     general = "These apply to every bar. The standalone assisted icon follows Blizzard's assisted combat highlight; enable that highlight in the game's Combat options. Its position is available in MSUF Edit Mode. Action bar presses show on cooldown icons only with the MSUF Suite action bars.",
     bars = "The preview and every section below edit this bar. Shared custom groups start with a separate list for explicit spell, aura and item IDs; disabling sharing restores the existing per-specialization list.",
     basics = "Center keeps the whole visible cooldown row centered as icons appear or disappear. Enable Keep first icon centered for alternating growth around the first icon. Buff icons then keep fixed places, with gaps for inactive buffs. Attach the bar to another bar or to your player frame; Gap controls the space between them.",
-    spells = P.Help("Add spells, then click an icon to customize it.", "Every spell of this bar, unlearned ones included. On a buff bar, Add spells offers received buffs such as Power Infusion and Innervate; Buff on me also accepts a buff aura ID or resolvable name and tracks that ID from any caster. With Show missing buffs off, only active buffs appear. The preview edits entries too: click for options, drag to reorder or onto a bar above, middle-click to remove (with undo). Removed spells stay under Add spells. Lists are kept per specialization."),
+    spells = P.Help("Includes inactive and unlearned spells.", "On buff bars, the + picker accepts received buffs by name or aura ID. Personal spell lists are saved per specialization."),
     layout = "How the icons line up and grow. A free bar's position counts from the screen center; an attached bar's is an offset from its attach point. Excess cooldowns can move past Maximum icons to another enabled cooldown bar. The destination must have overflow off; chained routes are ignored.",
     look = "Icon crop, border, swipe and frame layer of this bar.",
     text = "Which numbers show, which one is drawn on top, and their size and place. Single spells can differ: click them in the preview. The font settings below apply to every bar; Slug has no shadow.",
@@ -315,12 +315,8 @@ local function ColorEnabled(rule) return P.RuleEnabled(ID, rule, Page.KeyFn) end
 
 -- Layout's bar actions below its controls.
 local function LayoutButtons(ctx, body, y, width, sectionId)
-    local half = floor((width - 12) / 2)
-    -- Navigation needs no snapshot; the reset records its own history entry.
-    HM.SkipHistoryCheckpoint(P.Button(ctx, body, "Move this bar on screen", 16, y - 4, half, function() P.MoveOnScreen(ID, Page.selected) end,
-        function() return S.Availability(ID) and P.Get(ID, "enabled") and Page.IsOn(Page.selected) and Page.Movable(Page.selected) end,
-        P.Meta(PAGE, ID, "editor.move", "action", sectionId)))
-    HM.SkipHistoryCheckpoint(P.Button(ctx, body, "Reset this bar's settings", 28 + half, y - 4, half, function() Page.ResetBar(Page.selected) end,
+    -- The reset records its own history entry.
+    HM.SkipHistoryCheckpoint(P.Button(ctx, body, "Reset this bar's settings", 16, y - 4, width, function() Page.ResetBar(Page.selected) end,
         function() return S.Availability(ID) and true or false end,
         P.Meta(PAGE, ID, "editor.reset", "action", sectionId)))
     return Page.Tools().CopyButton(ctx, body, y - 40, width, sectionId)
@@ -382,7 +378,6 @@ local function BuildSection(ctx, b, ui, spec)
         end
         P.AttachRuleColors(body, spec.title, ID, rules, Page.KeyFn, ColorEnabled)
         if spec.id == "layout" then y = LayoutButtons(ctx, body, y, width, sectionId) end
-        if spec.id == "visibility" then y = Page.BuildInspection(ctx, b, body, y, width, sectionId) end
         M.TrackRefresh(ctx, function()
             if P.Combat() then return end
             local state, why = SectionState(spec)
@@ -561,74 +556,66 @@ local CLEAR_TIPS = {
     ["Restore default spells"] = "Goes back to your class's defensive cooldowns, for this specialization. You can undo it.",
     ["Remove all spells"] = "Empties this bar for this specialization. You can undo it.",
 }
-local function ClearEnter(self)
-    local label = Page.ClearLabel(Page.selected)
-    Page.ShowTip(self, Tr(label), Tr(Page.SharedList(Page.selected)
-        and "Empties this shared group for all specializations. You can undo it." or CLEAR_TIPS[label]))
-end
-local function RestoreEnter(self)
-    Page.ShowTip(self, Tr("Show removed spells"),
-        Tr("Brings back the spells you removed from the built-in bars, on every bar, for this specialization. You can undo it."))
-end
-local function CopyEnter(self)
-    Page.ShowTip(self, Tr("Copy to other specializations"),
-        Tr(Page.SharedList(Page.selected) and "This shared group's list already applies to all specializations."
-            or "Copies the spells and items you added to this bar to the same bar in your other specializations. Blizzard's entries follow each specialization's own list. You can undo it."))
-end
-local function ImportEnter(self)
-    Page.ShowTip(self, Tr("Import Blizzard CDM"),
-        Tr("Copies the active Blizzard spell selection, bar assignment and order into this specialization's five built-in Suite bars. Your defensive and custom bars, other specializations, and Blizzard settings stay as they are. You can undo it."))
-end
-local function SpellButton(body, text, width, onClick, onEnter)
-    local button = Page.Button(body, text, width, 24, onClick)
-    button:HookScript("OnEnter", onEnter)
-    button:HookScript("OnLeave", Page.HideTip)
-    return button
-end
--- The list-wide actions under the tiles, with their search metadata.
-local function BuildSpellButtons(body, grid, width, sectionId)
-    local half = floor((width - 8) / 2)
-    local addSpells = Page.Button(body, "Add spells", half, 24, function() Page.TogglePicker(grid.plus) end)
-    addSpells:SetPoint("TOPLEFT", grid.host, "BOTTOMLEFT", 0, -36)
-    local restore = SpellButton(body, "Show removed spells", half, function() Page.RestoreWithUndo() end, RestoreEnter)
-    restore:SetPoint("LEFT", addSpells, "RIGHT", 8, 0)
-    local clear = SpellButton(body, "Reset to Blizzard's list", half, function() Page.ClearWithUndo(Page.selected) end,
-        ClearEnter)
-    clear:SetPoint("TOPLEFT", addSpells, "BOTTOMLEFT", 0, -6)
-    local copy = SpellButton(body, "Copy to other specializations", half,
-        function() Page.CopyListWithUndo(Page.selected) end, CopyEnter)
-    copy:SetPoint("LEFT", clear, "RIGHT", 8, 0)
-    local import = SpellButton(body, "Import Blizzard CDM", width,
-        Page.ImportBlizzardWithUndo, ImportEnter)
-    import:SetPoint("TOPLEFT", clear, "BOTTOMLEFT", 0, -6)
-    if M.RegisterControlMetadata then
-        M.RegisterControlMetadata(addSpells, P.Meta(PAGE, ID, "spells.add", "action", sectionId), "Add spells", "button")
-        M.RegisterControlMetadata(restore, P.Meta(PAGE, ID, "spells.restore", "action", sectionId), "Show removed spells", "button")
-        M.RegisterControlMetadata(clear, P.Meta(PAGE, ID, "spells.clear", "action", sectionId), "Reset to Blizzard's list", "button")
-        M.RegisterControlMetadata(copy, P.Meta(PAGE, ID, "spells.copy", "action", sectionId), "Copy to other specializations", "button")
-        M.RegisterControlMetadata(import, P.Meta(PAGE, ID, "spells.importBlizzard", "action", sectionId), "Import Blizzard CDM", "button")
-    end
-    return { add = addSpells, restore = restore, clear = clear, copy = copy, import = import }
+local function PasteBlizzardLayout()
+    if Page.EditorBlocked() or Page.ForeignSpec() or not S.CooldownManagerReadBlizzardString then return end
+    local spec, profile = Page.Spec(), S.Database.GetActiveProfileName()
+    P.AskText("suite.cdm.pasteBlizzard", Tr("Paste a Blizzard Cooldown Manager export"), function(blob)
+        local bars, reason, count = S.CooldownManagerReadBlizzardString(blob)
+        if not bars then S.Print(Tr(reason)) return end
+        local message = Tr("Import %d Blizzard cooldowns into this specialization's built-in Suite bars?"):format(count)
+        P.Confirm("suite.cdm.applyBlizzardPaste", message, function()
+            if Page.Spec() ~= spec or S.Database.GetActiveProfileName() ~= profile then
+                S.Print(Tr("The specialization or profile changed. Paste the layout again."))
+                return
+            end
+            local ok, why = Page.ImportBlizzard(bars)
+            if not ok and why then S.Print(Tr(why)) end
+        end)
+    end, 16384, 16384)
 end
 
--- What the list-wide actions can do for the selected bar right now.
-local function PaintSpellButtons(body, buttons)
-    local blocked = Page.EditorBlocked() ~= nil
-    buttons.add:SetEnabled(not blocked)
-    -- Removals are kept per specialization, for every bar at once.
-    local hidden = blocked and 0 or Page.HiddenCount()
-    Page.ButtonText(buttons.restore, hidden > 0 and format(Tr("Show removed spells, all bars (%d)"), hidden)
-        or Tr("Show removed spells"))
-    buttons.restore:SetEnabled(hidden > 0)
-    local label = Page.ClearLabel(Page.selected)
-    if body._cdmClear ~= label then
-        body._cdmClear = label
-        Page.ButtonText(buttons.clear, Tr(label))
+local function OpenListActions(button)
+    if P.Combat() or Page.EditorBlocked() or not W.OpenDropdown then return end
+    local slot, spec, config = Page.selected, Page.Spec(), S.Config(ID)
+    local live = not Page.ForeignSpec()
+    local hidden, shared = Page.HiddenCount(), Page.SharedList(slot)
+    local clear = Page.ClearLabel(slot)
+    local restore = format(Tr("Restore removed spells from all bars (%d)"), hidden)
+    local rows = {
+        { value = "restore", text = restore, translate = false, disabled = hidden == 0,
+            tooltip = Tr("Brings back the spells you removed from the built-in bars, on every bar, for this specialization. You can undo it.") },
+        { value = "clear", text = Tr(clear), translate = false, disabled = not Page.HasList(slot),
+            tooltip = Tr(shared and "Empties this shared group for all specializations. You can undo it." or CLEAR_TIPS[clear]) },
+        { value = "copy", text = Tr("Copy to other specializations"), translate = false, disabled = shared or not Page.HasOwnEntries(slot),
+            tooltip = Tr(shared and "This shared group's list already applies to all specializations."
+                or "Copies the spells and items you added to this bar to the same bar in your other specializations. Blizzard's entries follow each specialization's own list. You can undo it.") },
+        { value = "import", text = Tr("Import current Blizzard layout"), translate = false,
+            disabled = not (live and S.CooldownManagerBlizzardSnapshot),
+            tooltip = Tr("Copies the active Blizzard spell selection, bar assignment and order into this specialization's five built-in Suite bars. Your defensive and custom bars, other specializations, and Blizzard settings stay as they are. You can undo it.") },
+        { value = "paste", text = Tr("Paste Blizzard layout"), translate = false,
+            disabled = not (live and S.CooldownManagerReadBlizzardString) },
+        { value = "custom", text = Tr("Customized spells"), translate = false,
+            disabled = #P.CDMOverrides.Entries() == 0 },
+    }
+    if Page.ShowsShamanSetup() then
+        rows[#rows + 1] = { value = "starter", text = Tr("Shaman starter setup"), translate = false, disabled = not live }
     end
-    buttons.clear:SetEnabled(not blocked and Page.HasList(Page.selected))
-    buttons.copy:SetEnabled(not blocked and Page.HasOwnEntries(Page.selected))
-    buttons.import:SetEnabled(not blocked and not Page.ForeignSpec() and type(S.CooldownManagerBlizzardSnapshot) == "function")
+    if Page.dropdownOpen ~= button then Page.ClosePopups() end
+    local opened = W.OpenDropdown(button, rows, nil, function(value)
+        Page.dropdownOpen = nil
+        if P.Combat() or Page.EditorBlocked() or not button:IsVisible() then return end
+        if Page.selected ~= slot or Page.Spec() ~= spec or S.Config(ID) ~= config then return end
+        if value == "restore" then Page.RestoreWithUndo() end
+        if value == "clear" then Page.ClearWithUndo(slot) end
+        if value == "copy" then Page.CopyListWithUndo(slot) end
+        if value == "import" then Page.ImportBlizzardWithUndo() end
+        if value == "paste" then PasteBlizzardLayout() end
+        if value == "custom" then P.CDMOverrides.Open(button) end
+        if value == "starter" then Page.OpenShamanSetup() end
+    end)
+    Page.dropdownOpen = opened and button or nil
 end
+
 local function SpellHelpText(shared)
     if shared then
         return "These spells apply to all specializations. Clearing the group empties it for all of them; turning sharing off brings back each spec's own list."
@@ -650,7 +637,7 @@ end
 
 local function BuildSpells(ctx, b, ui)
     local sectionId = "suite_cooldownManager_spells"
-    local body = b:CollapsibleSection(sectionId, Tr("Spell list"), 120, false)
+    local body = b:CollapsibleSection(sectionId, Tr("All spells"), 120, false)
     local width = max(240, (HM.GetSectionWidth(body) or b.width or 720) - 32)
     local y = SpellHelp(ctx, body, width)
     local spec = P.Text(body, "", 16, y, width, T.colors.text)
@@ -666,8 +653,13 @@ local function BuildSpells(ctx, b, ui)
     Page.BindUndo(undo)
     undo:SetPoint("TOPLEFT", grid.host, "BOTTOMLEFT", width - 84, -8)
     undo:Hide()
-    local buttons = BuildSpellButtons(body, grid, width, sectionId)
-    ui.spellButtons = buttons
+    local actions = Page.Button(body, "List actions", max(220, floor(width / 2)), 24, OpenListActions)
+    Page.Chevron(actions)
+    actions:SetPoint("TOPLEFT", grid.host, "BOTTOMLEFT", 0, -36)
+    if M.RegisterControlMetadata then
+        M.RegisterControlMetadata(grid.plus, P.Meta(PAGE, ID, "spells.add", "action", sectionId), "Add spells", "button")
+        M.RegisterControlMetadata(actions, P.Meta(PAGE, ID, "spells.actions", "action", sectionId), "List actions", "button")
+    end
     -- The note shows here and under the preview.
     ui.PaintNote = function()
         -- A search for a spell option says what to click next.
@@ -680,7 +672,7 @@ local function BuildSpells(ctx, b, ui)
     local function Layout(height)
         if height == ui.gridHeight then return end
         ui.gridHeight = height
-        P.FinishBody(b, body, top - height - 130)
+        P.FinishBody(b, body, top - height - 72)
     end
     M.TrackRefresh(ctx, function()
         if P.Combat() then return end
@@ -688,13 +680,10 @@ local function BuildSpells(ctx, b, ui)
         Page.SetRaw(spec, Page.BarName(Page.selected) .. "  -  " .. (specName or Tr("No specialization")))
         Layout(grid:Refresh())
         ui.PaintNote()
-        PaintSpellButtons(body, buttons)
-        Header(body, "Spell list", false, "")
+        actions:SetEnabled(not Page.EditorBlocked())
+        Header(body, "All spells", false, "")
     end)
     ui.sections.spells = body
-    P.AttachSectionReset(ctx, body, "Spell list", function()
-        return Page.ClearWithUndo(Page.selected) or false
-    end)
     Layout(grid:Refresh())
 end
 
@@ -712,8 +701,10 @@ local function Build(ctx)
     Page.BindUndo(ui.previewUndo)
     -- Eager: the page builds the general settings and bar list into this card.
     local card = P.ModuleCard(ctx, b, PAGE, ID, {
-        -- Edit Mode opens on a bar it can move: the selected one, or the first.
-        { "Move bars on screen", function() P.MoveOnScreen(ID, Page.MoveTarget()) end,
+        { "Move in Edit Mode", function()
+            local slot = Page.MoveTarget()
+            if slot then P.MoveOnScreen(ID, slot, true) end
+        end,
             function() return S.Availability(ID) and P.Get(ID, "enabled") and Page.MoveTarget() ~= nil end, key = "move" },
         { "Open Blizzard's Cooldown Settings", Page.OpenBlizzardSettings, Page.CanOpenBlizzardSettings, key = "blizzard" },
     }, { eager = true, title = "Cooldown manager", setEnabled = function(value)
@@ -736,14 +727,19 @@ local function Build(ctx)
             return P.ResetRules(ID, rules, Page.ResetKeyFn, { "enabled" })
         end)
     end
-    -- Basics first, then the closed spell list, then the other topics.
+    -- Keep the complete list available below the frequently used bar settings.
     for _, spec in ipairs(SECTIONS) do
         BuildSection(ctx, b, ui, spec)
-        if spec.id == "basics" then
-            BuildSpells(ctx, b, ui)
-            P.CDMOverrides.Build(ctx, b)
-        end
+        if spec.id == "basics" then BuildSpells(ctx, b, ui) end
     end
+end
+
+function Suite.Menu.FocusCooldownBar(slot)
+    if P.Combat() or not CDM.KEYS[slot] then return false end
+    if Page.targetSpec ~= nil and not Page.SelectSpec(nil) then return false end
+    if not Page.Select(slot) then return false end
+    if not Page.FocusSection("basics") then Page.pendingFocus = "basics" end
+    return true
 end
 
 P.RegisterPage({ key = PAGE, label = "Cooldown manager", title = "Cooldown manager", build = Build, icon = { 1, 1 },

@@ -4,7 +4,7 @@ local _, P = ...
 -- one MSUF history entry per gesture (Page.Commit). Builds on the page state
 -- of CooldownManagerData.lua, which loads first.
 local Page = P.CDMPage
-local S = P.S
+local S, Tr = P.S, P.Tr
 local CDM = P.Suite.CDM
 local FAMILY = CDM.FAMILY
 local ID = Page.ID
@@ -133,9 +133,9 @@ end
 Page.PruneLists = Prune
 -- An explicit order that matches what the bar shows now, followed by listed
 -- entries it cannot show right now (unlearned talents keep their place).
-local function Materialize(lists, spec, slot)
-    local slots = ListSlots(lists, spec, slot, true)
-    local old, list = slots[slot], {}
+local function BarList(lists, spec, slot)
+    local slots = ListSlots(lists, spec, slot)
+    local old, list = slots and slots[slot], {}
     local shown = Page.Entries(slot) or EMPTY
     for i = 1, #shown do
         local key = EntryKey(shown[i])
@@ -144,6 +144,11 @@ local function Materialize(lists, spec, slot)
     if old then
         for i = 1, #old do if not IndexOf(list, old[i]) then list[#list + 1] = old[i] end end
     end
+    return list, old
+end
+
+local function StoreList(lists, spec, slot, list, old)
+    local slots = ListSlots(lists, spec, slot, true)
     slots[slot] = list
     if slot == "ess" and (not old or old.inherit) and SpecDefaults(spec) then
         local replace = lists.replace[spec] or {}
@@ -151,6 +156,11 @@ local function Materialize(lists, spec, slot)
         lists.replace[spec] = replace
     end
     return list
+end
+
+local function Materialize(lists, spec, slot)
+    local list, old = BarList(lists, spec, slot)
+    return StoreList(lists, spec, slot, list, old)
 end
 -- One home per entry: drop it from the other bars and from the removed set.
 local function Unclaim(lists, spec, key, keep)
@@ -296,10 +306,10 @@ end
 -- bar does not hold yet join its end, each leaving its old bar (one home per
 -- entry); the rest stay where they are. A full bar takes none of them.
 -- Returns true and how many joined.
-function Page.AddGroup(slot, keys)
+function Page.AddGroup(slot, keys, family)
     local added = 0
     local ok, reason = EditLists(function(lists, spec)
-        local wrong = WrongFamily(FAMILY.COOLDOWN, slot)
+        local wrong = WrongFamily(family or FAMILY.COOLDOWN, slot)
         if wrong then return false, wrong end
         local hidden = lists.hidden[spec]
         local list = Materialize(lists, spec, slot)
@@ -319,6 +329,131 @@ function Page.AddGroup(slot, keys)
         return added > 0 and "Add to cooldown bar" or true
     end)
     return ok, ok and added or reason
+end
+
+
+function Page.ShowsShamanSetup()
+    if not P.Suite.Client.isForever then return false end
+    local _, class = UnitClass("player")
+    return Page.Public(class) and class == "SHAMAN"
+end
+
+local function SetupPlaced(lists, spec)
+    local placed = {}
+    for key in pairs(lists.hidden[spec] or EMPTY) do placed[key] = true end
+    for _, info in ipairs(SLOTS) do
+        local slot = info.key
+        local own = ListSlots(lists, spec, slot)
+        for _, key in ipairs(own and own[slot] or EMPTY) do placed[key] = true end
+        for _, row in ipairs(S.CooldownManagerBarEntries(slot, true) or EMPTY) do
+            local key = EntryKey(row)
+            if key then placed[key] = true end
+            for alias in pairs(row.starterAuraKeys or EMPTY) do placed[alias] = true end
+        end
+    end
+    return placed
+end
+
+local function SetupEntries(lists, spec, slot, choices, placed)
+    if not choices or #choices == 0 or not Page.IsOn(slot) then return end
+    local list, old, added
+    for _, key in ipairs(choices) do
+        if not placed[key] then
+            if not list then list, old = BarList(lists, spec, slot) end
+            if #list >= CDM.LIMITS.entries then break end
+            list[#list + 1] = key
+            Unclaim(lists, spec, key, slot)
+            placed[key] = true
+            added = added or {}
+            added[#added + 1] = key
+        end
+    end
+    if added then StoreList(lists, spec, slot, list, old) end
+    return added
+end
+
+local function SetupPlan(spec)
+    local groups = S.CooldownManagerGroupKeys
+    local cd = groups(false, FAMILY.COOLDOWN, true) or EMPTY
+    local aura = groups(false, FAMILY.AURA, true) or EMPTY
+    local needs = { { "ess", cd.shamanCooldowns }, { "buf", aura.shamanBuffs }, { "buf", aura.shamanDebuffs } }
+    local count = GetNumTotemSlots()
+    if P.Suite.Finite(count) and count >= 1 then
+        local totems = {}
+        for i = 1, math.min(count, CDM.TOTEM_SLOTS) do totems[i] = "t" .. i end
+        needs[#needs + 1] = { "uti", totems }
+    end
+    local lists = CDM.Codec.DecodeLists(P.Get(ID, "listsData"))
+    local spells = CDM.Codec.DecodeSpells(P.Get(ID, "spellsData"))
+    local placed, rows = SetupPlaced(lists, spec), {}
+    for _, need in ipairs(needs) do
+        local added = SetupEntries(lists, spec, need[1], need[2], placed)
+        if added then rows[#rows + 1] = { slot = need[1], keys = added } end
+    end
+    local fields = SpellEditMap(spells, true)
+    for _, row in ipairs(rows) do
+        for _, key in ipairs(row.keys) do
+            local kind, id = CDM.EntryKind(key), CDM.EntryID(key)
+            if fields[key] == nil then
+                if kind == "t" and id == WATER_TOTEM_SLOT then
+                    fields[key] = { totemPulse = true }
+                elseif kind == "t" and (id == AIR_TOTEM_SLOT or id == EARTH_TOTEM_SLOT) then
+                    fields[key] = { totemCoverage = true }
+                elseif key == "a408505" then
+                    fields[key] = { stackGlow = 5 }
+                end
+            end
+        end
+    end
+    Prune(lists, spec)
+    return lists, spells, rows
+end
+
+local function Outline(plan)
+    local byKey, lines = {}, {}
+    for _, family in ipairs({ FAMILY.COOLDOWN, FAMILY.AURA }) do
+        for _, row in ipairs(Page.Catalog(family) or EMPTY) do
+            local key, name = EntryKey(row), P.Suite.PublicText(row.name)
+            if key and name then byKey[key] = name end
+        end
+    end
+    for _, row in ipairs(plan) do
+        local names = {}
+        for _, key in ipairs(row.keys) do
+            local kind = CDM.EntryKind(key)
+            local name = byKey[key]
+            if not name and kind == "t" then name = P.Suite.PublicText(S.CooldownManagerSlotLabel(key)) end
+            if not name and kind ~= "b" then name = C_Spell.GetSpellName(CDM.EntryID(key)) end
+            names[#names + 1] = P.Suite.PublicText(name) or key
+        end
+        lines[#lines + 1] = Page.BarName(row.slot) .. " — " .. table.concat(names, ", ")
+    end
+    return table.concat(lines, "\n\n")
+end
+
+function Page.OpenShamanSetup()
+    local spec, reason = Ready()
+    if not spec then return Page.Fail(reason) end
+    if Page.ForeignSpec() or not Page.ShowsShamanSetup() or not S.CooldownManagerGroupKeys then return end
+    local lists, spells, rows = SetupPlan(spec)
+    if #rows == 0 then return Page.Note(Tr("Your enabled bars already have these entries or are full.")) end
+    local presetText = Outline(rows)
+    local config = S.Config(ID)
+    local oldLists, oldSpells = P.Get(ID, "listsData"), P.Get(ID, "spellsData")
+    P.Confirm("suite.cdm.shaman", Tr("Add these entries to your existing bars?") .. "\n\n" .. presetText, function()
+        if P.Combat() or Page.ForeignSpec() or Page.EditorBlocked() then return Page.Fail(COMBAT) end
+        if S.Config(ID) ~= config or Page.Spec() ~= spec or oldLists ~= P.Get(ID, "listsData") or oldSpells ~= P.Get(ID, "spellsData") then
+            return Page.Fail("Your bars changed. Review the setup again.")
+        end
+        for _, row in ipairs(rows) do
+            if not Page.IsOn(row.slot) then return Page.Fail("Your bars changed. Review the setup again.") end
+        end
+        local ok, why = Page.WithUndo(Tr("Shaman starter entries added."), { "listsData", "spellsData" }, function()
+            return Page.Commit("Shaman starter setup", lists, spells)
+        end)
+        if not ok then Page.Fail(why) end
+        return ok
+    end)
 end
 
 -- Built-in bars refill from Blizzard's list, so a Blizzard entry removed there
@@ -406,14 +541,18 @@ end
 -- current specialization. Other specs and Suite custom/defensive bars stay as
 -- they are. A complete selection is marked so new Blizzard entries do not
 -- silently append after import; the user can restore a Suite spec default later.
-function Page.ImportBlizzard()
+function Page.ImportBlizzard(pasted)
     if Page.ForeignSpec() then return false, "Log into this specialization to import its Blizzard layout." end
     local spec, err = Ready()
     if not spec then return false, err end
-    local snapshot = S.CooldownManagerBlizzardSnapshot
-    if type(snapshot) ~= "function" then return false, "Blizzard's cooldown list is not ready yet." end
-    local bars, reason = snapshot()
-    if not bars then return false, reason end
+    local bars = pasted
+    if not bars then
+        local snapshot = S.CooldownManagerBlizzardSnapshot
+        if not snapshot then return false, "Blizzard's cooldown list is not ready yet." end
+        local reason
+        bars, reason = snapshot()
+        if not bars then return false, reason end
+    end
     local lists = CDM.Codec.DecodeLists(P.Get(ID, "listsData"))
     local slots = lists.specs[spec] or {}
     local reserved = {}

@@ -78,10 +78,8 @@ function Preview.SetMode(mode)
     local was = Preview.mode ~= nil
     Preview.mode = mode
     local on = mode ~= nil
-    if mode ~= "options" then
-        Preview.Simulate(false)
-        Preview.HideLabels()
-    end
+    if not on or mode == "edit" and not Preview.editor then Preview.Simulate(false) end
+    if not on then Preview.HideLabels() end
     C.state.preview = on
     if was == on then return false end
     C.Auras.SetPreview(on)
@@ -330,7 +328,8 @@ Preview.Restart = Restart
 
 function Preview.Simulate(on)
     on = on == true
-    if on and (Preview.mode ~= "options" or NS.IsCombatLocked() or not C.M.active) then on = false end
+    local options = Preview.mode == "options" or Preview.mode == "edit" and Preview.editor ~= nil
+    if on and (not options or NS.IsCombatLocked() or not C.M.active) then on = false end
     if on == Preview.sim then return on end
     Preview.sim = on
     if on then
@@ -621,7 +620,7 @@ end
 local labels, selectBar = {}, nil
 Preview.labels = labels
 local function LabelClick(self)
-    if Preview.mode == "options" and selectBar and not NS.IsCombatLocked() then selectBar(self.slot) end
+    if Preview.mode and selectBar and not NS.InCombat() then selectBar(self.slot) end
 end
 local function NewLabel(bar)
     local frame = S.CreateFrame("Button", nil, bar.frame)
@@ -650,7 +649,9 @@ local function NewLabel(bar)
     frame.label:SetJustifyH("LEFT")
     return frame
 end
+-- Combat entry and preview teardown share this path.
 function Preview.HideLabels()
+    if Preview.editor then S.Dispatch(Preview.editor, false) end
     for _, frame in pairs(labels) do
         if frame.labelShown then
             frame.labelShown = false
@@ -658,9 +659,9 @@ function Preview.HideLabels()
         end
     end
 end
-function Preview.PaintLabels()
-    local options = Preview.mode == "options" and selectBar ~= nil
-    if not (options or Preview.mode == "edit") or not C.M.active or C.state.inCombat or NS.IsCombatLocked() then
+function Preview.PaintLabels(syncEditor)
+    local options = Preview.mode ~= nil and selectBar ~= nil
+    if not (options or Preview.mode == "edit") or not C.M.active or C.state.inCombat or NS.InCombat() then
         Preview.HideLabels()
         return
     end
@@ -697,8 +698,45 @@ function Preview.PaintLabels()
             frame:Hide()
         end
     end
+    if syncEditor and Preview.editor then S.Dispatch(Preview.editor, true) end
 end
-function Preview.LabelBars(select)
-    selectBar = select
-    Preview.PaintLabels()
+
+function Preview.LabelBars(select, editor)
+    if selectBar == select and Preview.editor == editor then return end
+    if Preview.editor and Preview.editor ~= editor then S.Dispatch(Preview.editor, false) end
+    selectBar, Preview.editor = select, editor
+    if Preview.mode == "edit" and not editor then Preview.Simulate(false) end
+    Preview.PaintLabels(true)
+end
+
+-- The editor borrows only the current layout's own icon and fixed cell anchors.
+-- Cells exist for buff previews even if their current auras are unavailable.
+local function EditorEntry(out, index, region, entry)
+    out.items[index], out.keys[index] = region, entry.src ~= "p" and entry.key or false
+    local tile = out.tiles[index] or {}
+    out.tiles[index] = tile
+    tile.key, tile.family = out.keys[index], entry.family
+    tile.name, tile.texture, tile.unit = K.EntryLabel(entry), entry.ov and entry.ov.icon or entry.texture, entry.unit
+    tile.aura = entry.family == K.FAMILY.AURA or entry.hasAura == true
+end
+
+function Preview.EditorBar(slot, out)
+    if not Preview.editor or not Preview.mode or not C.M.active or C.state.inCombat or NS.InCombat() then return false end
+    local bar, plan, view = C.bars[slot], C.plans[slot], C.views[slot]
+    if not (bar and bar.shown and not bar.hidden and plan and view and view.on) then return false end
+    local entries, count = plan.entries, 0
+    local limited = view.maxIcons and view.maxIcons > 0 and min(#entries, view.maxIcons) or #entries
+    local cooldown = view.kind == KIND.COOLDOWN
+    for i = 1, limited do
+        local entry = entries[i]
+        local region = cooldown and entry.icon or not cooldown and bar.cells[i]
+        if region and (not cooldown or region.layShown) then
+            count = count + 1
+            EditorEntry(out, count, region, entry)
+        end
+    end
+    for i = count + 1, out.count or 0 do out.items[i], out.keys[i] = nil, nil end
+    out.anchor, out.count = bar.frame, count
+    out.kind = cooldown and view.cooldownDuration and KIND.AURA_BAR or view.kind
+    return true
 end

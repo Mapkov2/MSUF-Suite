@@ -644,6 +644,7 @@ end
 
 -- Returns an icon to its bar's pool. Points stay with the layout layer.
 local function Recycle(pool, icon)
+    if icon.totemPulseClock then C.TotemPulse.Release(icon) end
     if icon.entry and icon.entry.src == "t" and TotemCoverage.Retire then TotemCoverage.Retire(icon) end
     if icon.readinessText then
         Icons.PaintReadiness(icon)

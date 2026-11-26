@@ -602,7 +602,7 @@ end
 local function OnCombatEnd()
     C.state.inCombat = false
     if C.state.assistIcon then C.Effects.RecommendationVisibility() end
-    C.Preview.PaintLabels()
+    C.Preview.PaintLabels(true)
     C.ActionUsableGlows.Repaint()
     if C.Resolve.ResumeConditions() then
         dirty.resolve = true

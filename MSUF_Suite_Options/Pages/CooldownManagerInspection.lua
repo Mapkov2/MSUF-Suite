@@ -1,9 +1,7 @@
 local _, P = ...
-local Page, S, M, HM = P.CDMPage, P.S, P.M, P.HM
+local Page = P.CDMPage
 if not Page then return end
 local CDM = P.Suite.CDM
-local FIELDS = { "on", "vis", "alpha", "oocAlpha", "hideMounted", "hideVehicle", "hideReady", "hideResting", "hideSolo",
-    "hideWorld", "hideFlying", "hideDead", "hiddenAlpha", "hoverShow" }
 
 -- A search for a spell option: the option the next popover reveals and the
 -- hint under the grid. It ends with that reveal, a bar change, a new note or
@@ -79,50 +77,4 @@ function P.ResolveCDMInspectionTarget(pageKey, target)
     for key, value in pairs(target) do prepared[key] = value end
     prepared.prepareKind, prepared.prepareValue = nil, nil
     return pageKey, prepared
-end
-function Page.BuildInspection(ctx, b, body, y, width, sectionId)
-    local last, shown, opened = {}, nil, false
-    local bottom = y - 42
-    local note = P.Text(body, "", 16, bottom, width, P.T.colors.text)
-    local function Paint()
-        if not opened or P.Combat() then return end
-        local config, keys = S.Config(Page.ID), CDM.KEYS[Page.selected]
-        local available, why = S.Availability(Page.ID)
-        local failure = S.states[Page.ID].error
-        local changed = shown ~= Page.selected or last.enabled ~= config.enabled
-            or last.available ~= available or last.why ~= why or last.failure ~= failure
-        last.available, last.why, last.failure = available, why, failure
-        shown, last.enabled = Page.selected, config.enabled
-        for i, suffix in ipairs(FIELDS) do
-            local value = config[keys[suffix]]
-            if last[i] ~= value then changed, last[i] = true, value end
-        end
-        if not changed then return end
-        local row = S.CDMInspectionRow(Page.selected)
-        Page.SetRaw(note, row.reason)
-        P.FinishBody(b, body, bottom - math.max(14, note:GetStringHeight() or 14) - 12)
-    end
-    local function Inspect()
-        if P.Combat() then return end
-        opened, shown = true, nil
-        Paint()
-    end
-    local function Metadata()
-        local meta = P.Meta(Page.PAGE, Page.ID, "action.inspectVisibility", "action", sectionId)
-        meta.prepareKind, meta.prepareValue = "suiteCDMBar", Page.selected
-        return meta
-    end
-    local button = P.Button(ctx, body, "Check visibility settings", 16, y, width, Inspect,
-        function() return not P.Combat() end, Metadata())
-    HM.SkipHistoryCheckpoint(button)
-    local selected
-    M.TrackRefresh(ctx, function()
-        if P.Combat() then return end
-        if selected ~= Page.selected and M.RegisterControlMetadata then
-            selected = Page.selected
-            M.RegisterControlMetadata(button, Metadata(), "Check visibility settings", "button")
-        end
-        Paint()
-    end)
-    return bottom
 end

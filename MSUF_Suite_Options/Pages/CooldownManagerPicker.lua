@@ -488,20 +488,29 @@ end
 
 -- Spell groups (the runtime's Presets.CATEGORY_ORDER): id and name of each.
 -- A row adds the character's known spells of the group.
-local GROUP_IDS = { "interrupts", "crowdcontrol", "movement", "battlerez", "dispels", "offensive" }
-local GROUP_NAMES = { "Interrupts", "Crowd control spells", "Movement", "Battle resurrection", "Dispels", "Major offensive cooldowns" }
+local GROUPS = {
+    [FAMILY.COOLDOWN] = {
+        { "interrupts", "Interrupts" }, { "crowdcontrol", "Crowd control spells" },
+        { "movement", "Movement" }, { "battlerez", "Battle resurrection" },
+        { "dispels", "Dispels" }, { "offensive", "Major offensive cooldowns" },
+        { "shamanCooldowns", "Shaman cooldowns" },
+    },
+    [FAMILY.AURA] = {
+        { "shamanBuffs", "Shaman buffs" }, { "shamanDebuffs", "Shaman target debuffs" },
+    },
+}
 
 -- The group rows go first; a group the character knows no spell of has none.
 -- n is the last row so far, the result the new last row.
-local function AddGroups(n, slot)
+local function AddGroups(n, slot, family)
     local keys = P.S.CooldownManagerGroupKeys
-    local groups = keys and keys(Page.SharedList(slot))
+    local groups = keys and keys(Page.SharedList(slot), family, not Page.ForeignSpec())
     if not groups then return n end
     local on, shown = {}, Page.Entries(slot) or EMPTY
     for i = 1, #shown do on[EntryKey(shown[i]) or ""] = true end
     local started = false
-    for i = 1, #GROUP_IDS do
-        local list = groups[GROUP_IDS[i]]
+    for _, group in ipairs(GROUPS[family] or EMPTY) do
+        local list = groups[group[1]]
         if list and #list > 0 then
             if not started then
                 started = true
@@ -513,9 +522,9 @@ local function AddGroups(n, slot)
                 if not on[list[j]] then fresh = fresh + 1 end
             end
             n = n + 1
-            local text = Tr(GROUP_NAMES[i])
-            local item = Item(n, "group", text, GROUP_IDS[i], list.icon, true, fresh == 0 and slot or nil, FAMILY.COOLDOWN)
-            item.keys, item.count, item.search = list, fresh, text:lower() .. " " .. GROUP_IDS[i]
+            local text = Tr(group[2])
+            local item = Item(n, "group", text, group[1], list.icon, true, fresh == 0 and slot or nil, family)
+            item.keys, item.count, item.search = list, fresh, text:lower() .. " " .. group[1]
             item.tip = Tr("Adds every spell of this group that you know. Spells on another bar move here.")
         end
     end
@@ -601,7 +610,10 @@ function Page.RebuildPicker()
     local slot = Page.selected
     local family = Page.Family(slot)
     SetRaw(picker.title, format(Tr("Add to %s"), Page.BarName(slot)))
-    local n = family == FAMILY.COOLDOWN and AddGroups(0, slot) + 1 or 1
+    local n = 1
+    if family == FAMILY.COOLDOWN or Page.ShowsShamanSetup() and not Page.ForeignSpec() then
+        n = AddGroups(0, slot, family) + 1
+    end
     Item(n, "header", Tr(family == FAMILY.COOLDOWN and "Blizzard cooldowns" or "Blizzard buffs"))
     local sorted, bySpell, equip = CollectCatalog(slot, family)
     for i = 1, #sorted do
@@ -631,7 +643,7 @@ function Page.PickItem(item)
     local group = item.kind == "group"
     local ok, reason
     if group then
-        ok, reason = Page.AddGroup(Page.selected, item.keys)
+        ok, reason = Page.AddGroup(Page.selected, item.keys, item.family)
     else
         ok, reason = Page.AddEntry(Page.selected, item.key, item.family)
     end

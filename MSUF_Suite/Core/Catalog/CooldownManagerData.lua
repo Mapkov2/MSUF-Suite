@@ -90,6 +90,7 @@ CDM.SPELL_FIELDS = {
     desat = Range(1, 3), hideReady = Bool01, hideAvailableCharges = Bool01, readyAlpha = Range(0, 100), cdAlpha = Range(0, 100),
     showAura = Bool01, replaceAura = Range(0, 2147483647), swipe = Range(1, 3), sound = Sound, lossSound = Sound, tts = Bool01,
     threshold = Range(0, 10), icon = Range(1, 2147483647), showMissing = Bool01, totemCoverage = Bool01,
+    totemPulse = Bool01,
     stackGlow = Range(0, 99), stackGlowOp = Range(1, 5), stackColorAt = Range(0, 99), stackColor = OwnHex,
     -- Where a buff-bar aura is looked for: 1 automatic (audited native aura
     -- identities, then cast polarity), 2 the player, 3 the target, 4 both.

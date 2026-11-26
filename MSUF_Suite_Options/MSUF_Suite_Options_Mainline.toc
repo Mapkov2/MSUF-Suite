@@ -144,6 +144,7 @@ Pages\CooldownManagerPopoverFields.lua
 Pages\CooldownManagerPopoverInputs.lua
 Pages\CooldownManagerPopover.lua
 Pages\CooldownManagerPreviewIcons.lua
+Pages\CooldownManagerScreen.lua
 Pages\CooldownManagerPreview.lua
 Pages\CooldownManagerOverrides.lua
 Pages\CooldownManagerInspection.lua

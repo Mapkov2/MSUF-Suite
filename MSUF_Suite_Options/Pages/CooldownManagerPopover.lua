@@ -50,6 +50,11 @@ end
 -- aura: the entry is a buff, or a cooldown that shows the buff it tracks.
 -- bars: the bar draws bars (buff bars, cooldowns shown as timer bars).
 local function Applies(field, family, kind, aura, barKind, bars, key)
+    if field.key == "totemPulse" then
+        if kind ~= "t" or not Suite.Client.isForever or CDM.EntryID(key) ~= WATER_TOTEM_SLOT then return false end
+        local _, class = UnitClass("player")
+        return Public(class) and class == "SHAMAN"
+    end
     if field.key == "totemCoverage" then return kind == "t" and CoverageSlot(key) ~= nil end
     if kind == "t" then return TOTEM_FIELDS[field.key] == true and not (field.bars and not bars) end
     if field.timer and barKind ~= CDM.KIND.AURA_BAR then return false end

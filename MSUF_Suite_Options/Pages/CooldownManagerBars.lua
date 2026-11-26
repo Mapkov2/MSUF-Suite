@@ -491,7 +491,7 @@ local function BarPicked(value)
         Page.Select(slot)
         Page.FocusName()
     elseif value == "move" then
-        P.MoveOnScreen(ID, slot)
+        P.MoveOnScreen(ID, slot, true)
     elseif value == "reset" then
         Page.ResetBar(slot)
     elseif value == "delete" then
@@ -512,7 +512,7 @@ function Page.OpenBarMenu(owner, slot)
         MenuItem(n, "rename", "Rename this bar")
     end
     n = n + 1
-    local move = MenuItem(n, "move", "Move on screen")
+    local move = MenuItem(n, "move", "Move in Edit Mode")
     move.disabled = not (on and Page.Movable(slot))
     if move.disabled then move.tooltip = Tr(on and "This bar cannot be moved on its own right now." or "Enable this bar first.") end
     n = n + 1
@@ -543,8 +543,10 @@ function Page.OpenBarMenu(owner, slot)
     return W.OpenDropdown(owner, barMenu, nil, BarPicked)
 end
 function Page.FocusSection(id)
-    local body = Page.ui and Page.ui.sections and Page.ui.sections[id]
-    if body and W.FocusCollapsibleSection then W.FocusCollapsibleSection(body, { persist = true, flash = true }) end
+    local ui = Page.ui
+    local body = ui and ui.live and ui.sections[id]
+    if not (body and W.FocusCollapsibleSection) then return false end
+    return W.FocusCollapsibleSection(body, { persist = true, flash = true }) ~= false
 end
 -- Blizzard_CooldownViewer loads at startup on 12.1.0, 12.1.5 and WoW Forever.
 function Page.CanOpenBlizzardSettings()

@@ -102,7 +102,7 @@ local function Build(width, host, mode)
             assert(Bottom(frame)<=Bottom(section)-8,label..': preview content overlaps following settings')
         end
         assert(Bottom(ui.status)<=Bottom(settings)-settings:GetHeight()-8,label..': status overlaps settings')
-        assert(ui.selection:IsShown()==not compact,label..': wrong selection-bar visibility')
+        assert(ui.compact==compact,label..': wrong preview presentation')
     end
     P.M.SetFixedPreviewExpandedPreference(false)
     fixed:Activate(headerHost,0)

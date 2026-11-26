@@ -236,12 +236,7 @@ end
 -- GetLayoutData is "<encoding>|" .. Base64(Deflate(CBOR)). Decoded once per
 -- distinct string; the cache is set before decoding so a string the client
 -- rejects is not retried on every rebuild.
-local lastBlob, lastData = nil, nil
-local function Decode(blob)
-    if not Public(blob) then return lastData end
-    if type(blob) ~= "string" then blob = "" end
-    if blob == lastBlob then return lastData end
-    lastBlob, lastData = blob, nil
+local function DecodeLayoutData(blob, maxBytes)
     if blob == "" then return nil end
     local util = C_EncodingUtil
     local bar = blob:find("|", 1, true)
@@ -249,14 +244,24 @@ local function Decode(blob)
     local raw = util.DecodeBase64(blob:sub(bar + 1))
     if type(raw) ~= "string" or raw == "" then return nil end
     local inflated = util.DecompressString(raw, Enum.CompressionMethod.Deflate)
-    if type(inflated) ~= "string" or inflated == "" then return nil end
+    if type(inflated) ~= "string" or inflated == "" or (maxBytes and #inflated > maxBytes) then return nil end
     local data = util.DeserializeCBOR(inflated)
     if type(data) ~= "table" then return nil end
     local version = data[1]
     -- Blizzard has readers for save formats 1-5 only; others are ignored.
     if type(version) ~= "number" or version < 1 or version > 5 or floor(version) ~= version then return nil end
-    lastData = data
     return data
+end
+Catalog.DecodeBlizzardLayoutData = DecodeLayoutData
+
+local lastBlob, lastData = nil, nil
+local function Decode(blob)
+    if not Public(blob) then return lastData end
+    if type(blob) ~= "string" then blob = "" end
+    if blob == lastBlob then return lastData end
+    lastBlob, lastData = blob, nil
+    lastData = DecodeLayoutData(blob)
+    return lastData
 end
 
 local function Lower(a, b)
@@ -283,6 +288,14 @@ local function ActiveLayout(data, tag)
     return best ~= nil and mine[best] or nil
 end
 
+Catalog.ReadActiveLayout = ActiveLayout
+function Catalog.IsImportCategory(category)
+    for _, value in pairs(CATEGORY) do
+        if category == value then return true end
+    end
+    return false
+end
+
 local function SpecTag()
     local classID = select(3, UnitClass("player"))
     local spec = C_SpecializationInfo.GetSpecialization()
@@ -292,6 +305,7 @@ Catalog.SpecTag = SpecTag
 
 ------------------------------------------------------------------ rebuild
 local fetched, defaultOrder, merged, kept, eff, linkedTmp = {}, {}, {}, {}, {}, {}
+Catalog.defaultOrderIDs = defaultOrder
 local bars = { ess = {}, uti = {}, buf = {}, bar = {}, ext = {} }
 local defaultBars = { ess = {}, uti = {}, buf = {}, bar = {} }
 local defaultSeen = {}

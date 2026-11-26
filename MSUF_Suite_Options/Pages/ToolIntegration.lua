@@ -216,7 +216,6 @@ function P.AppendToolSearchActions(Add)
         Add("loadoutReminder", "action.planner.loadouts", "Instance loadouts", "suite_qualityOfLife_loadoutReminder_loadout_reminder")
         Add("groupFinderTools", "action.planner.lfg", "Group finder workspaces", "suite_qualityOfLife_groupFinderTools_group_finder_tools")
     end
-    Add("cooldownManager", "action.inspectVisibility", "Check visibility settings", "suite_cooldownManager_visibility")
     if P.Suite.Client.isForever then
         Add("autoUprank", "action.updateRanks", "Update placed spell ranks now", "suite_qualityOfLife_autoUprank_auto_uprank")
     end

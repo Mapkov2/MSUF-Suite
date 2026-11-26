@@ -516,7 +516,9 @@ function Grid:Refresh()
         return self.height
     end
     local entries = not blocked and Page.Entries(slot) or nil
-    local openKey = popover and popover:IsShown() and popover.slot == slot and popover.key or nil
+    local origin = popover and popover.anchor
+    local fromLive = origin and origin.ui and origin.ui.slot ~= nil
+    local openKey = not fromLive and popover and popover:IsShown() and popover.slot == slot and popover.key or nil
     -- A popover opened from the preview stays on its preview icon.
     local fromGrid = openKey ~= nil and popover.anchor ~= nil and popover.anchor.grid == self
     local count, openTile, loading = self:PaintTiles(entries, slot, openKey, fromGrid)
@@ -532,7 +534,10 @@ function Grid:Refresh()
     end
     self.message:SetShown(count == 0)
     if popover and popover:IsShown() then
-        if openTile then
+        if fromLive then
+            -- Overflow entries may exist on the HUD without a tile in this grid.
+            Page.PaintPopover()
+        elseif openTile then
             popover.hasAura, popover.unit = openTile.aura, openTile.unit
             if fromGrid then Page.PlacePopup(popover, openTile) end
             Page.PaintPopover()

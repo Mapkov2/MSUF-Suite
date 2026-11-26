@@ -14,7 +14,7 @@ local function PrepareModuleActions()
         minimap = { { "move", "Move on screen" }, { "rescan", "Collect addon buttons again" },
             { "button_positions", "Arrange individual addon buttons" }, { "reload", "Reload UI" } },
         actionbars = { { "bindings", "Key bindings" }, { "move", "Move on screen" }, { "reload", "Reload UI" } },
-        cooldownManager = { { "move", "Move bars on screen" }, { "blizzard", "Open Blizzard's Cooldown Settings" } },
+        cooldownManager = { { "move", "Move in Edit Mode" }, { "blizzard", "Open Blizzard's Cooldown Settings" } },
         objectives = { { "edit", "Move in Edit Mode" }, { "colors", "Tracker colors" } },
         -- Clear run history exists only with Mythic+ results (see the block below).
         runSummary = { { "edit", "Move in Edit Mode" }, { "preview_raid", "Preview raid result" },
@@ -54,16 +54,10 @@ local function PrepareEditorActions()
         { "cooldownManager", "cooldownManager_module", "editor.selected", "Bar to edit", "ephemeral", "dropdown" },
         { "cooldownManager", "cooldownManager_module", "editor.add", "+ Add bar" },
         { "cooldownManager", "cooldownManager_module", "editor.actions", "Bar actions" },
-        { "cooldownManager", "layout", "editor.move", "Move this bar on screen" },
         { "cooldownManager", "layout", "editor.reset", "Reset this bar's settings" },
         { "cooldownManager", "layout", "editor.copyLayout", "Copy layout to other specializations" },
         { "cooldownManager", "basics", "editor.pickFrame", "Pick a frame" },
         { "cooldownManager", "spells", "spells.add", "Add spells" },
-        { "cooldownManager", "spells", "spells.restore", "Show removed spells" },
-        { "cooldownManager", "spells", "spells.clear", "Reset to Blizzard's list" },
-        { "cooldownManager", "spells", "spells.copy", "Copy to other specializations" },
-        { "cooldownManager", "spells", "spells.importBlizzard", "Import Blizzard CDM" },
-        { "cooldownManager", "overrides", "spells.overrides", "Spell overrides" },
         { "nameplates", "auraWorkspace", "action.auraSpec", "DoTs by specialization", nil, "dropdown" },
         { "nameplates", "auraWorkspace", "action.auraSuggestion", "Add a DoT from MSUF", nil, "dropdown" },
         { "nameplates", "auraWorkspace", "action.auraCustom", "Custom aura ID", nil, "textinput" },
@@ -140,7 +134,7 @@ local function AddSpellOptionRows(rows, pagesByKey, checkpoint)
         if alternative then keywords[#keywords + 1], keywords[#keywords + 2] = alternative, Tr(alternative) end
         rows[#rows + 1] = {
             pageKey = spec.page, kind = kind, label = text, sectionId = spec.page .. "_spells",
-            suiteModuleId = "cooldownManager", section = Tr("Spell list"), keywords = keywords,
+            suiteModuleId = "cooldownManager", section = Tr("All spells"), keywords = keywords,
             prepareKind = "suiteCDMSpell", prepareValue = key,
         }
     end
@@ -187,6 +181,26 @@ local function AddQualityOfLifeRows(Add, checkpoint)
             local label = Tr("%s Colors"):format(Tr(feature.title))
             Add(feature.id, "action.colors." .. feature.switch, label, sectionId, nil, nil, feature, { words = colorWords })
         end
+    end
+end
+
+local function AddDynamicEditorActions(Add)
+    -- The bar switches above the action bar editor ("Pet bar", "Action bar 3").
+    for index, title in ipairs(P.Suite.ActionBarTitles) do
+        Add("actionbars", "quick.bar" .. index, title, "suite_actionbars_actionbars_module", nil, "toggle")
+    end
+    local listWords = {}
+    for _, label in ipairs({ "Spell list", "All spells", "Show removed spells", "Reset to Blizzard's list", "Remove all spells",
+        "Copy to other specializations", "Import current Blizzard layout", "Paste Blizzard layout", "Spell overrides", "Customized spells" }) do
+        listWords[#listWords + 1], listWords[#listWords + 2] = label, Tr(label)
+    end
+    if P.CDMPage and P.CDMPage.ShowsShamanSetup and P.CDMPage.ShowsShamanSetup() then
+        listWords[#listWords + 1], listWords[#listWords + 2] = "Shaman starter setup", Tr("Shaman starter setup")
+    end
+    Add("cooldownManager", "spells.actions", "List actions", "suite_cooldownManager_spells", nil, nil, nil, { words = listWords })
+    local auraDraft = P.NameplatesAuraDraft
+    if auraDraft and auraDraft.ShowsFlameShockSetup and auraDraft.ShowsFlameShockSetup() then
+        Add("nameplates", "action.flameShock", "Track Flame Shock", "suite_nameplates_auraWorkspace")
     end
 end
 
@@ -247,10 +261,7 @@ function P.AppendSearchActionRows(rows, pagesByKey, checkpoint)
         local spec = P.catalog[action[1]]
         if spec then Add(action[1], action[3], action[4], spec.page .. "_" .. action[2], action[5], action[6]) end
     end
-    -- The bar switches above the action bar editor ("Pet bar", "Action bar 3").
-    for index, title in ipairs(P.Suite.ActionBarTitles) do
-        Add("actionbars", "quick.bar" .. index, title, "suite_actionbars_actionbars_module", nil, "toggle")
-    end
+    AddDynamicEditorActions(Add)
     AddDataTextBarRows(Add)
     for _, preset in ipairs(P.Suite.DataTextPresets) do
         Add("dataTexts", "preset." .. preset.id, preset.title, "suite_dataTexts_presets")

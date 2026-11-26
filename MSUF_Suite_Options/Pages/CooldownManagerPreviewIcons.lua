@@ -1,9 +1,8 @@
 local _, P = ...
--- Cooldown manager page, preview icons: a pooled, invisible button lies on
--- every icon (or buff bar row) the runtime draws in the docked preview, plus
--- the + tile beside the drawing and the drag within it.
+-- Shared icon interactions for the docked editor and the live Suite bars.
+-- A pooled button handles each drawn entry, plus one button adds spells.
 local Page = P.CDMPage
-local M = P.M
+local M, UIParent = P.M, UIParent
 local ID, PAGE = Page.ID, Page.PAGE
 local KIND, ALIGN = P.Suite.CDM.KIND, P.Suite.CDM.ALIGN
 local SECTION = "suite_cooldownManager_preview"
@@ -28,7 +27,14 @@ local function HitLight(self, on)
     self.opened = on == true
     Ring(self, self.opened or self.hovered == true)
 end
+local function BarSlot(ui) return ui.slot or Page.selected end
+
+local function SelectBar(ui)
+    return not ui.slot or ui.slot == Page.selected or Page.Select(ui.slot)
+end
+
 local function HitTile(hit)
+    if hit.liveTile then return hit.liveTile end
     local grid = hit.key and hit.ui.grid
     return grid and grid:Tile(hit.key) or nil
 end
@@ -80,7 +86,8 @@ local function Flow(drag, ui)
     if ui.hitCount >= 2 and first and second then
         local x1, y1 = first:GetCenter()
         local x2, y2 = second:GetCenter()
-        if type(x1) == "number" and type(y1) == "number" and type(x2) == "number" and type(y2) == "number" then
+        if Page.Public(x1) and Page.Public(y1) and Page.Public(x2) and Page.Public(y2)
+            and type(x1) == "number" and type(y1) == "number" and type(x2) == "number" and type(y2) == "number" then
             local dx, dy = x2 - x1, y2 - y1
             if abs(dx) >= abs(dy) then
                 axis, sign = "x", dx >= 0 and 1 or -1
@@ -90,9 +97,10 @@ local function Flow(drag, ui)
         end
     end
     drag.axis, drag.sign = axis, sign
-    drag.centerOut = ui.kind ~= KIND.AURA_BAR and P.Get(ID, Page.Key("align")) == ALIGN.CENTER
-        and P.Get(ID, Page.Key("centerFirst")) == true
-    drag.perRow = drag.centerOut and (tonumber(P.Get(ID, Page.Key("perRow"))) or 1) or 1
+    local keys = P.Suite.CDM.KEYS[BarSlot(ui)]
+    drag.centerOut = ui.kind ~= KIND.AURA_BAR and P.Get(ID, keys.align) == ALIGN.CENTER
+        and P.Get(ID, keys.centerFirst) == true
+    drag.perRow = drag.centerOut and (tonumber(P.Get(ID, keys.perRow)) or 1) or 1
 end
 -- Center-out icons alternate sides of the midpoint in list order.
 -- Each hit's outer half inserts after it; its inner half inserts before it.
@@ -105,7 +113,7 @@ local function DragStart(drag)
     local hit = drag.hit
     local tile = HitTile(hit)
     drag.active, drag.key = true, hit.key
-    drag.family = tile and tile.family or Page.Family(Page.selected)
+    drag.family = tile and tile.family or Page.Family(BarSlot(hit.ui))
     drag.name = HitName(hit, tile)
     Page.ClosePopups()
     Page.HideTip(hit)
@@ -135,7 +143,7 @@ end
 local function DragTarget(drag, x, y)
     local ui = drag.hit.ui
     local chip = Page.ChipUnderCursor()
-    if chip == Page.selected then chip = nil end
+    if chip == BarSlot(ui) then chip = nil end
     if drag.chip ~= chip then
         drag.chip = chip
         Page.HighlightChip(chip)
@@ -153,7 +161,7 @@ local function DragTarget(drag, x, y)
             target = hit
             local cx, cy = hit:GetCenter()
             local scale = Page.Scale(hit)
-            if type(cx) == "number" and type(cy) == "number" then
+            if Page.Public(cx) and Page.Public(cy) and type(cx) == "number" and type(cy) == "number" then
                 local delta = drag.axis == "y" and (y / scale - cy) or (x / scale - cx)
                 after = delta * TargetSign(drag, hit) > 0
             end
@@ -168,26 +176,20 @@ local function DragDrop(drag)
     local ui = drag.hit.ui
     local key, family, name, slot = drag.key, drag.family, drag.name, drag.dropSlot
     local target, after = drag.dropHit, drag.dropAfter
+    local targetKey = target and target ~= ui.plus and target.key
+    local nextHit = targetKey and target.index < ui.hitCount and ui.hits[target.index + 1]
+    local beforeKey = nextHit and nextHit.key or nil
     DragCancel(drag)
-    if slot then
-        Page.CommitDrop(key, family, name, slot)
-        return
-    end
-    if not target then return end
-    local beforeKey
-    if target ~= ui.plus then
-        local targetKey = target.key
-        if not targetKey then return end
+    if not (slot or targetKey or target == ui.plus) or not SelectBar(ui) then return end
+    if targetKey then
+        local grid = Page.ui and Page.ui.grid
         if not after then
             beforeKey = targetKey
-        elseif ui.grid and ui.grid:Tile(targetKey) then
-            beforeKey = ui.grid:NextKey(targetKey)
-        else
-            local nextHit = target.index < ui.hitCount and ui.hits[target.index + 1] or nil
-            beforeKey = nextHit and nextHit.key or nil
+        elseif grid and grid.mSlot == BarSlot(ui) and grid.mSpec == Page.Spec() and grid:Tile(targetKey) then
+            beforeKey = grid:NextKey(targetKey)
         end
     end
-    Page.CommitDrop(key, family, name, nil, beforeKey)
+    Page.CommitDrop(key, family, name, slot, beforeKey)
 end
 local function DragUpdate(host)
     local drag = host.drag
@@ -233,7 +235,7 @@ local function HitClick(self, button)
         return
     end
     local key = self.key
-    if P.Combat() or key == nil then return end
+    if P.Combat() or key == nil or not SelectBar(self.ui) or self.key ~= key then return end
     if not key then
         Page.TogglePicker(self)
         return
@@ -310,7 +312,7 @@ local function PlusLeave(self)
     Page.HideTip(self)
 end
 local function PlusClick(self)
-    if P.Combat() then return end
+    if not self.pvShown or P.Combat() or not SelectBar(self.ui) then return end
     Page.TogglePicker(self)
 end
 local function NewPlus(ui)
@@ -336,7 +338,7 @@ local function NewPlus(ui)
     plus:SetScript("OnClick", PlusClick)
     plus:Hide()
     plus.pvShown = false
-    if M.RegisterControlMetadata then
+    if not ui.slot and M.RegisterControlMetadata then
         M.RegisterControlMetadata(plus, P.Meta(PAGE, ID, "preview.add", "action", SECTION), "Add spells", "button")
     end
     return plus
@@ -346,6 +348,7 @@ end
 -- the spell list's tiles (which know what a bar rule hides); called after
 -- either changes. Writes on change only.
 local function PaintMarks(ui)
+    if ui.hitCount == 0 then return end
     local spells, grid = Page.EffectiveSpells(), ui.grid
     for i = 1, ui.hitCount do
         local hit = ui.hits[i]
@@ -363,12 +366,21 @@ local function PaintMarks(ui)
         end
     end
 end
+local function AddOnLeft(ui, anchor, size)
+    if not ui.slot then return false end
+    local right, width = anchor:GetRight(), UIParent:GetWidth()
+    if not Page.Public(right) or not Page.Public(width) or type(right) ~= "number" or type(width) ~= "number" then return false end
+    return (right + size + PLUS_GAP) * Page.Scale(anchor) > width * Page.Scale(UIParent)
+end
+
 -- Lays the buttons over what the runtime drew (see Preview.lua for the
 -- holder fields). Writes only what changed.
 local function PaintHits(ui, frame, editable)
     local items, keys, dims = frame and frame.items, frame and frame.keys, frame and frame.dim
+    local tiles, anchor = frame and frame.tiles, frame and (frame.anchor or frame)
     local count = editable and type(items) == "table" and type(keys) == "table" and tonumber(frame.count) or 0
-    local level = (tonumber((ui.handle:GetFrameLevel())) or 0) + 4
+    local layer = ui.handle or ui.canvas
+    local level = (tonumber((layer:GetFrameLevel())) or 0) + 4
     local shown = 0
     for i = 1, count do
         local region = items[i]
@@ -380,8 +392,10 @@ local function PaintHits(ui, frame, editable)
             hit:SetAllPoints(region)
         end
         if hit:GetFrameLevel() ~= level then hit:SetFrameLevel(level) end
-        hit.key = keys[i]
-        if hit.key == nil then hit.key = false end
+        local key = keys[i]
+        if key == nil then key = false end
+        if hit.key ~= key and ui.drag.hit == hit then DragCancel(ui.drag) end
+        hit.key, hit.liveTile = key, tiles and tiles[i] or nil
         local dim = type(dims) == "table" and dims[i] == true
         if hit.dimmed ~= dim then
             hit.dimmed = dim
@@ -389,7 +403,10 @@ local function PaintHits(ui, frame, editable)
         end
         shown = i
     end
-    for i = shown + 1, #ui.hits do ui.hits[i].key = nil end
+    if ui.drag.hit and ui.drag.hit.index > shown then DragCancel(ui.drag) end
+    for i = shown + 1, #ui.hits do
+        ui.hits[i].key, ui.hits[i].liveTile = nil, nil
+    end
     ui.host:ReleaseAll("hit", shown + 1)
     ui.hitCount, ui.kind = shown, frame and frame.kind or KIND.COOLDOWN
     local plus, show = ui.plus, editable and frame ~= nil
@@ -398,17 +415,18 @@ local function PaintHits(ui, frame, editable)
         local size, region = PLUS, shown > 0 and items[1] or nil
         local height = region and region:GetHeight()
         if Page.Public(height) and type(height) == "number" and height > 0 then
-            local own = tonumber((frame:GetScale())) or 1
-            size = max(16, min(PLUS, floor(height * own * (tonumber((ui.stage:GetScale())) or 1) + 0.5)))
+            local scale = ui.slot and 1 or (tonumber((anchor:GetScale())) or 1) * (tonumber((ui.stage:GetScale())) or 1)
+            size = max(16, min(PLUS, floor(height * scale + 0.5)))
         end
         if plus.size ~= size then
             plus.size = size
             plus:SetSize(size, size)
         end
-        if plus.frame ~= frame then
-            plus.frame = frame
+        local left = AddOnLeft(ui, anchor, size)
+        if plus.frame ~= anchor or plus.left ~= left then
+            plus.frame, plus.left = anchor, left
             plus:ClearAllPoints()
-            plus:SetPoint("LEFT", frame, "RIGHT", PLUS_GAP, 0)
+            plus:SetPoint(left and "RIGHT" or "LEFT", anchor, left and "LEFT" or "RIGHT", left and -PLUS_GAP or PLUS_GAP, 0)
         end
         if plus:GetFrameLevel() ~= level then plus:SetFrameLevel(level) end
     end
@@ -427,6 +445,11 @@ local function FollowPopover(ui)
         local hit = ui.hits[i]
         if hit.key == pop.key then
             Page.MovePopover(hit)
+            local tile = hit.liveTile
+            if tile and (pop.hasAura ~= tile.aura or pop.unit ~= tile.unit) then
+                pop.hasAura, pop.unit = tile.aura, tile.unit
+                Page.PaintPopover()
+            end
             return
         end
     end
@@ -451,7 +474,6 @@ local function BuildDrag(ui)
     drag.marker:Hide()
     ui.drag = drag
 end
-
 
 
 -- Exports for the preview (CooldownManagerPreview.lua).

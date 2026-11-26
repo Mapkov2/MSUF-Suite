@@ -16,6 +16,7 @@ ForeverPresets.lua
 Presets.lua
 GuideProfiles.lua
 Catalog.lua
+CatalogImport.lua
 CatalogSlices.lua
 EntryFill.lua
 Resolve.lua

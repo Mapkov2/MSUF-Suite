@@ -5,7 +5,7 @@ local file = assert(io.open(root .. "/tools/tests/suite_cooldown_manager_options
 local source = file:read("*a"); file:close()
 source = source:sub(1, assert(source:find("local ctx = { key = PAGE", 1, true)) - 1)
 local boot = assert(loadstring(source .. [[
-return { P = P, M = M, W = W, Page = Page, CDM = CDM, Config = Config, Fire = Fire, frames = frames,
+return { P = P, M = M, W = W, Page = Page, CDM = CDM, Config = Config, Fire = Fire, frames = frames, registered = registered,
     Tasks = function() return tasks end, Dropdown = function() return lastDropdown end,
     SetSpec = function(id) runtime.specID = id end,
     Build = function(width)
@@ -54,11 +54,15 @@ Case("U02", function()
     config.c1_on, config.c1_shareContents = true, true
     config.listsData = assert(CDM.Codec.EncodeLists({ shared = { c1 = { "s133" } }, specs = { [63] = { c1 = { "s122" } } } }))
     Page.Select("c1")
-    w.Fire(w.ui.spellButtons.clear, "OnEnter")
-    assert(GameTooltip.line == "Empties this shared group for all specializations. You can undo it.",
+    local button = assert(w.registered["menu2.suite_cooldownManager.cooldownManager.spells.actions"])
+    local function Action(value)
+        w.Fire(button, "OnClick")
+        for _, action in ipairs(w.Dropdown().values) do if action.value == value then return action end end
+    end
+    assert(Action("clear").tooltip == "Empties this shared group for all specializations. You can undo it.",
         "U02: shared clear must explain its actual scope")
-    w.Fire(w.ui.spellButtons.copy, "OnEnter")
-    assert(GameTooltip.line == "This shared group's list already applies to all specializations.")
+    local copy = Action("copy")
+    assert(copy.disabled and copy.tooltip == "This shared group's list already applies to all specializations.")
     assert(Sentence(w, "These spells apply to all specializations. Clearing the group empties it for all of them; turning sharing off brings back each spec's own list."),
         "U02: visible help still described a per-specialization list")
     assert(Page.ClearWithUndo("c1") and Page.note == "Removed every spell from Custom bar 1 for all specializations.")
@@ -67,8 +71,7 @@ Case("U02", function()
     Page.RunUndo()
     assert(CDM.Codec.DecodeLists(config.listsData).shared.c1[1] == "s133")
     config.c1_shareContents = false; P.Refresh()
-    w.Fire(w.ui.spellButtons.clear, "OnEnter")
-    assert(GameTooltip.line == "Empties this bar for this specialization. You can undo it.")
+    assert(Action("clear").tooltip == "Empties this bar for this specialization. You can undo it.")
     -- Modern hosts defer the detailed help until hover; its scope must stay live.
     local modern, details = boot()
     modern.W.DescriptionDetails = true
@@ -81,7 +84,7 @@ Case("U02", function()
     modern.Page.Select("c1")
     assert(details and details():find("apply to all specializations", 1, true))
     modern.Config().c1_shareContents = false
-    assert(details():find("Lists are kept per specialization.", 1, true))
+    assert(details():find("Personal spell lists are saved per specialization.", 1, true))
 end)
 
 Case("U03", function()

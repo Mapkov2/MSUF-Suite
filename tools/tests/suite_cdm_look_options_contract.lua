@@ -20,7 +20,7 @@ assert(Section("effects"):find("glowColor,glowLines,glowThickness,glowSpeed,", 1
 assert(Section("effects"):find("showAura,auraSwipeColor,", 1, true), "the active buff swipe follows its switch")
 assert(Section("barstyle"):find("barFill,barSpark,", 1, true), "the spark follows the bar direction")
 for _, key in ipairs({ "tenthsSeconds", "urgentSeconds" }) do
-    assert(Control(key).parent == ctx.sections[7], "the Text section holds " .. key)
+    assert(Control(key).parent == ui.sections.text, "the Text section holds " .. key)
 end
 assert(Control("urgentColor"), "the urgent color has its swatch")
 -- The line rules need Pixel or Autocast as the glow style or (orKey) the pandemic window's.

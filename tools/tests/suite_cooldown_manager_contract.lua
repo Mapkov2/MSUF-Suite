@@ -50,9 +50,9 @@ local function Read(path)
     return text
 end
 AuraContainerSortMethod={ExpirationOnly=5}
-local ORDER={"Bootstrap.lua","Const.lua","RankData.lua","ForeverPresets.lua","Presets.lua","GuideProfiles.lua","Catalog.lua","CatalogSlices.lua","EntryFill.lua","Resolve.lua","ResolveStages.lua","Index.lua",
+local ORDER={"Bootstrap.lua","Const.lua","RankData.lua","ForeverPresets.lua","Presets.lua","GuideProfiles.lua","Catalog.lua","CatalogImport.lua","CatalogSlices.lua","EntryFill.lua","Resolve.lua","ResolveStages.lua","Index.lua",
     "TotemCoverageDisplay.lua","TotemCoverage.lua","Icons.lua","Masque.lua",
-    "TrackingBars.lua","Time.lua","GlowLines.lua","Effects.lua","AssistIcon.lua", "KickMark.lua","AuraGlows.lua","AuraLooks.lua","StackColors.lua","AuraButtons.lua","AuraPlaceholders.lua","AuraTimers.lua","AuraContainers.lua","Auras.lua","AuraRecipients.lua","ActionGlows.lua",
+    "TrackingBars.lua","TotemPulse.lua","Time.lua","GlowLines.lua","Effects.lua","AssistIcon.lua", "KickMark.lua","AuraGlows.lua","AuraLooks.lua","StackColors.lua","AuraButtons.lua","AuraPlaceholders.lua","AuraTimers.lua","AuraContainers.lua","Auras.lua","AuraRecipients.lua","ActionGlows.lua",
     "ActionUsableGlows.lua","ReadyPulse.lua","Alerts.lua","Grid.lua","FrameAnchors.lua","Layout.lua","Visibility.lua","Native.lua","Keybinds.lua","Preview.lua","Flush.lua","Settings.lua","Events.lua","Controller.lua","Editor.lua","Exports.lua"}
 local tocFiles=Support.TocFiles(root,ADDON)
 assert(#tocFiles==#ORDER,"runtime TOC must list all cooldown manager files")
@@ -2436,10 +2436,26 @@ assert(bars.uti.frame.point[2]==bars.ess.frame and bars.uti.frame.point[4]==(uti
 elements.uti.restoreState(elements.uti.captureState())
 local controls={}
 for _,control in ipairs(elements.ess.extraControls) do controls[control.id]=control end
-assert(controls.size and controls.spacing and controls.perRow and controls.size.get()==44,"size, spacing and icons per row")
+assert(controls.size and controls.height and controls.spacing and controls.perRow and controls.size.get()==44,
+    "icon size, height, spacing and icons per row")
 local barControls={}
 for _,control in ipairs(elements.bar.extraControls) do barControls[control.id]=true end
 assert(barControls.barWidth and barControls.barHeight,"buff bars size their bars")
+do
+    for _, control in ipairs(elements.buf.extraControls) do
+        if control.id == "height" then
+            local key = Suite.CDM.KEYS.buf.height
+            assert(control.get() == config[key] and control.step == S.catalog.cooldownManager.rules[key].step,
+                "the Buffs mover must edit its height in the catalog range")
+        end
+    end
+    local menu, routed = Suite.Menu
+    Suite.Menu = { OpenCooldownBar = function(slot) routed = slot; return true end }
+    for _, def in ipairs(Suite.CDM.SLOTS) do
+        assert(elements[def.key].openSettings() and routed == def.key, "mover opened the wrong settings: " .. def.key)
+    end
+    Suite.Menu = menu
+end
 -- Every shown bar moves: free bars by their screen position, bars on another
 -- bar or on MSUF's frames by their offset. The preview goes through the
 -- place hook and writes nothing; the commit writes x/y. Outside MSUF Edit
@@ -2488,6 +2504,59 @@ Run()
 assert(S.CooldownManagerSetPreview(true))
 Run()
 assert(C.Preview.mode=="options")
+do
+    local updates, shown = 0, nil
+    local function Editor(ready)
+        updates, shown = updates + 1, ready
+    end
+    local function Select() end
+    local out = { items = {}, keys = {}, tiles = {} }
+    assert(S.CooldownManagerSetPreview(true, Select, Editor))
+    assert(shown and S.CooldownManagerEditorBar("ess", out) and out.anchor == bars.ess.frame)
+    local first = C.plans.ess.entries[1]
+    assert(out.keys[1] == first.key and out.items[1] == first.icon and out.tiles[1].key == first.key,
+        "the editor must borrow the actual cooldown regions and identities")
+    local tile = out.tiles[1]
+    assert(S.CooldownManagerEditorBar("buf", out) and out.anchor == bars.buf.frame and out.count > 0
+        and out.items[1] == bars.buf.cells[1] and out.tiles[1] == tile,
+        "buffs need real fixed-cell geometry and reusable metadata")
+    assert(S.CooldownManagerEditorBar("c2", out) and out.count > 0 and out.keys[1] == false,
+        "empty bars must expose their sample as an add target")
+    local previous = updates
+    assert(S.CooldownManagerSetPreview(true, Select, Editor))
+    Fire("SPELL_UPDATE_COOLDOWN", 101)
+    Run()
+    assert(updates == previous, "a time-only update repainted live edit controls")
+    local key = Suite.CDM.KEYS.ess.maxIcons
+    local cap = config[key]
+    config[key] = 1
+    module:Refresh()
+    Run()
+    assert(updates > previous and S.CooldownManagerEditorBar("ess", out) and out.count == 1 and not out.items[2],
+        "a layout change must rebind the capped live controls")
+    config[key] = cap
+    module:Refresh()
+    Run()
+
+    combat = true
+    Fire("PLAYER_REGEN_DISABLED")
+    assert(shown == false and not S.CooldownManagerEditorBar("ess", out), "combat did not release the editor")
+    combat = false
+    Fire("PLAYER_REGEN_ENABLED")
+    assert(shown and S.CooldownManagerEditorBar("ess", out), "regen did not restore the editor")
+    S.editMode = true
+    module:Refresh()
+    Run()
+    assert(shown and C.Preview.mode == "edit" and S.CooldownManagerSimulate(true),
+        "the menu editor and simulation must work with the movers")
+    previous = updates
+    S.editMode = false
+    module:Refresh()
+    assert(shown and updates > previous and C.Preview.mode == "options", "unchanged layout kept the Edit Mode click priority")
+    S.CooldownManagerSimulate(false)
+    assert(S.CooldownManagerSetPreview(true))
+    assert(shown == false and not S.CooldownManagerEditorBar("ess", out), "releasing the editor left live targets")
+end
 local rows=S.CooldownManagerBarEntries("ess")
 assert(rows[1].key=="b14" and rows[2].key=="b11","bar entries in display order")
 local meteor

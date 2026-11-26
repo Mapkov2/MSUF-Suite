@@ -1,5 +1,5 @@
 local _, P = ...
--- Cooldown manager page: docked preview, the main editor of the selected
+-- Cooldown manager page: docked editor for the selected
 -- bar. The runtime draws the bar with its own icon and layout code; the stage
 -- cancels the menu's scale so the bar shows at its in-game size. Bar chips
 -- select a bar and take dropped spells; the drawn icons are edited in place
@@ -10,8 +10,7 @@ local ID, PAGE = Page.ID, Page.PAGE
 local SLOTS = P.Suite.CDM.SLOTS
 local SECTION = Page.PREVIEW_SECTION
 local COMPACT, EXPANDED, STRIP_ROW = 300, 460, 30
--- The hint (or note) line under the canvas, the + tile beside the drawing
--- and the rim around it that still drags the whole bar.
+-- The hint or note under the canvas and the rim around the selected bar.
 local LINE, RIM = 42, 6
 local PLUS, PLUS_GAP = Page.PREVIEW_PLUS, Page.PREVIEW_PLUS_GAP
 local max, min, floor, format = math.max, math.min, math.floor, string.format
@@ -21,6 +20,7 @@ local PaintHits, PaintMarks, FollowPopover = Page.PaintPreviewIcons, Page.PaintP
 -- English source text, each one translated as a whole (T.Font translates the
 -- hint line, the tip goes through Tr), so every language orders its parts.
 local HINT = "Click a spell for its settings \194\183 drag to reorder or onto a bar above \194\183 middle-click removes \194\183 + adds"
+local LIVE_HINT = "Click HUD icons or preview icons to edit. Use + to add spells."
 local TIP = "Click: settings \194\183 Drag: reorder \194\183 Middle-click: remove"
 
 ------------------------------------------------------------------ activation
@@ -31,7 +31,7 @@ local TIP = "Click: settings \194\183 Drag: reorder \194\183 Middle-click: remov
 function Page.Activate()
     if P.Combat() then return end
     Page.EnsureRuntime()
-    if S.CooldownManagerSetPreview and S.CooldownManagerSetPreview(true, Page.Select) ~= false then Page.previewOn = true end
+    if S.CooldownManagerSetPreview and S.CooldownManagerSetPreview(true, Page.Select, Page.RefreshScreenEditor) ~= false then Page.previewOn = true end
     -- The runtime ends the simulation on its own (combat, module off); the
     -- toggle shows what actually runs.
     if Page.simulating and S.CooldownManagerSimulate then
@@ -47,6 +47,8 @@ function Page.Deactivate(ui)
     if stage and S.CooldownManagerReleasePreview then S.CooldownManagerReleasePreview(stage) end
     if ui then ui.live = false end
     if ui and Page.ui ~= ui then return end
+    Page.RefreshScreenEditor(false)
+    if ui then ui.screenEditor = nil end
     -- The page hiding ends a pending spell-option search.
     Page.ClearSpellSearch()
     if Page.simulating and S.CooldownManagerSimulate then S.CooldownManagerSimulate(false) end
@@ -63,17 +65,6 @@ function Page.SetSimulate(on)
     Page.simulating = S.CooldownManagerSimulate(on == true) == true
     P.Refresh()
     return Page.simulating
-end
-
--- x/y of the selected bar: its place when free, an offset from its attach
--- point otherwise.
-function Page.WriteOffsets(x, y)
-    if P.Combat() then return false end
-    local xKey, yKey = Page.Key("x"), Page.Key("y")
-    local rules = P.catalog[ID].rules
-    x = max(rules[xKey].min, min(rules[xKey].max, floor((tonumber(x) or 0) + 0.5)))
-    y = max(rules[yKey].min, min(rules[yKey].max, floor((tonumber(y) or 0) + 0.5)))
-    return P.SetMany(ID, { [xKey] = x, [yKey] = y }) == true
 end
 
 ------------------------------------------------------------------ bar chips
@@ -213,18 +204,11 @@ local function PaintStrip(ui, width)
 end
 
 ------------------------------------------------------------------ preview
--- The drawing sits left of center by half the + tile beside it (stage
--- units, counted in the drawing's own scale), so both stay centered. The
--- drawn bar follows the cursor while the button is held (the only per-frame
--- work, cleared on release, hide and combat); the release writes the new
--- offset and the next paint centers the drawing again.
-local function Place(self, dx, dy)
-    local frame = self.target
-    if not frame then return end
+-- Center the bar and its add button together.
+local function PlacePreview(frame, stage, x)
     local own = tonumber((frame:GetScale())) or 1
-    if own <= 0 then own = 1 end
     frame:ClearAllPoints()
-    frame:SetPoint("CENTER", self.stage, "CENTER", ((self.baseX or 0) + dx) / own, dy / own)
+    frame:SetPoint("CENTER", stage, "CENTER", x / max(own, 0.001), 0)
 end
 local function HandleTip(self, entering)
     if not entering then
@@ -235,27 +219,9 @@ local function HandleTip(self, entering)
     if P.Combat() then return end
     self.hover:Show()
     local slot = Page.selected
-    Page.ShowTip(self, Page.BarName(slot), Page.Movable(slot) and Tr("Drag the bar's edge to move it on screen.")
-        or Page.AttachedText(slot),
-        Tr("Click to open its Basics: size and attachment."))
-end
--- A drag that starts hides the tip. A release that did not move is a click
--- (Basics opens); one that moved a bar that cannot move says why.
-local function HandleDrag(self, phase, moved)
-    self.dragging = phase == "start" or nil
-    if phase == "start" then
-        Page.HideTip(self)
-    elseif phase == "stop" and not P.Combat() then
-        if not moved then
-            Page.FocusSection("basics")
-        elseif not Page.Movable(Page.selected) then
-            Page.Note(Page.AttachedText(Page.selected), nil, true)
-        end
-    end
+    Page.ShowTip(self, Page.BarName(slot), Tr("Click to open its Basics: size and attachment."))
 end
 
--- Spec, the bar's place (so a drag or nudge shows its result) and the
--- runtime's takeover note.
 local function StatusText()
     local _, specName = Page.Spec()
     local slot = Page.selected
@@ -282,20 +248,15 @@ local function SimulateEnter(self)
         not Page.Running() and Tr("Turn the cooldown manager on in Basics to play it.") or nil)
 end
 local function BuildToolbar(ui, toolbar)
-    local hint = T.Font(toolbar, "GameFontDisableSmall", "Pick a bar below. Drag the bar's edge to move it.", T.colors.muted)
-    hint:SetPoint("LEFT", toolbar, "LEFT", 150, 0)
-    hint:SetJustifyH("LEFT")
-    hint:SetWordWrap(false)
     local simulate = Page.Button(toolbar, "Simulate", 84, 22, function() Page.SetSimulate(not Page.simulating) end)
     simulate:SetPoint("RIGHT", toolbar, "RIGHT", -106, 0)
-    hint:SetPoint("RIGHT", simulate, "LEFT", -10, 0)
     simulate:SetMotionScriptsWhileDisabled(true)
     simulate:HookScript("OnEnter", SimulateEnter)
     simulate:HookScript("OnLeave", ChipLeave)
     if M.RegisterControlMetadata then
         M.RegisterControlMetadata(simulate, P.Meta(PAGE, ID, "preview.simulate", "action", SECTION), "Simulate", "button")
     end
-    ui.simulate, ui.previewHint = simulate, hint
+    ui.simulate = simulate
 end
 
 local function BuildStrip(ui, body)
@@ -346,8 +307,7 @@ local function BuildCanvas(ui, body)
     ui.stage, ui.canvas, ui.message = stage, canvas, message
 end
 
--- The rim around the drawing: hover, click for Basics, drag to move.
-local function ReadOffsets() return P.Get(ID, Page.Key("x")), P.Get(ID, Page.Key("y")) end
+-- The rim around the drawing opens the bar settings.
 local function BuildHandle(ui)
     local canvas = ui.canvas
     local handle = CreateFrame("Button", nil, canvas)
@@ -359,15 +319,15 @@ local function BuildHandle(ui)
     handle.hover:SetColorTexture(r, g, b, 0.14)
     handle.hover:Hide()
     handle._key, handle._color = "bar", { r, g, b }
-    handle.stage = ui.stage
     handle:Hide()
     if M.RegisterControlMetadata then
         M.RegisterControlMetadata(handle, P.Meta(PAGE, ID, "preview.bar", "action", SECTION), "Selected bar", "button")
     end
     ui.handle = handle
-    ui.kit:Add("bar", handle, ReadOffsets, Page.WriteOffsets, { select = false, clicks = { "LeftButtonUp" },
-        follow = Place, can = function() return Page.Movable(Page.selected) end,
-        scale = function() return Page.Scale(_G.UIParent) end })
+    handle:SetScript("OnEnter", function(self) HandleTip(self, true) end)
+    handle:SetScript("OnLeave", function(self) HandleTip(self, false) end)
+    handle:SetScript("OnHide", function(self) HandleTip(self, false) end)
+    handle:SetScript("OnClick", function() if not P.Combat() then Page.FocusSection("basics") end end)
 end
 
 -- One line under the canvas: the hint, or the last note with its Undo.
@@ -389,42 +349,12 @@ local function BuildNoteLine(ui, body)
             Page.SetRaw(line, Page.note)
             if Page.noteError then line:SetTextColor(1, 0.4, 0.35) else line:SetTextColor(Page.TextColor()) end
         else
-            Page.SetRaw(line, Page.CatalogUnavailable() or Page.SpellSearchHint() or Tr(HINT, true))
+            local hint = ui.screenEditor and LIVE_HINT or HINT
+            Page.SetRaw(line, Page.CatalogUnavailable() or Page.SpellSearchHint() or Tr(hint, true))
             line:SetTextColor(Page.MutedColor())
         end
         undo:SetShown(Page.undo ~= nil)
     end
-end
-
--- Menu2's selection bar (expanded preview): nudges and resets the selected
--- bar's x/y; its settings button opens Basics.
-local function BuildSelection(ui, body)
-    local bar = M.PreviewSelectionBar
-    if not (bar and bar.Create) then return end
-    local handles = { ui.handle }
-    local selection = bar.Create(body, {
-        Tr = Tr,
-        Theme = function() return T end,
-        HandleList = function() return handles end,
-        HandleLabel = function() return Page.BarName(Page.selected) end,
-        IsPlaced = function(item) return item:IsShown() and Page.Movable(Page.selected) end,
-        ReadOffsets = ReadOffsets,
-        WriteOffsets = function(_, _, x, y) return Page.WriteOffsets(x, y) end,
-        NudgeDelta = function(_, dx, dy)
-            local x, y = ReadOffsets()
-            return Page.WriteOffsets(x + dx, y + dy)
-        end,
-        ResetOffsets = function()
-            local rules = P.catalog[ID].rules
-            return Page.WriteOffsets(rules[Page.Key("x")].default, rules[Page.Key("y")].default)
-        end,
-        OpenSettings = function() Page.FocusSection("basics") end,
-        SelectHandle = function() return true end,
-        UpdateHint = function() end,
-    })
-    selection:SetPoint("TOPLEFT", ui.canvas, "BOTTOMLEFT", 0, -(LINE + 6))
-    selection:SetPoint("TOPRIGHT", ui.canvas, "BOTTOMRIGHT", 0, -(LINE + 6))
-    ui.selection, ui.selectionBar = selection, bar
 end
 
 -- Draws the selected bar through the runtime at its in-game size.
@@ -445,13 +375,13 @@ local function Render(ui)
     local h = (tonumber(canvas:GetHeight()) or 80) / scale
     -- Room for the + tile right of the drawing; both stay centered.
     local room = (PLUS + PLUS_GAP) / scale
-    handle.baseX = -room / 2
     local frame = render(ui.stage, Page.selected, max(40, w - 12 - room), max(20, h - 8), Page.TargetContext())
-    handle.target = frame
     if frame then
-        -- A drag in progress keeps the drawing under the cursor.
-        if not handle.dragging then Place(handle, 0, 0) end
-        -- The rim around the icons still drags the whole bar.
+        local own = frame:GetScale()
+        if handle.frame ~= frame or handle.room ~= room or handle.scale ~= own then
+            handle.room, handle.scale = room, own
+            PlacePreview(frame, ui.stage, -room / 2)
+        end
         if handle.frame ~= frame then
             handle.frame = frame
             handle:ClearAllPoints()
@@ -472,7 +402,10 @@ local function Paint(ui)
     if not ui.previewBody:IsVisible() or P.Combat() then return end
     -- The layout on screen keeps the runtime's preview mode on (the module
     -- may have been switched on while the page is open).
-    if ui.live then Page.Activate() end
+    if ui.live then
+        Page.Activate()
+        Page.SyncScreenEditor(ui)
+    end
     local stripHeight = Page.PaintTargetPicker(ui) + PaintStrip(ui, ui.width)
     local room = ui.compact and (ui.compactHeight - 46 - LINE - 8) or (EXPANDED - 84 - LINE - 8)
     local height = max(40, room - stripHeight)
@@ -484,27 +417,13 @@ local function Paint(ui)
     PaintHits(ui, frame, frame ~= nil and not Page.EditorBlocked())
     ui.handle:EnableMouse(true)
     FollowPopover(ui)
-    local handle, body = ui.handle, ui.previewBody
-    handle._label = Page.BarName(Page.selected)
-    body._selectedHandle = handle:IsShown() and Page.Movable(Page.selected) and handle or nil
     ui.simulate:SetEnabled(not Page.ForeignSpec() and S.CooldownManagerSimulate ~= nil and Page.Running())
     ui.simulate:SetActive(Page.simulating == true)
     Page.SetRaw(ui.status, StatusText())
-    if ui.selection and ui.selectionBar.Refresh then ui.selectionBar.Refresh(body) end
 end
--- The compact preview keeps the status under the note line; expanded, the
--- selection bar comes in between.
 local function ApplyCompact(body, compact)
     local ui = body._cdmUI
     ui.compact = compact == true
-    local selection, bar, status = ui.selection, ui.selectionBar, ui.status
-    if selection and bar.SetShown then bar.SetShown(body, not ui.compact) end
-    status:ClearAllPoints()
-    if selection and not ui.compact then
-        status:SetPoint("TOPLEFT", selection, "BOTTOMLEFT", 2, -6)
-    else
-        status:SetPoint("TOPLEFT", ui.canvas, "BOTTOMLEFT", 2, -(LINE + 4))
-    end
     Paint(ui)
 end
 
@@ -521,15 +440,14 @@ local function BuildBody(section, ui)
             DragCancel(ui.drag)
             Page.Deactivate(ui)
         end })
-    ui.kit = Kit.Handles(ui.host, { owner = body, keys = false, combat = P.Combat, tip = HandleTip, drag = HandleDrag })
     Page.BuildTargetPicker(ui, body)
     BuildStrip(ui, body)
     BuildCanvas(ui, body)
     BuildHandle(ui)
     BuildDrag(ui)
     BuildNoteLine(ui, body)
-    BuildSelection(ui, body)
     ui.status = T.Font(body, "GameFontDisableSmall", "", T.colors.muted)
+    ui.status:SetPoint("TOPLEFT", ui.canvas, "BOTTOMLEFT", 2, -(LINE + 4))
     ui.status:SetWidth(ui.width - 4)
     ui.status:SetJustifyH("LEFT")
     ui.status:SetWordWrap(true)
@@ -587,6 +505,7 @@ function Page.BuildPreview(ctx, b, ui)
             ui.host:Paint("activate")
             -- The runtime may have loaded just now: repaint tiles and gates.
             P.Refresh()
+            if Page.pendingFocus and Page.FocusSection(Page.pendingFocus) then Page.pendingFocus = nil end
         end
     end
     M.TrackRefresh(ctx, ui.PaintPreview)

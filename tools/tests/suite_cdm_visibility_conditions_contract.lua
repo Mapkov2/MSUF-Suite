@@ -603,12 +603,8 @@ do
     for suffix in (list or ""):gmatch('"(%w+)"') do order[#order + 1] = suffix end
     Check(table.concat(order, ",") == "vis,oocAlpha,hideMounted,hideVehicle,hideResting,hideSolo,hideWorld,hideFlying,"
         .. "hideDead,hiddenAlpha,hoverShow,fadeTime,tooltips", "visibility section order: " .. table.concat(order, ","))
-    file = assert(io.open(root .. "/MSUF_Suite_Options/Pages/CooldownManagerInspection.lua", "rb"))
-    text = file:read("*a"):gsub("\r", ""); file:close()
-    local fields = text:match("local FIELDS = (%b{})") or ""
-    for _, new in ipairs(NEW) do
-        if new[1] ~= "fadeTime" then Check(fields:find('"' .. new[1] .. '"', 1, true), "the inspection note ignores " .. new[1]) end
-    end
+    Check(not text:find("Check visibility settings", 1, true) and not text:find("BuildInspection", 1, true),
+        "visibility options still show the duplicate inspection UI")
     -- The gate: opacity while hidden needs a hide rule, mouseover and fade
     -- time a hide rule or a fade out of combat.
     local config = {}

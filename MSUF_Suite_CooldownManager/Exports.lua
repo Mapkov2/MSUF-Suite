@@ -50,7 +50,20 @@ end
 -- included; hidden (and hiddenBy) marks what a bar rule hides in live play.
 -- Entries past Maximum icons that "Send excess cooldowns to" moves to
 -- another bar are not hidden: movedTo names the bar they show on.
-function S.CooldownManagerBarEntries(slot)
+-- Used only by additive starter setup to recognize already placed native
+-- and custom auras with the same public IDs and recipient type.
+local function StarterAuraKeys(entry)
+    if entry.family ~= K.FAMILY.AURA or not entry.auraIDs then return end
+    local prefix
+    if entry.unit == "target" and entry.auraHelpful == false then prefix = "d"
+    elseif entry.unit == "player" then prefix = "a" end
+    if not prefix then return end
+    local keys = {}
+    for id in pairs(entry.auraIDs) do keys[prefix .. C.Ranks.Canon(id)] = true end
+    return keys
+end
+
+function S.CooldownManagerBarEntries(slot, starterAliases)
     local rows = {}
     if not CDM.SLOT_INDEX[slot] then return rows end
     Cold()
@@ -78,6 +91,7 @@ function S.CooldownManagerBarEntries(slot)
             if movedTo then hiddenBy = nil end
             rows[#rows + 1] = { key = key, name = desc.name, texture = ov.icon or desc.texture, known = desc.known ~= false, family = desc.family,
                 hasAura = desc.hasAura == true, hidden = hiddenBy ~= nil, hiddenBy = hiddenBy, movedTo = movedTo }
+            if starterAliases then rows[#rows].starterAuraKeys = StarterAuraKeys(desc) end
         end
     end
     return rows
@@ -138,7 +152,54 @@ end
 local tracked, listed = {}, {}
 -- Every rank of a ranked spell names the record (WoW Forever, Ranks.Claim).
 local function Track(id, key) C.Ranks.Claim(tracked, id, key) end
-function S.CooldownManagerGroupKeys(plain)
+
+-- Spell IDs belong to Forever's spellbook. Aura rows use the spell that
+-- grants the aura as their learned-spell check when the IDs differ.
+local SHAMAN_COOLDOWNS = { 8042, 8050, 8056, 17364, 16188, 16166, 8143, 8177, 16190, 370 }
+local SHAMAN_BUFFS = { { 324, 324 }, { 408510, 408510 }, { 16164, 16246 }, { 408498, 408505 } }
+local SHAMAN_DEBUFFS = { { 8050, 8050 }, { 8056, 8056 } }
+
+local function KnownShamanAuras(entries, prefix)
+    local fill, keys = C.EntryFill, {}
+    for i = 1, #entries do
+        local spell, aura = entries[i][1], entries[i][2]
+        if fill.Known(spell) then
+            keys[#keys + 1] = prefix .. C.Ranks.Canon(aura)
+            keys.icon = keys.icon or C.Catalog.SpellTexture(aura)
+        end
+    end
+    return keys
+end
+
+local function ShamanGroup(fill, catalog)
+    local keys = {}
+    wipe(listed)
+    for i = 1, #SHAMAN_COOLDOWNS do
+        local spell = SHAMAN_COOLDOWNS[i]
+        local base = fill.KeySpell(spell)
+        if fill.Known(spell) or fill.Known(base) then
+            local key = tracked[spell] or tracked[base] or "s" .. base
+            if not listed[key] then
+                listed[key] = true
+                keys[#keys + 1] = key
+                keys.icon = keys.icon or catalog.SpellTexture(base)
+            end
+        end
+    end
+    return keys
+end
+
+function S.CooldownManagerGroupKeys(plain, family, currentCharacter)
+    local _, classToken = UnitClass("player")
+    local shaman = NS.Client.isForever and currentCharacter and S.Public(classToken) and classToken == "SHAMAN"
+    if family == K.FAMILY.AURA then
+        if not shaman then return end
+        Cold()
+        return {
+            shamanBuffs = KnownShamanAuras(SHAMAN_BUFFS, "a"),
+            shamanDebuffs = KnownShamanAuras(SHAMAN_DEBUFFS, "d"),
+        }
+    end
     Cold()
     local Presets, Fill, Catalog = C.Presets, C.EntryFill, C.Catalog
     wipe(tracked)
@@ -172,6 +233,7 @@ function S.CooldownManagerGroupKeys(plain)
             end
         end
     end
+    if shaman then out.shamanCooldowns = ShamanGroup(Fill, Catalog) end
     return out
 end
 
@@ -181,6 +243,10 @@ function S.CooldownManagerRenderPreview(parent, slot, maxWidth, maxHeight, class
     Cold()
     return C.Preview.Render(parent, slot, maxWidth, maxHeight, classSample)
 end
+function S.CooldownManagerEditorBar(slot, out)
+    return C.Preview.EditorBar(slot, out)
+end
+
 function S.CooldownManagerReleasePreview(parent)
     C.Preview.Release(parent)
 end
@@ -357,11 +423,11 @@ function S.CooldownManagerMovable(slot) return C.Layout.Movable(slot) end
 local movers = {}
 local function Control(id, key)
     local rule = S.catalog[ID].rules[key]
-    return { id = id, label = S.Text(rule.label), kind = "number", min = rule.min, max = rule.max, step = 1,
-        get = function() return S.Config(ID)[key] end,
+    return { id = id, label = S.Text(rule.label), kind = "number", min = rule.min, max = rule.max,
+        step = rule.step or 1, get = function() return S.Config(ID)[key] end,
         set = function(value) return S.Set(ID, key, value) end }
 end
-local ICON_CONTROLS, BAR_CONTROLS = { "size", "spacing", "perRow" }, { "barWidth", "barHeight" }
+local ICON_CONTROLS, BAR_CONTROLS = { "size", "height", "spacing", "perRow" }, { "barWidth", "barHeight" }
 -- A direct drag of either member of the Essential/Utility pair leaves
 -- the other at its screen position. An attached child absorbs its parent's
 -- movement into its own offset, so the attachment remains usable.
@@ -413,6 +479,7 @@ local function Mover(i, timer)
         history[#history + 1], history[#history + 2] = childKeys.x, childKeys.y
     end
     return { timer = timer, label = def.title, order = 700 + i, xKey = keys.x, yKey = keys.y, extraControls = controls, historyKeys = history,
+        openSettings = function() return NS.Menu.OpenCooldownBar(slot) end,
         move = child and function(x, y, request) return MovePair(slot, child, x, y, request) end or nil,
         getFrame = function()
             local bar = C.bars[slot]
