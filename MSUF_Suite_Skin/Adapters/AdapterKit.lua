@@ -40,6 +40,7 @@ end
 -- Hidden windows retain only their latest request per owner. The native
 -- OnShow wakes it once; clean reopens do no work and need no timer.
 local hiddenRequests = AdapterKit.WeakSet()
+local sizeRequests, sizeObserved = AdapterKit.WeakSet(), AdapterKit.WeakSet()
 local hiddenOrder = 0
 
 local function Hidden(frame)
@@ -101,6 +102,10 @@ end
 
 function AdapterKit.CancelHidden(owner)
     for _, requests in pairs(hiddenRequests) do requests[owner] = nil end
+    for frame, requests in pairs(sizeRequests) do
+        requests[owner] = nil
+        if not next(requests) then sizeRequests[frame] = nil end
+    end
 end
 
 -- value, or nil when it is secret.
@@ -183,6 +188,44 @@ end
 
 function AdapterKit.IsShown(region)
     return Read(region, "IsShown") == true
+end
+
+-- True for a laid-out window smaller than the screen, false for full-screen,
+-- nil while real geometry is unavailable. Use screen coordinates when either
+-- object supplies a scale: a 640x360 frame at 2x can cover a 1280x720 UI.
+function AdapterKit.WindowShellFits(frame)
+    local width, height = Read(frame, "GetWidth"), Read(frame, "GetHeight")
+    local screenWidth, screenHeight = Read(UIParent, "GetWidth"), Read(UIParent, "GetHeight")
+    if type(width) ~= "number" or type(height) ~= "number" or width <= 1 or height <= 1
+        or type(screenWidth) ~= "number" or type(screenHeight) ~= "number" or screenWidth <= 1 or screenHeight <= 1 then return nil end
+    if Safety.HasMethod(frame, "GetEffectiveScale") or Safety.HasMethod(UIParent, "GetEffectiveScale") then
+        local scale, screenScale = Read(frame, "GetEffectiveScale"), Read(UIParent, "GetEffectiveScale")
+        if type(scale) ~= "number" or type(screenScale) ~= "number" or scale <= 0 or screenScale <= 0 then return nil end
+        width, height = width * scale / screenScale, height * scale / screenScale
+    end
+    return width < screenWidth * .9 or height < screenHeight * .9
+end
+
+local function RetryWindowSize(frame)
+    local requests = sizeRequests[frame]
+    if not requests or Hidden(frame) or AdapterKit.WindowShellFits(frame) ~= true then return end
+    -- Detach before dispatch. A native callback can reenter this same owner.
+    sizeRequests[frame] = nil
+    for _, request in pairs(requests) do Dispatch(request.callback, request.a, request.b) end
+end
+
+-- Reachable only when a shell changed size between cold preparation and
+-- its reveal. Ordinary windows never install either of these hooks.
+function AdapterKit.WaitForWindowSize(frame, owner, callback, a, b)
+    if not sizeObserved[frame] then
+        if not Safety.HasMethod(frame, "HookScript") then return end
+        frame:HookScript("OnShow", RetryWindowSize)
+        if Read(frame, "HasScript", "OnSizeChanged") ~= false then frame:HookScript("OnSizeChanged", RetryWindowSize) end
+        sizeObserved[frame] = true
+    end
+    local requests = sizeRequests[frame]
+    if not requests then requests = {}; sizeRequests[frame] = requests end
+    requests[owner] = { callback = callback, a = a, b = b }
 end
 
 -- A secret parent reads as nil: it is never compared.
@@ -450,10 +493,10 @@ local function Track(context, target)
 end
 AdapterKit.Track = Track
 
-local function AttachWith(attach, context, target, spec)
+local function AttachWith(attach, context, target, spec, prepare)
     if not CanCreateRegions(target) then return false end
     spec.allowImplicitProtected = true
-    local surface = attach(target, spec)
+    local surface = attach(target, spec, prepare)
     if not surface then return false end
     Track(context, target)
     return true, surface
@@ -466,8 +509,8 @@ end
 
 -- The same for hooks that run per row initialization or native update: a
 -- surface that already shows spec and is current is left alone (Surface.Ensure).
-function AdapterKit.Ensure(context, target, spec)
-    return AttachWith(NS.Surface.Ensure, context, target, spec)
+function AdapterKit.Ensure(context, target, spec, prepare)
+    return AttachWith(NS.Surface.Ensure, context, target, spec, prepare)
 end
 
 -- Camelot LargeSideTabButtonTemplate (Legacy, Group Finder, Professions).

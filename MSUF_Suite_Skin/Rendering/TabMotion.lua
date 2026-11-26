@@ -9,7 +9,7 @@ local mailTabs = {}
 local function PaintSelection(tab, selected)
     local state = NS.ControlSkin.states[tab]
     if not state or not state.enabled or Safety.IsForbidden(tab) or Safety.GetProtection(tab) then return end
-    NS.ControlSkin.Refresh(tab, selected)
+    NS.ControlSkin.Refresh(tab, selected, true)
     if selected then NS.MenuMotion.SelectionChanged(tab) end
 end
 

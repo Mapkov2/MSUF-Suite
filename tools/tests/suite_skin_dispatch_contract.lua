@@ -15,6 +15,7 @@ securecallfunction = function(callback, ...)
 end
 -- Retail and Forever always have C_Timer; this stand-in runs at once.
 C_Timer = { After = function(_, callback) callback() end }
+dofile(root .. "/tools/tests/skin_registry_timer_fixture.lua")(C_Timer)
 
 local function Frame()
     return {
@@ -70,6 +71,7 @@ do
     local timers, calls, deferred = {}, 0, 0
     local timer, gate, isLocked = C_Timer, NS.CombatGate, NS.IsCombatLocked
     C_Timer = { After = function(_, callback) timers[#timers + 1] = callback end }
+    dofile(root .. "/tools/tests/skin_registry_timer_fixture.lua")(C_Timer)
     NS.CombatGate = { RunOrDefer = function() deferred = deferred + 1 end }
     NS.IsCombatLocked = function() return false end
     NS.Registry.QueueJob(function() calls = calls + 1 end)
@@ -77,9 +79,10 @@ do
     assert(calls == 1, "startup did not finish queued skin work before lockdown")
     NS.Registry.QueueJob(function() calls = calls + 1 end)
     NS.Registry.FlushStartupLayout()
-    assert(calls == 2 and #timers == 1, "startup forgot the scheduled skin callback and armed another")
+    assert(calls == 2 and #timers == 2, "startup lost a fresh burst after canceling its drained timer")
     NS.IsCombatLocked = function() return true end
     timers[1]()
+    timers[2]()
     assert(calls == 2 and deferred == 0, "startup queued a second skin refresh during lockdown")
     C_Timer, NS.CombatGate, NS.IsCombatLocked = timer, gate, isLocked
 end
@@ -281,8 +284,11 @@ local stages = {}
 local function Stage(name)
     return function() stages[#stages + 1] = name end
 end
+local tooltipCore, appearanceListener = { Tooltips = { RefreshTheme = Stage("tooltips") } }, nil
 local life = {
     Safety = NS.Safety,
+    Registry = { AddListener = function(_, callback) appearanceListener = callback end },
+    SuiteCore = function() return tooltipCore end,
     Client = {},
     InitializeLocalization = function() end,
     Database = { Initialize = function() end },
@@ -291,15 +297,16 @@ local life = {
     Checkmarks = { Apply = Stage("checkmarks") },
     Typography = { ApplyConfigured = Stage("typography") },
     Adapters = { ApplyAll = Stage("adapters") },
-    ItemTooltipCard = { Refresh = Stage("tooltips") },
     PublicAPI = { OnDatabaseReady = function() end, OnPlayerLogin = Stage("api") },
 }
 reported = {}
 assert(loadfile(root .. "/MSUF_Suite_Skin/Core/Lifecycle.lua"))("MSUF_Suite_Skin", life)
 local lifecycle = frames[#frames]
 lifecycle.script(lifecycle, "PLAYER_LOGIN")
-assert(table.concat(stages, ",") == "look,checkmarks,typography,adapters,tooltips,api"
+assert(table.concat(stages, ",") == "look,checkmarks,typography,adapters,api"
     and Reported("gold text failed"), "a failing login stage stopped the stages after it")
+appearanceListener(life, "theme", "look")
+assert(stages[#stages] == "tooltips", "appearance changes missed the Suite tooltip consumer")
 
 -- Normal skin login warms the hidden LoD panel through the native callback,
 -- after PLAYER_LOGIN dispatch. Enabled profile and real-lockdown gates are
@@ -312,6 +319,7 @@ do
         local loadReason = forever and "Forever" or "Retail"
         PlayerSpellsFrame = nil
         C_Timer = { After = function(_, callback) timers[#timers + 1] = callback end }
+        dofile(root .. "/tools/tests/skin_registry_timer_fixture.lua")(C_Timer)
         EventUtil = { ContinueOnAddOnLoaded = function(addon, callback)
             assert(addon == "Blizzard_PlayerSpells" and not continuation)
             continuation = callback
@@ -341,8 +349,7 @@ do
             BlizzardYellow = { Apply = Noop },
             Checkmarks = { Apply = Noop, TrackControlTree = Noop },
             Typography = { ApplyConfigured = Noop },
-            ItemTooltipCard = { Refresh = Noop },
-            Registry = { RefreshAll = Noop, NotifyListeners = Noop },
+            Registry = { AddListener = Noop, RefreshAll = Noop, NotifyListeners = Noop },
             WindowControls = NS.WindowControls,
             PlayerSpellsSkin = {
                 Apply = function(frame)

@@ -91,10 +91,12 @@ Check(updates == 1, "a job asked for many times ran " .. updates .. " times")
 -- The client can deliver regen before the unit flag settles. The next
 -- frame is free to retry, while further probes wait for a short interval.
 local wake, wakeDelay, originalTimer = nil, nil, C_Timer
-C_Timer = { After = function(delay, callback)
+local function Wake(delay, callback)
     Check(wake == nil, "combat end queued multiple wake-ups")
     wake, wakeDelay = callback, delay
-end }
+    return { Cancel = function() Check(wake == callback, "gate canceled an unrelated wake") wake = nil end }
+end
+C_Timer = { After = Wake, NewTimer = Wake }
 local applied = 0
 local function SkinPopup() applied = applied + 1 end
 locked = true
@@ -157,10 +159,12 @@ Check(applied == 3 and Gate.GetPendingCount() == 0
 
 locked, staleUnitCombat = true, true
 Gate.RunOrDefer("cancel-before-wake", SkinPopup)
+Gate.RunOrDefer("other-wake-owner", SkinPopup)
 Gate.Cancel("cancel-before-wake")
-callback, wake = wake, nil
+Check(wake and Gate.IsPending("other-wake-owner"), "cancel removed another owner's shared timer")
+Gate.Cancel("other-wake-owner")
+Check(not wake, "last combat gate cancel left a native timer callback")
 locked, staleUnitCombat = false, false
-callback()
 Check(applied == 3 and Gate.GetPendingCount() == 0
     and not gateFrame.events.PLAYER_REGEN_ENABLED, "a cancelled job survived the scheduled wake")
 -- When a retry suspended itself in new lockdown, an unlocked caller may

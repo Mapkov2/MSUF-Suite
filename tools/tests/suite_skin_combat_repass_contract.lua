@@ -194,6 +194,7 @@ dofile(root .. "/tools/tests/suite_test_support.lua").SecretValues()
 NS.CombatGate = nil
 local timers, clock = {}, 0
 C_Timer = { After = function(_, callback) timers[#timers + 1] = callback end }
+dofile(root .. "/tools/tests/skin_registry_timer_fixture.lua")(C_Timer)
 debugprofilestop = function() return clock end
 InCombatLockdown = function() return locked end
 local function RunTimers()

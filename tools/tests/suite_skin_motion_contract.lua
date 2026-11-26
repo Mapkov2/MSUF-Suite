@@ -13,6 +13,7 @@ InCombatLockdown = function() return lockdown end
 Enum = { UITextureSliceMode = { Stretched = 1 } }
 CreateColor = function(r, g, b, a) return { r = r, g = g, b = b, a = a } end
 C_Timer = { After = function(_, callback) callback() end }
+dofile(root .. "/tools/tests/skin_registry_timer_fixture.lua")(C_Timer)
 
 local function Texture()
     textures = textures + 1
@@ -974,7 +975,7 @@ client:ReleaseAll()
 NS.GenericWindows = { SetMenuMotionProvider = Noop }
 NS.ResultMotion, NS.ScrollMotion, NS.LegacyScrollMotion = { ReleaseOwner = Noop }, { ReleaseOwner = Noop }, { ReleaseOwner = Noop }
 NS.Adapters = { SetMenuMotionProvider = Noop }
-NS.AdapterKit = { SetMotionProvider = Noop }
+Load("Adapters/AdapterKit.lua")
 NS.SocialUISkin = { SetMotionProvider = Noop }
 NS.CollapseCollections = { Track = Noop }
 NS.AddonListMotion = { DisableOwner = Noop }
@@ -1043,12 +1044,34 @@ nestedClient:ReleaseAll()
 Check(not nestedRecord.group:IsPlaying(), "public menu release retained descendant motion")
 
 -- Palette retarget starts at its displayed colors. Picker edits stay direct.
+local palettePainted
+local installPalette = Surface.SetPaletteMotionProvider
+function Surface.SetPaletteMotionProvider(callback)
+    palettePainted = callback
+    installPalette(callback)
+end
 Load("Rendering/PaletteMotion.lua")
+Surface.SetPaletteMotionProvider = installPalette
 local shell = Target("Frame", UIParent)
 local paletteState = Surface.Attach(shell, { role = "shell", motion = true })
 Tick()
 local palette = paletteState.paletteMotion
 local initial = palette.current[1]
+do
+    local samples, material = {}, NS.Theme.GetMaterial("shell")
+    for i = 1, 128 do samples[i] = { spec = paletteState.spec, target = shell } end
+    collectgarbage("collect")
+    collectgarbage("stop")
+    local before = collectgarbage("count")
+    for _, sample in ipairs(samples) do palettePainted(sample, material) end
+    local bytes = (collectgarbage("count") - before) * 1024
+    collectgarbage("restart")
+    print(("128 initial palette snapshots: %.0f bytes"):format(bytes))
+    for _, sample in ipairs(samples) do
+        local snapshot = sample.paletteMotion
+        Check(snapshot and snapshot.to == snapshot.current, "initial paint allocated a second palette buffer")
+    end
+end
 local hostPaletteFrame = Target("Frame", UIParent)
 Check(host:SkinFrame(hostPaletteFrame, { role = "shell", paletteMotion = true }), "host palette policy rejected")
 local hostPaletteState = NS.Registry.GetSurface(hostPaletteFrame)

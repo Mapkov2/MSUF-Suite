@@ -27,6 +27,7 @@ end
 InCombatLockdown = function() return false end
 local timers = {}
 C_Timer = { After = function(_, callback) timers[#timers + 1] = callback end }
+dofile(root .. "/tools/tests/skin_registry_timer_fixture.lua")(C_Timer)
 local function NextFrame()
     local queued = timers
     timers = {}

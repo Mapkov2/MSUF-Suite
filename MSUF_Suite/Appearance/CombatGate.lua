@@ -17,6 +17,7 @@ local CombatGate = {
 NS.CombatGate = CombatGate
 
 local eventFrame
+local resumeTimer
 local combatStarted = false
 
 -- Drops stale slots once they outnumber the live jobs, so a key that is
@@ -36,6 +37,10 @@ local function Compact()
 end
 
 local function Clear()
+    if resumeTimer then
+        resumeTimer:Cancel()
+        resumeTimer = nil
+    end
     local order, positions = CombatGate.order, CombatGate.positions
     for index = #order, 1, -1 do order[index] = nil end
     for key in pairs(positions) do positions[key] = nil end
@@ -52,13 +57,12 @@ end
 -- rest until it ends. A job leaves the queue before it runs: none runs twice.
 local DRAIN_BUDGET_MS = 4
 local FIRST_SETTLE_DELAY, MAX_SETTLE_DELAY = 0.05, 0.25
-local draining, resumeQueued, settleDelay = false, false, 0
+local draining, settleDelay = false, 0
 local ResumeDrain
 
 local function ScheduleDrain(delay)
-    if resumeQueued then return end
-    resumeQueued = true
-    C_Timer.After(delay or 0, ResumeDrain)
+    if resumeTimer then return end
+    resumeTimer = C_Timer.NewTimer(delay or 0, ResumeDrain)
 end
 
 -- Each deferred job is its own boundary: a job that raises is reported and
@@ -92,7 +96,7 @@ local function Drain(budget)
 end
 
 ResumeDrain = function()
-    resumeQueued = false
+    resumeTimer = nil
     if CombatGate.count == 0 or Drain(DRAIN_BUDGET_MS) then return end
     if combatStarted or InCombatLockdown() then return end
     -- The unit flag can outlast the regen event and the next frame.
@@ -129,7 +133,7 @@ function CombatGate.RunOrDefer(key, callback)
         if CombatGate.count > 0 then
             -- Preserve the scheduled drain's order. If there is no such
             -- drain, do not let a queued callback replay after this request.
-            if resumeQueued and not draining then
+            if resumeTimer and not draining then
                 Drain(nil)
             else
                 CombatGate.Cancel(key or callback)

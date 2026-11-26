@@ -81,11 +81,12 @@ end
 -- The sixth getter is the highlight: it takes the hover role of its button.
 -- TrackButton reads the third, the normal texture, once before the loop.
 local NORMAL_GETTER_INDEX, HIGHLIGHT_GETTER_INDEX = 3, 6
-local buttonTextureGetters = {
+local GETTER_SLOTS = 6
+local buttonArtSlots = {
     "GetCheckedTexture", "GetDisabledCheckedTexture", "GetNormalTexture",
     "GetPushedTexture", "GetDisabledTexture", "GetHighlightTexture",
+    "CheckedTexture", "DisabledCheckedTexture", "leftTexture2", "Icon",
 }
-local buttonTextureFields = { "CheckedTexture", "DisabledCheckedTexture", "leftTexture2", "Icon" }
 
 local acceptedPaths = {
     ["interface\\buttons\\ui-checkbox-check"] = "checkmark",
@@ -424,8 +425,7 @@ local ButtonGetter = CheckedCall
 -- one such pass, so only buttons visited again keep readings. The getters
 -- return no secrets (no secret aspect in the 12.1 API documentation).
 local buttonArt = setmetatable({}, { __mode = "k" })
-local GETTER_SLOTS = #buttonTextureGetters
-local ART_SLOTS = GETTER_SLOTS + #buttonTextureFields
+local ART_SLOTS = #buttonArtSlots
 
 -- The strings use the same normalization as the classification pass.
 local function ReadArt(button, art)
@@ -433,9 +433,9 @@ local function ReadArt(button, art)
     for slot = 1, ART_SLOTS do
         local value
         if slot <= GETTER_SLOTS then
-            value = ButtonGetter(button, buttonTextureGetters[slot])
+            value = ButtonGetter(button, buttonArtSlots[slot])
         else
-            value = button[buttonTextureFields[slot - GETTER_SLOTS]]
+            value = button[buttonArtSlots[slot]]
         end
         local base = slot * 4
         if type(value) ~= "table" then
@@ -461,7 +461,7 @@ end
 -- Applies the role of each slot's texture; changed, and whether any slot had one.
 local function ApplyArtRoles(button, owner, normal, art)
     local changed, recognized = false, false
-    local normalRole = AssetRole(normal, art, NORMAL_GETTER_INDEX)
+    local normalRole = (type(normal) == "table" or art and art[NORMAL_GETTER_INDEX * 4]) and AssetRole(normal, art, NORMAL_GETTER_INDEX)
     if normalRole then art = nil end
     local highlightRole
     if normalRole == "blizzardExpand" then
@@ -469,11 +469,12 @@ local function ApplyArtRoles(button, owner, normal, art)
     elseif IsCloseRole(normalRole) then
         highlightRole = "blizzardCloseHover"
     end
-    for index = 1, #buttonTextureGetters do
+    for index = 1, GETTER_SLOTS do
         local texture, role = normal, normalRole
         if index ~= NORMAL_GETTER_INDEX then
-            texture = ButtonGetter(button, buttonTextureGetters[index])
-            role = (index == HIGHLIGHT_GETTER_INDEX and highlightRole) or AssetRole(texture, art, index)
+            texture = ButtonGetter(button, buttonArtSlots[index])
+            role = index == HIGHLIGHT_GETTER_INDEX and highlightRole
+            if not role and (type(texture) == "table" or art and art[index * 4]) then role = AssetRole(texture, art, index) end
         end
         if role then
             art = nil
@@ -481,9 +482,9 @@ local function ApplyArtRoles(button, owner, normal, art)
             changed = ApplyTexture(texture, owner, role) or changed
         end
     end
-    for index = 1, #buttonTextureFields do
-        local texture = button[buttonTextureFields[index]]
-        local role = AssetRole(texture, art, GETTER_SLOTS + index)
+    for slot = GETTER_SLOTS + 1, ART_SLOTS do
+        local texture = button[buttonArtSlots[slot]]
+        local role = (type(texture) == "table" or art and art[slot * 4]) and AssetRole(texture, art, slot)
         if role then
             art = nil
             recognized = true
@@ -505,6 +506,16 @@ local function RememberArt(button, art, noRole)
     end
 end
 
+-- An empty layout frame needs no classifier. Test only whether a slot exists;
+-- type avoids comparing restricted values with nil. CheckedCall and AssetRole
+-- validate the actual method or texture when a widget supplies one.
+local function HasButtonArt(button)
+    for slot = 1, ART_SLOTS do
+        if type(button[buttonArtSlots[slot]]) ~= "nil" then return true end
+    end
+    return false
+end
+
 function Checkmarks.TrackButton(button, owner)
     if not NS.DB or not NS.DB.enabled or not CanTrack(button) then
         return false
@@ -515,6 +526,9 @@ function Checkmarks.TrackButton(button, owner)
         buttonArt[button], art = nil, nil
     end
     local scan = not (art and ReadArt(button, art))
+    if scan and not HasButtonArt(button) then
+        buttonArt[button], scan = nil, false
+    end
     local normal, actionKind
     if scan then
         normal = ButtonGetter(button, "GetNormalTexture")
@@ -567,11 +581,11 @@ function Checkmarks.UntrackButton(button, owner)
     -- RestoreTexture drops each state, so a texture reached through two
     -- getters is restored once.
     local restored = false
-    for index = 1, #buttonTextureGetters do
-        restored = RestoreOwnedTexture(Getter(button, buttonTextureGetters[index]), owner) or restored
+    for index = 1, GETTER_SLOTS do
+        restored = RestoreOwnedTexture(Getter(button, buttonArtSlots[index]), owner) or restored
     end
-    for index = 1, #buttonTextureFields do
-        restored = RestoreOwnedTexture(Field(button, buttonTextureFields[index]), owner) or restored
+    for slot = GETTER_SLOTS + 1, ART_SLOTS do
+        restored = RestoreOwnedTexture(Field(button, buttonArtSlots[slot]), owner) or restored
     end
     Checkmarks.buttons[button] = nil
     Checkmarks.buttonOwners[button] = nil

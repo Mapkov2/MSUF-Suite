@@ -141,6 +141,8 @@ local function FadeRegion(state, region)
             return false
         end
         state.faded[region] = alpha
+    elseif state.spec.nativeTabSystem and AccessibleNumber(region, "GetAlpha") == 0 then
+        return true
     end
     region:SetAlpha(0)
     return true
@@ -234,10 +236,21 @@ local function SetOwnedStateAlpha(surface, alpha)
     end
 end
 
-local function AssignOwnedButtonStates(button)
+local function AssignOwnedButtonStates(button, reuseTab)
     local surface = NS.Registry.GetSurface(button)
     if not surface or surface.kind ~= "button" then
         return false
+    end
+    -- A stable native spellbook tab keeps its bindings across selection updates.
+    -- A changed texture, highlight blend or layer still takes the native repair.
+    if reuseTab then
+        if Safety.Read(button, "GetHighlightTexture") ~= surface.highlight or Safety.Read(surface.highlight, "GetBlendMode") ~= "BLEND" then
+            SetSpecialTexture(button, "SetHighlightTexture", surface.highlight, "BLEND")
+        end
+        if Safety.Read(button, "GetPushedTexture") ~= surface.pushed then SetSpecialTexture(button, "SetPushedTexture", surface.pushed) end
+        if Safety.Read(button, "GetDisabledTexture") ~= surface.disabled then SetSpecialTexture(button, "SetDisabledTexture", surface.disabled) end
+        NS.Surface.RepairOwnedTabLayers(surface)
+        return true
     end
     -- SkinOwnedButton has already painted the final opacity for all states.
     -- SetAlpha(1) here also replaces SetVertexColor's alpha in the client,
@@ -312,13 +325,23 @@ local function DefaultSearchSpec(spec, target)
     return copy
 end
 
-local function SkinButtonSurface(button, state, active)
+local function SkinButtonSurface(button, state, active, reuseBagPaint, nativeSelection)
+    if reuseBagPaint then
+        local surface = NS.Registry.GetSurface(button)
+        if surface and surface.kind == "button" and surface.spec == state.spec and surface.visible
+            and not surface.active and not surface.syncNativeSelected and not surface.pendingVisible and not surface.pendingActive then
+            -- Both clients' UIPanelButton_OnShow resets three slice textures, never
+            -- the material. Keep the native text repair and the generation check.
+            NS.BlizzardYellow.TrackFrame(button)
+            return NS.Surface.Ensure(button, state.spec)
+        end
+    end
     local isTab = state.kind == "minimalTab" or state.kind == "panelTab"
     if isTab then TrackTabMotion(button, state) end
     if active == nil then active = state.requestedActive end
     if active == nil and isTab then active = DetectSelected(button) end
     return NS.Surface.SkinOwnedButton(button, state.spec, active == true,
-        isTab and state.requestedActive == nil)
+        isTab and state.requestedActive == nil, nativeSelection and state.spec.nativeTabSystem)
 end
 
 local function TrackNativeAssets(button, owner)
@@ -342,19 +365,24 @@ end
 local fixedButtonSpecs = setmetatable({}, { __mode = "k" })
 
 -- The owner supplies an immutable spec; native assets and bindings still refresh.
-function ControlSkin.MarkFixedButtonSpec(spec)
-    fixedButtonSpecs[spec] = true
+function ControlSkin.MarkFixedButtonSpec(spec, bagAction)
+    fixedButtonSpecs[spec] = bagAction and "bagAction" or true
     return spec
 end
 
 local function ApplyButtonNow(button, owner, kind, spec)
     -- An ownedArt control has no native asset to track (PublicAPI.lua).
     local actionKind = not spec.ownedArt and TrackNativeAssets(button, owner) or nil
+    local tab = spec.nativeTabSystem and ControlSkin.states[button]
+    -- Deferred PlayerSpells refreshes see the same native tab after its
+    -- selection callback. The initial paint and changes of owner still rebuild.
+    local reuseTabPaint = tab and tab.enabled and tab.owner == owner and tab.fixedSpec == spec and not tab.windowAction
     local state, reason = GetState(button, kind, owner)
     if not state then
         return nil, reason
     end
 
+    local reuseBagPaint = state.enabled and state.fixedSpec == spec and fixedButtonSpecs[spec] == "bagAction"
     if state.fixedSpec ~= spec then
         state.spec = DefaultButtonSpec(kind, spec, state.spec)
         state.cosmeticSpec = CopyCosmeticSpec(spec, state.cosmeticSpec)
@@ -372,8 +400,8 @@ local function ApplyButtonNow(button, owner, kind, spec)
     state.windowAction = false
     state.actionKind = nil
     SnapshotButtonState(button, state)
-    local surface, surfaceReason = SkinButtonSurface(button, state)
-    if not surface or not AssignOwnedButtonStates(button) then
+    local surface, surfaceReason = SkinButtonSurface(button, state, nil, reuseBagPaint, reuseTabPaint)
+    if not surface or not AssignOwnedButtonStates(button, reuseTabPaint) then
         ForgetNativeStates(state)
         return nil, surfaceReason or "surface unavailable"
     end
@@ -450,7 +478,7 @@ end
 -- Button skins follow a native window action (returns nil and its kind) or
 -- (re)assign the owned state textures. A refresh also drops an action layer
 -- whose native art kit has changed to a non-action family.
-local function RepaintButton(target, state, active, dropStaleAction)
+local function RepaintButton(target, state, active, dropStaleAction, nativeSelection)
     local actionKind = not (state.spec and state.spec.ownedArt)
         and TrackNativeAssets(target, state.owner) or nil
     if actionKind then
@@ -465,14 +493,14 @@ local function RepaintButton(target, state, active, dropStaleAction)
     -- Capture that current cooperative state before our textures are assigned
     -- again so the next Disable restores the latest owner, not our old skin.
     SnapshotButtonState(target, state)
-    local surface, reason = SkinButtonSurface(target, state, active)
+    local surface, reason = SkinButtonSurface(target, state, active, nil, nativeSelection)
     if not surface or not AssignOwnedButtonStates(target) then
         return false, reason or "surface unavailable"
     end
     return true
 end
 
-local function RefreshNow(target, state, active)
+local function RefreshNow(target, state, active, nativeSelection)
     if not state.enabled then
         return false, "disabled"
     end
@@ -482,7 +510,7 @@ local function RefreshNow(target, state, active)
             return false, reason or "surface unavailable"
         end
     else
-        local painted, detail = RepaintButton(target, state, active, true)
+        local painted, detail = RepaintButton(target, state, active, true, nativeSelection)
         if painted == nil then
             if state.nativeCaptured then RestoreButtonStates(target, state) end
             local action, reason = WindowActionSkin.Apply(target, state.owner, detail)
@@ -501,12 +529,12 @@ local function AllowsImplicit(state)
     return state.spec and state.spec.allowImplicitProtected
 end
 
-function ControlSkin.Refresh(target, active)
+function ControlSkin.Refresh(target, active, nativeSelection)
     local state = ControlSkin.states[target]
     if not state then
         return false, "unknown control"
     end
-    local refreshed, reason = RunForControl(target, AllowsImplicit(state), RefreshNow, state, active)
+    local refreshed, reason = RunForControl(target, AllowsImplicit(state), RefreshNow, state, active, nativeSelection)
     if refreshed == nil then
         return false, reason
     end

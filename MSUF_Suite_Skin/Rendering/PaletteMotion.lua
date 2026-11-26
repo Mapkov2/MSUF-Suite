@@ -66,13 +66,22 @@ local function Painted(state, material)
         if not Enabled(state) then return end
         -- Keep only the last painted colors until a palette change actually
         -- animates. Cold menu construction needs no spring or channel tables.
-        record = { state = state, to = {}, current = {}, palette = true }
+        record = { state = state, to = {}, palette = true }
+        record.current = record.to
         record.policy = state.spec.paletteMotion == true and palettePolicy or nil
         state.paletteMotion = record
         ReadTarget(record, material)
-        for index = 1, 12 do record.current[index] = record.to[index] end
         record.epoch = Palette.epoch
         return
+    end
+    -- Between palette changes, a direct paint is already displaying its target.
+    -- The first transition needs both the displayed colors and a new destination.
+    if record.current == record.to then
+        if record.epoch == Palette.epoch then
+            ReadTarget(record, material)
+            return
+        end
+        record.to = {}
     end
     local targetChanged = ReadTarget(record, material)
     local changed = false

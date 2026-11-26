@@ -37,11 +37,8 @@ local structuralRoles = {
 
 local ConfigureShape = NS.Geometry.ConfigureShape
 
--- Counts the changes that can alter how an existing surface paints: every
--- settings notification (theme, colours, geometry, profile, adapters), a new
--- surface and a visibility change (both can change which ancestor fills a
--- nested glass surface). A surface records the generation it was painted
--- for; Surface.Ensure skips a surface that is still current.
+-- Settings can change every material. Only glass panels that inherit an
+-- enclosing fill also depend on other surfaces or a native reparent.
 local paintGeneration = 0
 
 local function NextPaintGeneration()
@@ -74,17 +71,18 @@ local function ResolveFill(material, spec, alphaScale)
         local r, g, b, a, tr, tg, tb, ta, gradient, direction = spec.resolveFill(spec, alphaScale)
         if r ~= nil then return r, g, b, a, tr, tg, tb, ta, gradient, direction end
     end
-    local from = NS.Theme.GetColorTable(material.from)
-    local to = NS.Theme.GetColorTable(material.to)
-    local opacity = NS.Theme.GetMaterialOpacity(material)
+    local themeProvider = NS.Theme
+    local getColor = themeProvider.GetColorTable
+    local from, to = getColor(material.from), getColor(material.to)
+    local opacity = themeProvider.GetMaterialOpacity(material)
         * (tonumber(spec.fillAlphaScale) or 1) * (alphaScale or 1)
     local theme = NS.DB.theme
     local strength = theme.gradientStrength or 1
     local opaque = spec.opaqueFill == true
-    return from[1], from[2], from[3], opaque and 1 or from[4] * opacity,
-        from[1] + (to[1] - from[1]) * strength, from[2] + (to[2] - from[2]) * strength,
-        from[3] + (to[3] - from[3]) * strength,
-        opaque and 1 or (from[4] + (to[4] - from[4]) * strength) * opacity,
+    local r, g, b, a = from[1], from[2], from[3], from[4]
+    return r, g, b, opaque and 1 or a * opacity,
+        r + (to[1] - r) * strength, g + (to[2] - g) * strength, b + (to[3] - b) * strength,
+        opaque and 1 or (a + (to[4] - a) * strength) * opacity,
         theme.gradient == true, theme.gradientDirection or "VERTICAL"
 end
 
@@ -96,16 +94,20 @@ local function ApplyFill(texture, material, state, alphaScale, prepared)
     local r, g, b, fromA, toR, toG, toB, toA, shaded, direction
     if prepared then
         r, g, b, fromA, toR, toG, toB, toA, shaded, direction = unpack(prepared)
+        material = nil
     else
-        r, g, b, fromA, toR, toG, toB, toA, shaded, direction = ResolveFill(material, state.spec, alphaScale)
+        local spec = state.spec
+        r, g, b, fromA, toR, toG, toB, toA, shaded, direction = ResolveFill(material, spec, alphaScale)
+        if spec.resolveFill then material = nil end
     end
     texture:SetVertexColor(1, 1, 1, 1)
     if shaded or state.gradientFrom then
         -- Replace the previous per-corner colors even when the shade is turned off.
-        state.gradientFrom = NS.Theme.ReuseColor(state.gradientFrom, r, g, b, fromA)
+        local reuse = NS.Theme.ReuseColor
+        state.gradientFrom = reuse(state.gradientFrom, r, g, b, fromA, material, 1)
         local finish = state.gradientFrom
         if shaded then
-            state.gradientTo = NS.Theme.ReuseColor(state.gradientTo, toR, toG, toB, toA)
+            state.gradientTo = reuse(state.gradientTo, toR, toG, toB, toA, material, 2)
             finish = state.gradientTo
         end
         texture:SetGradient(direction, state.gradientFrom, finish)
@@ -133,6 +135,7 @@ end
 local function RefreshDepth(state, geometry, material, suppressFill)
     local amount = tonumber((NS.DB and NS.DB.theme and NS.DB.theme.materialDepth)
         or NS.Defaults.theme.materialDepth) or 0
+    if state.preparedShell then state.preparedDepth = nil end
     if amount <= 0 or state.spec.fillVisible == false or state.spec.depth == false or suppressFill
         or not SupportsDepth(state) or not geometry.hoverEdge then
         if state.depth then state.depth:Hide() end
@@ -144,7 +147,10 @@ local function RefreshDepth(state, geometry, material, suppressFill)
     end
     ConfigureShape(state.depth, geometry.hoverEdge, geometry)
     SetVertexColor(state.depth, "background", amount * NS.Theme.GetMaterialOpacity(material))
-    if state.visible == false then
+    if state.preparedShell then
+        state.preparedDepth = state.visible ~= false
+        state.depth:Hide()
+    elseif state.visible == false then
         state.depth:Hide()
     else
         state.depth:Show()
@@ -172,49 +178,25 @@ local function FlattensNestedFill(state)
         or (state.spec.keepGlassFill == nil and RoleForState(state) == "panel")
 end
 
--- Reused by every refresh; nothing below yields, so no refresh can nest.
-local ancestorScratch = {}
-
 local function HasFilledStructuralSurfaceAncestor(state)
-    local ancestors = ancestorScratch
-    local count = 0
     local current = state.target
     for _ = 1, MAX_ANCESTOR_DEPTH do
-        -- 12.1 can return a secret parent (Hierarchy aspect); Read gives nil
-        -- for it, so it is never used as a registry key.
-        local parent = NS.Safety.Read(current, "GetParent")
-        if not parent then break end
-        local ancestor = NS.Registry.GetSurface(parent)
-        if ancestor and ancestor.visible ~= false and SupportsDepth(ancestor) then
-            count = count + 1
-            ancestors[count] = ancestor
+        -- A secret parent is not a public registry key.
+        current = NS.Safety.Read(current, "GetParent")
+        if not current then return false end
+        local ancestor = NS.Registry.GetSurface(current)
+        -- A flattened ancestor already has another filled ancestor. Thus the
+        -- first visible structural fill establishes the same composited base.
+        if ancestor and not ancestor.preparedShell and ancestor.visible ~= false and ancestor.spec.fillVisible ~= false and SupportsDepth(ancestor) then
+            return true
         end
-        current = parent
     end
-
-    -- Resolve from the outermost surface inward. Panels flatten by default;
-    -- adapters can explicitly set keepGlassFill=false on another role when
-    -- verified full-area chrome would otherwise stack another scrim.
-    -- Explicit edge-only ancestors never make all descendants transparent.
-    local hasFilledBase = false
-    for index = count, 1, -1 do
-        local ancestor = ancestors[index]
-        ancestors[index] = nil
-        local fills = ancestor.spec.fillVisible ~= false
-            and not (ancestor.spec.listItem == true and ancestor.active ~= true)
-        if fills and hasFilledBase and FlattensNestedFill(ancestor) then
-            fills = false
-        end
-        hasFilledBase = hasFilledBase or fills
-    end
-    return hasFilledBase
+    return false
 end
 
-local function SuppressNestedGlassFill(state)
-    return FlattensNestedFill(state)
-        and state.spec.listItem ~= true
-        and Surface.UsesGlassCompositing()
-        and HasFilledStructuralSurfaceAncestor(state)
+local function IsPaintCurrent(state)
+    return state.paintGeneration == paintGeneration
+        and (state.filledGlassAncestor == nil or state.filledGlassAncestor == HasFilledStructuralSurfaceAncestor(state))
 end
 
 local function AddToken(tokens, key)
@@ -387,7 +369,11 @@ local function RefreshState(state, checked)
     state.geometry = geometry
     local material = NS.Theme.GetMaterial(RoleForState(state))
     local hideIdleListFill = state.spec.listItem == true and state.active ~= true
-    local suppressNestedGlassFill = SuppressNestedGlassFill(state)
+    local filledGlassAncestor
+    if FlattensNestedFill(state) and state.spec.listItem ~= true and Surface.UsesGlassCompositing() then
+        filledGlassAncestor = HasFilledStructuralSurfaceAncestor(state)
+    end
+    local suppressNestedGlassFill = filledGlassAncestor
     local tintLayer = suppressNestedGlassFill and forever
         and state.spec.keepGlassFill ~= false and not state.spec.opaqueFill
     if tintLayer then suppressNestedGlassFill = false end
@@ -405,7 +391,7 @@ local function RefreshState(state, checked)
         ConfigureShape(state.edge, edgeAsset, geometry)
         local color, opacity = Surface.GetEdgePaint(state, material)
         SetVertexColor(state.edge, color, opacity)
-        state.edge:Show()
+        if state.preparedShell then state.edge:Hide() else state.edge:Show() end
     else
         state.edge:Hide()
     end
@@ -413,7 +399,11 @@ local function RefreshState(state, checked)
     RefreshDepth(state, geometry, material, suppressNestedGlassFill or tintLayer)
     RefreshButtonState(state, geometry)
     RefreshInteractiveHover(state, geometry)
-    if state.visible == false then
+    if state.preparedShell then
+        state.preparedEdge = state.visible ~= false and edgeAsset or nil
+        state.preparedFill = state.visible ~= false and state.spec.fillVisible ~= false and not hideIdleListFill and not suppressNestedGlassFill
+        state.fill:Hide()
+    elseif state.visible == false then
         state.fill:Hide()
         state.edge:Hide()
         if state.depth then state.depth:Hide() end
@@ -426,6 +416,9 @@ local function RefreshState(state, checked)
     else
         state.fill:Show()
     end
+    -- nil marks an independent surface; false must notice a structural parent
+    -- added later. Publish this alongside the other successful paint stamp.
+    state.filledGlassAncestor = filledGlassAncestor
     state.paintGeneration = paintGeneration
     OnPainted(state)
     OnPalettePainted(state, material)
@@ -434,17 +427,19 @@ end
 
 -- deferRefresh: the caller (SkinOwnedButton) registers and paints the
 -- surface itself once it is a button, so neither happens here.
-local function AttachNow(target, spec, deferRefresh)
+local function AttachNow(target, spec, deferRefresh, prepareShell)
     local state = NS.Registry.GetSurface(target)
     -- An ownedArt control has no Blizzard-gold text (PublicAPI.lua).
     if not (spec or state and state.spec or {}).ownedArt then BlizzardYellow.TrackFrame(target) end
     if state then
+        if state.preparedShell then
+            state.preparedShell, state.preparedFill, state.preparedEdge, state.preparedDepth = nil, nil, nil, nil
+        end
         state.spec = spec or state.spec
         if state.pendingVisible then
             NS.CombatGate.Cancel(state.pendingVisible)
             state.pendingVisible = nil
         end
-        if state.visible == false then NextPaintGeneration() end
         state.visible = true
         EnsureInteractiveHover(target, state)
         if state.inset ~= state.spec.inset then
@@ -460,7 +455,6 @@ local function AttachNow(target, spec, deferRefresh)
         return state
     end
 
-    NextPaintGeneration()
     local fill = target:CreateTexture(nil, "BACKGROUND", nil, -7)
     local edge = target:CreateTexture(nil, "BORDER", nil, 7)
     AnchorTexture(fill, target, spec and spec.inset)
@@ -470,6 +464,7 @@ local function AttachNow(target, spec, deferRefresh)
         target = target,
         spec = spec or {},
         inset = spec and spec.inset,
+        preparedShell = prepareShell,
         fill = fill,
         edge = edge,
         visible = true,
@@ -505,10 +500,25 @@ end
 -- (scrolling lists, stat and slot updates): a surface that shows this exact
 -- spec, visible and painted for the current generation, is left alone.
 -- Callers that rewrite a spec table in place call Attach instead.
-function Surface.Ensure(target, spec)
+function Surface.Ensure(target, spec, prepareShell)
     local state = target and NS.Registry.GetSurface(target)
+    if prepareShell then
+        -- Never hide an already-adopted surface. Only this root's first cold
+        -- material is prepared, and a refresh cannot show its layers yet.
+        if state then return state.preparedShell and state.spec == spec and state or nil end
+        if not target or NS.IsCombatLocked() or not CanPaint(target, spec) or type(target.CreateTexture) ~= "function" then return end
+        return AttachNow(target, spec, false, true)
+    end
     if state and state.spec == spec and state.visible ~= false and not state.syncNativeSelected
-        and state.paintGeneration == paintGeneration and (not NS.IsCombatLocked() or CanRefreshState(state)) then
+        and IsPaintCurrent(state) and (not NS.IsCombatLocked() or CanRefreshState(state)) then
+        if state.preparedShell then
+            if not CanPaint(target, spec) then return end
+            state.preparedShell = nil
+            if state.preparedFill then state.fill:Show() end
+            if state.preparedEdge then state.edge:Show() end
+            if state.preparedDepth then state.depth:Show() end
+            state.preparedFill, state.preparedEdge, state.preparedDepth = nil, nil, nil
+        end
         return state
     end
     return Surface.Attach(target, spec)
@@ -541,6 +551,20 @@ local function SupportsButtonStateTextures(button)
         and type(button.SetPushedTexture) == "function"
 end
 
+local function RepairLayer(texture, layer, sublevel)
+    if not texture then return end
+    local current, order = NS.Safety.Call(texture, "GetDrawLayer")
+    if NS.Safety.Public(current) and NS.Safety.Public(order) and current == layer and order == sublevel then return end
+    texture:SetDrawLayer(layer, sublevel)
+end
+
+-- Rebinding on a native tab can change the layer of just one owned texture.
+function Surface.RepairOwnedTabLayers(state)
+    RepairLayer(state.highlight, BUTTON_HIGHLIGHT_LAYER, BUTTON_HIGHLIGHT_SUBLEVEL)
+    RepairLayer(state.pushed, BUTTON_PUSHED_LAYER, BUTTON_PUSHED_SUBLEVEL)
+    RepairLayer(state.disabled, BUTTON_DISABLED_LAYER, BUTTON_DISABLED_SUBLEVEL)
+end
+
 function Surface.EnsureOwnedButtonHighlightLayer(button)
     local state = NS.Registry.GetSurface(button)
     if not state or state.kind ~= "button" or not state.highlight then
@@ -570,7 +594,7 @@ local function SetButtonPresentation(state, active, syncNativeSelected)
     if syncNativeSelected ~= nil then state.syncNativeSelected = syncNativeSelected == true end
 end
 
-function Surface.SkinOwnedButton(button, spec, active, syncNativeSelected)
+function Surface.SkinOwnedButton(button, spec, active, syncNativeSelected, nativeSelection)
     if not button then return nil, "invalid button" end
     if not CanPaint(button, spec) then return nil, "protected button" end
     if not SupportsButtonStateTextures(button) then return nil, "invalid button" end
@@ -578,12 +602,19 @@ function Surface.SkinOwnedButton(button, spec, active, syncNativeSelected)
     local state = NS.Registry.GetSurface(button)
     if state and state.kind == "button" then
         if not spec.ownedArt then BlizzardYellow.TrackFrame(button) end
+        -- TabSystemMixin broadcasts selection to every sibling. Only the marked
+        -- PlayerSpells tabs reuse material here; ControlSkin still repairs live art.
+        if nativeSelection and state.spec == spec and state.active == active and state.visible
+            and IsPaintCurrent(state) and state.syncNativeSelected == syncNativeSelected
+            and not state.pendingVisible and not state.pendingActive then
+            local selected = button.isSelected
+            if NS.Safety.Public(selected) and selected == active then return state end
+        end
         state.spec = spec
         if state.pendingVisible then
             NS.CombatGate.Cancel(state.pendingVisible)
             state.pendingVisible = nil
         end
-        if state.visible == false then NextPaintGeneration() end
         state.visible = true
     else
         state = AttachNow(button, spec, true)
@@ -602,7 +633,8 @@ function Surface.SetActive(target, active, repaint)
     if not state then
         return false
     end
-    if NS.IsCombatLocked() and not CanRefreshState(state) then
+    if not CanPaint(state.target, state.spec) then
+        if not NS.IsCombatLocked() then return false, "protected" end
         local key = "surface-active:" .. tostring(target)
         state.pendingActive = key
         local _, reason = NS.CombatGate.RunOrDefer(key, function()
@@ -610,9 +642,6 @@ function Surface.SetActive(target, active, repaint)
             Surface.SetActive(target, active, repaint)
         end)
         return false, reason
-    end
-    if not CanRefreshState(state) then
-        return false, "protected"
     end
     if state.pendingActive then
         NS.CombatGate.Cancel(state.pendingActive)
@@ -622,7 +651,7 @@ function Surface.SetActive(target, active, repaint)
     -- Selection hooks run per row initialization and per native refresh: a
     -- surface that shows this state, painted for the current generation,
     -- is left alone (Surface.Ensure's rule).
-    if not repaint and state.active == active and state.paintGeneration == paintGeneration
+    if not repaint and state.active == active and IsPaintCurrent(state)
         and state.visible ~= false and not state.syncNativeSelected then
         return true
     end
@@ -636,7 +665,8 @@ function Surface.SetVisible(target, visible)
     if not state then
         return false
     end
-    if NS.IsCombatLocked() and not CanRefreshState(state) then
+    if not CanPaint(state.target, state.spec) then
+        if not NS.IsCombatLocked() then return false, "protected" end
         local key = "surface-visible:" .. tostring(target)
         state.pendingVisible = key
         local _, reason = NS.CombatGate.RunOrDefer(key, function()
@@ -645,9 +675,6 @@ function Surface.SetVisible(target, visible)
         end)
         return false, reason
     end
-    if not CanRefreshState(state) then
-        return false, "protected"
-    end
     if state.pendingVisible then
         NS.CombatGate.Cancel(state.pendingVisible)
         state.pendingVisible = nil
@@ -655,9 +682,8 @@ function Surface.SetVisible(target, visible)
     -- Repeated public reconciliation often requests the visibility that the
     -- preceding paint already established. Explicit Refresh/Attach still
     -- repair native resets and in-place spec changes.
-    if state.visible == (visible == true) and state.paintGeneration == paintGeneration
+    if state.visible == (visible == true) and IsPaintCurrent(state)
         and not state.syncNativeSelected then return true end
-    if state.visible ~= (visible == true) then NextPaintGeneration() end
     state.visible = visible == true
     state.refresh(state, true)
     return true

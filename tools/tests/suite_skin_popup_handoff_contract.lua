@@ -57,11 +57,13 @@ MSUFSuite = { Suite = { OwnsBlizzardSurface = function(surface)
     return surface == "staticPopups" and owned
 end } }
 local NS = {
+    SuiteCore = function() return MSUFSuite end,
     DB = { enabled = true, skins = {} },
     IsCombatLocked = function() return false end,
     GenericWindows = { IsCategoryEnabled = function() return true end },
     CombatGate = { RunOrDefer = Noop, Cancel = Noop },
     ControlSkin = {
+        MarkFixedButtonSpec = function(spec) return spec end,
         ApplyButton = function(button) skinned[button] = (skinned[button] or 0) + 1; return {} end,
         ApplyUIPanelButton = function(button) skinned[button] = (skinned[button] or 0) + 1; return {} end,
         ApplyThreeSliceButton = function() return {} end,

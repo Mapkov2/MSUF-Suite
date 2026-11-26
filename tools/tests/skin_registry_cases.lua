@@ -4,6 +4,7 @@ local combat=false
 local scheduled,reported,deferred={}, {},{}
 local nativeCalls=0
 C_Timer={After=function(_,callback) scheduled[#scheduled+1]=callback end}
+dofile(root .. "/tools/tests/skin_registry_timer_fixture.lua")(C_Timer)
 local NS={Safety={},IsCombatLocked=function() return combat end,
     CombatGate={RunOrDefer=function(key,callback) deferred[key]=callback end}}
 NS.Safety.Dispatch=function(fn,...)

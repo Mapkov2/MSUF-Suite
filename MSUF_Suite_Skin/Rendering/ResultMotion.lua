@@ -35,7 +35,7 @@ end
 
 local function Layout(state)
     local provider = Provider(state.target)
-    if provider ~= state.provider then NS.AddonListMotion.Track(state.target, state, provider) end
+    if provider ~= state.provider then NS.AddonListMotion.Track(state.target, state, provider, true) end
     local collapsed = NS.AddonListMotion.LayoutFor(state.target)
     if collapsed then Cancel(state) end
     if provider == state.provider then return end
@@ -44,8 +44,9 @@ local function Layout(state)
     if not collapsed and previous ~= nil and provider ~= nil and Motion.Enabled()
         and Safety.Read(state.target, "IsVisible") == true then
         ClearOpening(state)
-        state.opening = Content.DeferToOpening(state.target, OpeningFinished)
-        if not state.opening then Content.Play(state.target, state, provider) end
+        local pending, instant = Content.DeferToOpening(state.target, OpeningFinished)
+        state.opening = pending
+        if not pending and not instant then Content.Play(state.target, state, provider) end
     else Cancel(state) end
 end
 

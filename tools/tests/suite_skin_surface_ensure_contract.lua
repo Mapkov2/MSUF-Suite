@@ -18,6 +18,7 @@ InCombatLockdown = function() return false end
 Enum = { UITextureSliceMode = { Stretched = 1 } }
 CreateColor = function(r, g, b, a) return { r = r, g = g, b = b, a = a } end
 C_Timer = { After = function(_, callback) callback() end }
+dofile(root .. "/tools/tests/skin_registry_timer_fixture.lua")(C_Timer)
 
 local paints = 0
 local function Texture()
@@ -93,6 +94,85 @@ end
 CheckShapeReuse()
 
 local Surface = NS.Surface
+
+-- New rows in the same menu use the exact same material colors. Count only
+-- colors: the per-row paint still writes the gradient on every texture.
+do
+    local create, created, writes = CreateColor, 0, 0
+    CreateColor = function(...)
+        created = created + 1
+        return create(...)
+    end
+    local surface = { spec = {} }
+    local texture = { SetVertexColor = Noop }
+    function texture:SetGradient(direction, first, last)
+        writes = writes + 1
+        self.direction, self.first, self.last = direction, first, last
+    end
+    local theme, material = NS.DB.theme, NS.Theme.GetMaterial("panel")
+    local oldGradient, oldStrength, oldOpacity = theme.gradient, theme.gradientStrength, theme.panelOpacity
+    theme.gradient, theme.gradientStrength, theme.panelOpacity = true, .713, .617
+    local rows = {}
+    for i = 1, 456 do rows[i] = { spec = {} } end
+    for i = 1, #rows do Surface.PaintFill(texture, material, rows[i]) end
+    local first, last = texture.first, texture.last
+    local firstAlpha, lastAlpha = first.a, last.a
+    print(("456 panel paints: %d colors, %d gradients"):format(created, writes))
+    Check(created <= 2 and writes == #rows, "cold rows allocated gradient colors per surface")
+    theme.panelOpacity = .283
+    Surface.PaintFill(texture, material, surface)
+    Check(texture.first.a ~= firstAlpha and texture.last.a ~= lastAlpha and first.a == firstAlpha and last.a == lastAlpha,
+        "a changed opacity mutated colors still used by other rows")
+    local afterChange = created
+    for i = 1, #rows do Surface.PaintFill(texture, material, rows[i]) end
+    Check(created == afterChange, "an opacity edit allocated identical colors for each updated surface")
+    local custom = { spec = { resolveFill = function() return .3, .4, .5, .6, .7, .8, .9, .1, true, "HORIZONTAL" end } }
+    Surface.PaintFill(texture, material, custom)
+    Check(texture.direction == "HORIZONTAL" and texture.first.a == .6 and texture.last.b == .9,
+        "custom surface shading reused a theme color")
+    local alternate = { spec = { fillAlphaScale = .4 } }
+    Surface.PaintFill(texture, material, alternate)
+    local bothVariants = created
+    for i = 1, 10 do
+        Surface.PaintFill(texture, material, rows[1])
+        Surface.PaintFill(texture, material, alternate)
+    end
+    Check(created == bothVariants, "alternating panel opacities discarded their existing colors")
+    local prepared = Surface.PrepareFill(material, rows[1].spec)
+    Surface.PaintFill(texture, material, { spec = {} }, nil, prepared)
+    Check(texture.first ~= rows[1].gradientFrom and texture.last ~= rows[1].gradientTo,
+        "a caller's prepared fill shared mutable state with a material")
+    theme.gradient = false
+    Surface.PaintFill(texture, material, rows[1])
+    Check(texture.first == texture.last and texture.first.a ~= firstAlpha, "unshading left a stale gradient")
+    theme.gradient, theme.gradientStrength, theme.panelOpacity = oldGradient, oldStrength, oldOpacity
+    CreateColor = create
+end
+-- Prepare geometry and real materials without exposing any layer, even if the
+-- parent changes protection before its deferred first show is allowed to run.
+do
+    local root, control, spec = Target(), Target(), { role = "shell", inset = 1 }
+    local prepared = assert(Surface.Ensure(root, spec, true))
+    Check(not Surface.Ensure(root, { role = "panel" }, true) and prepared.spec == spec,
+        "a second owner claimed another pending material")
+    local normal = assert(Surface.Ensure(control, spec))
+    Check(prepared.preparedShell and not prepared.fill.shown and not prepared.edge.shown
+        and (not prepared.depth or not prepared.depth.shown), "prepared shell exposed native layers")
+    Surface.Refresh(root)
+    Check(not prepared.fill.shown and not prepared.edge.shown and (not prepared.depth or not prepared.depth.shown),
+        "refresh exposed a deferred native surface")
+    function root:IsProtected() return true, true end
+    local before = paints
+    Check(not Surface.Ensure(root, spec) and paints == before and not prepared.fill.shown,
+        "a protected first reveal repainted or exposed the prepared root")
+    function root:IsProtected() return false, false end
+    Check(Surface.Ensure(root, spec) == prepared and not prepared.preparedShell and paints == before
+        and prepared.fill.shown == normal.fill.shown and prepared.edge.shown == normal.edge.shown
+        and (not normal.depth or normal.depth.shown == prepared.depth.shown),
+        "first allowed reveal repeated painting or discarded prepared layer policy")
+    Check(not Surface.Ensure(root, spec, true) and prepared.fill.shown == normal.fill.shown,
+        "preparation stole or concealed a previously adopted surface")
+end
 local spec = { role = "card", radius = 4, inset = 1, listItem = true }
 
 local row = Target()
@@ -195,6 +275,83 @@ if NS.Client.isForever then
     local before = content.fill.vertexAlpha
     NS.Theme.SetAppearance("panelOpacity", 0.4)
     Check(content.fill.shown and content.fill.vertexAlpha < before, "Forever glass masked content opacity")
+end
+
+-- An independent window opening cannot change this window's paint. A glass
+-- panel, however, follows the public parent chain even when Blizzard reparents
+-- an existing container without a Suite attach/visibility or settings event.
+do
+    local theme = NS.DB.theme
+    local opacity = theme.shellOpacity
+    NS.Theme.SetAppearance("shellOpacity", .35)
+    Check(Surface.UsesGlassCompositing(), "fixture needs a translucent shell")
+    local rootA, middle, leaf, row, other = Target(), Target(), Target(), Target(), Target()
+    local parent, parentReads = rootA, 0
+    function leaf:GetParent() return middle end
+    function middle:GetParent() return parent end
+    function row:GetParent() parentReads = parentReads + 1; return rootA end
+    local childSpec = { role = "panel", keepGlassFill = false }
+    local shellSpec = { role = "shell" }
+    local child = Surface.Attach(leaf, childSpec)
+    local rowSpec = { role = "card", listItem = true }
+    local rows = { row }
+    for i = 2, 32 do rows[i] = Target() end
+    for _, visibleRow in ipairs(rows) do Surface.Attach(visibleRow, rowSpec) end
+    Surface.Attach(other, shellSpec)
+    local before, instructions = paints, 0
+    debug.sethook(function() instructions = instructions + 100 end, "", 100)
+    Surface.Ensure(leaf, childSpec)
+    for _, visibleRow in ipairs(rows) do Surface.Ensure(visibleRow, rowSpec) end
+    debug.sethook()
+    print(("After an independent window attach, 32 rows and one panel: %d material writes, %d sampled instructions")
+        :format(paints - before, instructions))
+    Check(paints == before and parentReads == 0, "an unrelated window rematerialized another window or queried a row's ancestry")
+    Check(child.fill.shown, "glass panel without a filled ancestor lost its fill")
+    Surface.Attach(rootA, shellSpec)
+    Surface.Ensure(leaf, childSpec)
+    Check(not child.fill.shown, "a late structural ancestor did not flatten its glass descendant")
+    Surface.SetVisible(rootA, false)
+    Surface.Ensure(leaf, childSpec)
+    Check(child.fill.shown, "hiding the structural ancestor left its glass descendant flattened")
+    Surface.SetVisible(rootA, true)
+    Surface.Ensure(leaf, childSpec)
+    Check(not child.fill.shown, "showing the structural ancestor lost the nested glass correction")
+    parent = nil
+    Surface.Ensure(leaf, childSpec)
+    Check(child.fill.shown, "reparenting an intermediate native container retained a stale base")
+    parent = rootA
+    shellSpec.fillVisible = false
+    Surface.Attach(rootA, shellSpec)
+    Surface.Ensure(leaf, childSpec)
+    Check(child.fill.shown, "an edge-only ancestor suppressed its child's fill")
+    shellSpec.fillVisible = true
+    Surface.Attach(rootA, shellSpec)
+    Surface.Ensure(leaf, childSpec)
+    Check(not child.fill.shown, "a filling ancestor with the same spec identity was missed")
+    local switchSpec = { role = "button", activeRole = "panel" }
+    Surface.Attach(rootA, switchSpec)
+    Surface.Ensure(leaf, childSpec)
+    Check(child.fill.shown, "a nonstructural ancestor suppressed its child")
+    Surface.SetActive(rootA, true)
+    Surface.Ensure(leaf, childSpec)
+    Check(not child.fill.shown, "the active structural role did not flatten its child")
+    local chain = {}
+    for i = 1, 13 do
+        local nextParent = chain[i - 1] or rootA
+        chain[i] = Target()
+        chain[i].GetParent = function() return nextParent end
+    end
+    parent = chain[9] -- leaf -> middle -> nine plain containers -> root
+    Surface.Ensure(leaf, childSpec)
+    Check(not child.fill.shown, "a structural ancestor inside the supported depth was ignored")
+    parent = chain[12]
+    Surface.Ensure(leaf, childSpec)
+    Check(child.fill.shown, "a structural ancestor past the supported depth changed the glass")
+    local current = paints
+    NS.Registry.NotifyListeners("profile", "changed")
+    Surface.Ensure(row, rowSpec)
+    Check(paints > current, "real profile change reused an obsolete row")
+    NS.Theme.SetAppearance("shellOpacity", opacity)
 end
 
 ------------------------------------------------------------------ hot callers

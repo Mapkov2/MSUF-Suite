@@ -92,8 +92,7 @@ local queuedAll = false
 local queuedJobs = {}
 local jobOrder = {}
 local jobCount = 0
-local flushScheduled = false
-local flushing = false
+local flushTimer, waitingForCombat, flushing
 
 local function HasQueuedWork()
     return queuedAll or next(queuedTokens) ~= nil or jobCount > 0
@@ -120,18 +119,39 @@ local function RunQueuedJobs()
     while index <= jobCount do
         local job = jobOrder[index]
         jobOrder[index] = nil
-        queuedJobs[job] = nil
-        dispatch(job)
+        if job then
+            queuedJobs[job] = nil
+            dispatch(job)
+        end
         index = index + 1
     end
     jobCount = 0
 end
 
-local function Flush(startup)
-    if not startup then flushScheduled = false end
+local Flush
+local function ResumeFlush()
+    waitingForCombat = nil
+    Flush()
+end
+
+local function CancelFlush()
+    if flushTimer then
+        flushTimer:Cancel()
+        flushTimer = nil
+    end
+    if waitingForCombat then
+        NS.CombatGate.Cancel("registry:queued")
+        waitingForCombat = nil
+    end
+end
+
+Flush = function()
     if flushing or not HasQueuedWork() then return end
     if NS.IsCombatLocked() then
-        NS.CombatGate.RunOrDefer("registry:queued", Flush)
+        if not waitingForCombat then
+            waitingForCombat = true
+            NS.CombatGate.RunOrDefer("registry:queued", ResumeFlush)
+        end
         return
     end
     flushing = true
@@ -143,13 +163,19 @@ local function Flush(startup)
 end
 
 function Registry.FlushStartupLayout()
-    Flush(true)
+    if flushing then return end
+    CancelFlush()
+    Flush()
+end
+
+local function FlushNextFrame()
+    flushTimer = nil
+    Flush()
 end
 
 local function ScheduleFlush()
-    if flushScheduled or flushing then return end
-    flushScheduled = true
-    C_Timer.After(0, Flush)
+    if flushTimer or waitingForCombat or flushing then return end
+    flushTimer = C_Timer.NewTimer(0, FlushNextFrame)
 end
 
 -- Refreshes the surfaces that use `token` (every surface when token is nil)
@@ -166,11 +192,23 @@ end
 -- Runs job() once on the next frame, however often it is queued before.
 function Registry.QueueJob(job)
     if not queuedJobs[job] then
-        queuedJobs[job] = true
         jobCount = jobCount + 1
         jobOrder[jobCount] = job
+        queuedJobs[job] = jobCount
     end
     ScheduleFlush()
+end
+
+function Registry.CancelJob(job)
+    local index = queuedJobs[job]
+    if not index then return end
+    queuedJobs[job], jobOrder[index] = nil, false
+    -- Preserve the order of unrelated work, including during a flush.
+    while jobCount > 0 and jobOrder[jobCount] == false do
+        jobOrder[jobCount] = nil
+        jobCount = jobCount - 1
+    end
+    if not flushing and not HasQueuedWork() then CancelFlush() end
 end
 
 function Registry.AddListener(owner, callback)

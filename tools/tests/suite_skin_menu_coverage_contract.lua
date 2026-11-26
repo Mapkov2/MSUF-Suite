@@ -10,6 +10,7 @@ local function Check(value, why) checks = checks + 1 assert(value, why) end
 local function Noop() end
 local jobs = {}
 NS.Registry.QueueJob = function(callback) jobs[callback] = true end
+NS.Registry.CancelJob = function(callback) jobs[callback] = nil end
 local function Flush()
     for _ = 1, 5 do
         if not next(jobs) then return end
@@ -37,9 +38,10 @@ NS.GenericWindows.SetMenuMotionProvider = function(track, release, prepare)
     NS.GenericWindows.menuTrack, NS.GenericWindows.menuRelease = track, release
     NS.GenericWindows.prepareWindowMotion = prepare
 end
-NS.AdapterKit = { SetMotionProvider = function(track, watch)
+Load("Adapters/AdapterKit.lua")
+NS.AdapterKit.SetMotionProvider = function(track, watch)
     NS.AdapterKit.track, NS.AdapterKit.watch = track, watch
-end }
+end
 Load("Rendering/LegacyScrollMotion.lua")
 local legacyEvents = H.frames[#H.frames]
 NS.GenericWindows.SetCollapseMotionProvider = Noop
@@ -86,6 +88,7 @@ do
     local owner, duplicate = {}, {}
     local nativeWindow, otherWindow, menu = Frame(UIParent, true), Frame(UIParent, true), Frame(UIParent, true)
     local coldWindow, coldOwner = Frame(UIParent, true), {}
+    local preparedWindow, preparedOwner = Frame(UIParent, true), {}
     local windowBody = Frame(nativeWindow, true)
     nativeWindow.Content, nativeWindow.children = windowBody, { windowBody }
     local tracked = {}
@@ -100,10 +103,17 @@ do
         end,
     }
     NS.WindowControlPolicy = { IsAnimationWindow = function(frame)
-        return frame == nativeWindow or frame == coldWindow
+        return frame == nativeWindow or frame == coldWindow or frame == preparedWindow
     end }
     local theme = NS.DB.theme
     theme.windowAnimations = "extended"
+    NS.GenericWindows.prepareWindowMotion(preparedWindow, preparedOwner)
+    H.listeners[Menus](Menus, "profile")
+    Flush()
+    Check(Menus.observers[preparedWindow] and Menus.observers[preparedWindow][Menus.states[preparedWindow]],
+        "profile discovery failed to bind the visible prepared window")
+    Menus.Release(preparedOwner, preparedWindow)
+    Check(not next(Menus.observers[preparedWindow]), "prepared window retained its released observer")
     coldWindow:Hide()
     local visits = 0
     function coldWindow:GetChildren() visits = visits + 1 end
@@ -120,6 +130,10 @@ do
     NS.GenericWindows.menuTrack(coldWindow, coldOwner, false, true)
     Check(firstOpening.group.plays == 1 and visits > 0,
         "the first catalog paint skipped menu discovery or replayed the opening")
+    local initialVisits = visits
+    coldWindow:Fire("OnSizeChanged")
+    Flush()
+    Check(visits > initialVisits, "cold-prepared window stayed dormant after its first catalog paint")
     NS.GenericWindows.menuRelease(coldOwner)
     Check(not Content.IsWindow(coldWindow) and not tracked[coldWindow] and not firstOpening.group:IsPlaying(),
         "catalog disable did not release the prepared window")

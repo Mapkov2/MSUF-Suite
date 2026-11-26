@@ -61,7 +61,7 @@ end
 -- Text color as plain numbers. Secret or missing colors read as nil and are
 -- never compared or tracked.
 local function ReadTextColor(object)
-    if not Safety.Public(object) or type(object) ~= "table" then return nil end
+    if not Safety.Public(object) then return nil end
     local r, g, b, a = ReadColor(object, "GetTextColor")
     -- ReadColor rejects forbidden targets before any method lookup. Only
     -- admitted colors need a setter or the protection check at paint time.
@@ -69,19 +69,27 @@ local function ReadTextColor(object)
     return nil
 end
 
--- A region's object type never changes. Surfaces rescan their regions on
--- every re-attach (pooled rows are re-initialized with native gold), so each
--- region is asked once.
+-- GetRegions produces many non-text regions on a talent page. Its caller
+-- already checked the object and looked in this cache. Store only a readable
+-- native kind, so a restricted region can be rediscovered on its next pass.
 local fontStringRegions = setmetatable({}, { __mode = "k" })
 
-local function IsFontString(region)
-    if type(region) ~= "table" then return false end
-    local known = fontStringRegions[region]
-    if known == nil then
-        known = Safety.Read(region, "GetObjectType") == "FontString"
-        fontStringRegions[region] = known
-    end
+local function ClassifyRegion(region)
+    if IsForbidden(region) then return nil end
+    local getType = region.GetObjectType
+    if type(getType) ~= "function" then return nil end
+    local kind = getType(region)
+    if not Safety.Public(kind) or type(kind) ~= "string" then return nil end
+    local known = kind == "FontString"
+    fontStringRegions[region] = known
     return known
+end
+
+local function IsFontString(region)
+    if not Safety.Public(region) or type(region) ~= "table" then return false end
+    local known = fontStringRegions[region]
+    if known ~= nil then return known end
+    return ClassifyRegion(region)
 end
 
 -- Catalog fonts by name, verified once. A name whose font does not exist
@@ -195,7 +203,10 @@ local function TrackRegions(record, ...)
             if record then record.regions = false end
         elseif type(region) == "table" then
             local fontString = known[region]
-            if fontString == nil then fontString = IsFontString(region) end
+            if fontString == nil then
+                fontString = ClassifyRegion(region)
+                if fontString == nil and record then record.regions = false end
+            end
             if fontString then
                 if record then record[#record + 1] = region end
                 if ApplyObject(region, BlizzardYellow.directStates) then count = count + 1 end
@@ -287,8 +298,9 @@ local function TrackKnownFrame(frame)
     -- label to a child frame. It is visited once either way.
     local text = frame.Text
     local count, textSeen = 0, false
-    if type(frame.GetRegions) == "function" then
-        count, textSeen = TrackKnownRegions(text, frame:GetRegions())
+    local getRegions = Safety.ReadableMethod(frame, "GetRegions")
+    if getRegions then
+        count, textSeen = TrackKnownRegions(text, getRegions(frame))
     end
     if not textSeen and IsFontString(text) and ApplyKnownNativeObject(text) then
         count = count + 1

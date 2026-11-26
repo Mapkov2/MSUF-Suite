@@ -9,6 +9,10 @@ ROOT = Path(sys.argv[1]).resolve()
 LUA = os.environ.get("MSUF_LUA51", r"C:\Users\Marco\AppData\Local\Temp\msuf-lua51\portable\lua.exe")
 TEST = ROOT / "tools/tests/suite_skin_menu_coverage_contract.lua"
 CASES = (
+    ("refresh before explicit adoption", "Rendering/MenuMotion.lua", '    Observe(state, state.root)\n',
+     '    state.observed[state.root] = true\n', "profile discovery failed to bind the visible prepared window"),
+    ("first catalog opening", "Rendering/MenuMotion.lua", '    state.rootHidden = nil\n',
+     '', "cold-prepared window stayed dormant after its first catalog paint"),
     ("owner handoff", "Rendering/MenuMotion.lua", 'state.owner, state.cacheOwner = next(state.owners), nil',
      '-- stale owner retained', 'menu retained released latest owner'),
     ("nested content exclusion", "Rendering/ContentMotion.lua",

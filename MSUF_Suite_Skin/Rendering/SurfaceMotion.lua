@@ -168,7 +168,7 @@ local function Show(target)
     record.checked = Safety.Read(target, "GetChecked")
     if not record.window or NS.IsCombatLocked() then return end
     local content = NS.ContentMotion
-    if content.IsWindow(target) and not Motion.WindowEnabled() then return end
+    if content.InstantOpening(target) or content.IsWindow(target) and not Motion.WindowEnabled() then return end
     if not record.channels then Motion.New(record.state, Paint, Safe, Motion.Restore, record) end
     -- ContentMotion loads later; native OnShow runs after the complete load graph.
     -- Resolve here and use registration, independent of the OnShow hook order.

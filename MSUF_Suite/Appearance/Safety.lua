@@ -90,7 +90,11 @@ end
 -- The first result of target:name(...), or nil when it is unavailable or
 -- secret. Use for getters whose result is compared or used as a number.
 function Safety.Read(target, name, ...)
-    local value = Call(target, name, ...)
+    if type(target) ~= "table" or IsForbidden(target) then return nil end
+    local method = target[name]
+    if type(method) ~= "function" then return nil end
+    -- A scalar getter discards extra results at the call site.
+    local value = method(target, ...)
     if Public(value) then return value end
     return nil
 end

@@ -35,6 +35,7 @@ C_Timer = {
     end,
     NewTicker = function() error("skin introduced a repeating ticker") end,
 }
+dofile(root .. "/tools/tests/skin_registry_timer_fixture.lua")(C_Timer)
 local function Flush()
     local rounds = 0
     while #pending > 0 do

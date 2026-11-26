@@ -660,6 +660,84 @@ do
     Content.Unwatch(owner, window)
 end
 
+-- Repeat the nine Communities openings from #40 with content/list hooks
+-- firing on either side of the native parent OnShow.
+do
+    local Content, Results = NS.ContentMotion, NS.ResultMotion
+    local owner, now, oldTime, oldWindow = {}, 41, GetTime, CommunitiesFrame
+    GetTime = function() return now end
+    CommunitiesFrame = Frame(nil, true)
+    local window = CommunitiesFrame
+    local list, body = Frame(window, true), Frame(window, true)
+    list.provider = {}
+    function list:GetDataProvider() return self.provider end
+    window:Hide()
+    Content.Watch(window, owner, true)
+    Content.Watch(body, owner)
+    Results.Track(list, owner)
+    local oldTheme = NS.Theme
+    NS.Theme = { GetWindowAnimationMode = function() return "extended" end }
+    if NS.Client.isForever then
+        local oldSurface, oldClamp = NS.Surface, NS.Clamp
+        NS.Clamp = function(value, low, high) return math.max(low, math.min(value, high)) end
+        NS.Surface = { SetMotionProvider = Noop }
+        Load("Rendering/SurfaceMotion.lua")
+        local shell = { target = window, spec = { role = "shell" }, fill = Frame(), edge = Frame() }
+        surfaces[window] = shell
+        NS.SurfaceMotion.Refresh(shell)
+        local firstGroupCount = #groups
+        for opening = 1, 9 do
+            window:Show()
+            list.provider = {}
+            list:TriggerEvent("layout")
+            body:Fire("OnShow")
+            window:Fire("OnShow")
+            list.provider = {}
+            list:TriggerEvent("layout")
+            body:Fire("OnShow")
+            Content.Play(body, owner, opening)
+            Check(not shell.motion.channels, "instant Communities chrome animated away from its rest pose")
+            Check(shell.edge.alpha == 1 and shell.fill.alpha == 1, "instant Communities opened with transparent chrome")
+            Check(not Content.records[window], "instant Communities opening started the native root animation")
+            Check(not Content.records[list] and not Content.records[body], "Communities opening transferred its fade to descendants")
+            Check(not Content.HasOpeningFade(window), "instant window advertised a native opening fade")
+            Check(not next(Content.watchers[window].pending) and not Results.states[list].opening, "instant opening left a pending list callback")
+            window:Hide()
+            now = now + 1
+        end
+        Check(#groups == firstGroupCount, "instant Communities allocated opening animation groups")
+        NS.Surface, NS.Clamp = oldSurface, oldClamp
+        window:Show()
+        window:Fire("OnShow")
+        now = now + 1
+        list.provider = {}
+        list:TriggerEvent("layout")
+        Check(Content.records[list] and Content.records[list].group.plays == 1, "open Communities lost a later provider transition")
+        Content.records[list].group:Finish()
+        body:Fire("OnShow")
+        Check(Content.records[body] and Content.records[body].group.plays == 1, "open Communities lost a later pane transition")
+        Content.records[body].group:Finish()
+        window:Hide()
+        window:Show()
+        list.provider = {}
+        list:TriggerEvent("layout")
+        local external = Frame(nil, true)
+        list:SetParent(external)
+        window:Fire("OnShow")
+        Check(Content.records[list].group.plays == 2, "instant Communities consumed a reparented list's transition")
+        Content.Watch(external, owner, true)
+        external:Fire("OnShow")
+        Check(Content.records[external] and Content.records[external].group.plays == 1, "another Forever window lost its opening")
+    else
+        window:Show()
+        window:Fire("OnShow")
+        Check(Content.records[window] and Content.records[window].group.plays == 1, "Retail Communities lost its selected animation")
+    end
+    Content.UnwatchOwner(owner)
+    Results.ReleaseOwner(owner)
+    GetTime, CommunitiesFrame, NS.Theme = oldTime, oldWindow, oldTheme
+end
+
 print("Suite skin menu transitions (" .. (arg[2] or "Mainline") .. "): " .. checks .. " checks passed")
 if arg[3] == "coverage" then
     return { NS = NS, Frame = Frame, groups = groups, frames = frames, listeners = listeners,

@@ -282,10 +282,22 @@ function Theme.GetColor(key)
     return color[1], color[2], color[3], color[4]
 end
 
--- SetGradient takes ColorMixin objects. Reuse one while its values match
--- exactly, so repainting an unchanged theme allocates nothing.
-function Theme.ReuseColor(color, r, g, b, a)
+-- Static surface gradients share at most two color objects per known material.
+-- The exact channels cover in-place palette edits and changes of opacity.
+-- Animated or caller-prepared colors keep their own previous value.
+local materialGradients = {}
+for _, material in pairs(NS.Materials or {}) do materialGradients[material] = {} end
+
+function Theme.ReuseColor(color, r, g, b, a, material, endpoint)
     if color and color.r == r and color.g == g and color.b == b and color.a == a then
+        return color
+    end
+    local colors = material and materialGradients[material]
+    if colors then
+        color = colors[endpoint]
+        if color and color.r == r and color.g == g and color.b == b and color.a == a then return color end
+        color = CreateColor(r, g, b, a)
+        colors[endpoint] = color
         return color
     end
     return CreateColor(r, g, b, a)

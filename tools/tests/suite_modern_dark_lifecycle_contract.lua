@@ -53,6 +53,9 @@ assert(reads == 0, "loading memory tooltip sampled APIs")
 local rows = {}
 local tooltip = { AddLine = function() end, AddDoubleLine = function(_, ...) rows[#rows + 1] = { ... } end }
 private.MemoryTooltip(tooltip)
+assert(reads == 0 and #rows == 0, "a hover started an unsolicited RAM scan")
+assert(S.RefreshAddonMemory())
+private.MemoryTooltip(tooltip)
 assert(reads == 1 and #rows == 4, "memory refresh or invalid addon filtering failed")
 assert(rows[1][1] == "Alpha" and rows[2][1] == "Beta" and rows[3][1] == "Small", "usage sort/tie order failed")
 assert(rows[1][2] == "2.00 MB - 44.4%" and rows[3][2] == "512.00 KB - 11.1%", "KB/MB or percentage incorrect")

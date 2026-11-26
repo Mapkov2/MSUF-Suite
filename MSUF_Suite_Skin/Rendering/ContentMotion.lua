@@ -43,11 +43,28 @@ end
 local function Hidden(frame)
     local watch = Content.watchers[frame]
     if watch then
-        watch.shown = false
+        watch.shown, watch.openedAt = false, nil
         CompleteOpening(watch, frame)
     end
     local record = Content.records[frame]
     if record then Stop(record) end
+end
+
+-- Forever Communities has a large native subtree. Open it at its authored
+-- opacity. Only the opening is shared by its children; a later tab or list
+-- change still owns its usual transition.
+function Content.InstantOpening(frame, explicitChange)
+    if not NS.Client.isForever then return end
+    local root = CommunitiesFrame
+    if not root then return end
+    if frame == root and not explicitChange then return root end
+    local watch = Content.watchers[root]
+    if not watch or not next(watch.owners) then return end
+    if watch.shown then
+        if not watch.openedAt then return end
+        if watch.openedAt ~= GetTime() then watch.openedAt = nil return end
+    elseif Safety.Read(root, "IsVisible") ~= true then return end
+    if frame == root or Descendant(frame, root) then return root end
 end
 
 local function Finished(group) Content.active[group.record] = nil end
@@ -82,13 +99,23 @@ end
 
 function Content.HasOpeningFade(frame)
     local watch = Content.watchers[frame]
-    return watch ~= nil and OpeningOwner(watch) ~= nil and Enabled(IsWindowWatch(watch))
+    return watch ~= nil and not Content.InstantOpening(frame) and OpeningOwner(watch) ~= nil and Enabled(IsWindowWatch(watch))
 end
 
 -- The native list may lay out before its now-visible window's OnShow hook.
 -- Resolve in that hook, before drawing, so the window and list do not both
--- start a fade. If the window cannot fade, the list still gets its own fade.
+-- start a fade. An instant opening consumes the same-frame list transition.
+-- The second return means its parent has already completed that opening.
 function Content.DeferToOpening(target, resolve)
+    local root = Content.InstantOpening(target)
+    if root then
+        local opening = Content.watchers[root]
+        if opening and not opening.shown then
+            opening.pending[target] = resolve
+            return opening.pending
+        end
+        return nil, true
+    end
     local frame = target
     for _ = 1, 16 do
         frame = Safety.Read(frame, "GetParent")
@@ -108,6 +135,10 @@ function Content.Play(frame, owner, token, window)
     if not Enabled(window) or not Safety.CanCreateRegions(frame)
         or Safety.Read(frame, "IsVisible") ~= true then
         if record and record.window == window then Stop(record) end
+        return false
+    end
+    if Content.InstantOpening(frame, true) then
+        if record and Content.active[record] then Stop(record) end
         return false
     end
     local unchanged = record and record.token == token and record.revision == revision and record.window == window
@@ -186,7 +217,14 @@ end
 local function Shown(frame)
     local watch = Content.watchers[frame]
     if not watch then return end
+    if not next(watch.owners) then watch.shown = true return end
+    local instant = Content.InstantOpening(frame)
     watch.shown = true
+    if instant then
+        if instant == frame then watch.openedAt = GetTime() end
+        CompleteOpening(watch, frame)
+        return
+    end
     local record = Content.records[frame]
     local owner = OpeningOwner(watch, record and record.owner)
     local covered = false
@@ -213,6 +251,7 @@ function Content.Watch(frame, owner, window, bodyRoot)
     if not watch then
         watch = { owners = {}, serial = 0, pending = {}, shown = Safety.Read(frame, "IsVisible") == true }
         Content.watchers[frame] = watch
+        if NS.Client.isForever and frame == CommunitiesFrame and watch.shown then watch.openedAt = GetTime() end
         -- A previously skinned mailbox opens its bags and reads mail after OnShow.
         local onShow = NS.Client.isForever and frame == Safety.Field(_G, "MailFrame") and QueueMailboxOpening or Shown
         frame:HookScript("OnShow", onShow)
