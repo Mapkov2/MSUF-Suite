@@ -180,6 +180,9 @@ do
         assert(owner.Suite.Config("foreverPartyMap").enabled, "Forever party map must start enabled")
         -- The party map contract exercises its separate Blizzard_WorldMap listener.
         owner.Suite.Config("foreverPartyMap").enabled = false
+        assert(owner.Suite.Config("professionHints").enabled, "Forever profession hints must start enabled")
+        -- Its own contract exercises the load-on-demand professions listener.
+        owner.Suite.Config("professionHints").enabled = false
     end
     owner.Suite.Config("xpBar").enabled = false
     -- Aura skins wait for Blizzard's aura addon in this lightweight fixture.

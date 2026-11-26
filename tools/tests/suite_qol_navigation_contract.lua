@@ -157,4 +157,21 @@ else
     assert(not P.Available("foreverPartyMap") and not partyRow.row:IsShown(),
         "the Forever party map must stay unavailable on Retail")
 end
+
+local hints = assert(V.FindFeature("professionHints"))
+assert(hints.category == "questsProfessions" and hints.tab == "professions", "profession hints menu placement")
+travel:SetFilter("all")
+assert(travel:SelectCategory(hints.category))
+local hintsRow = assert(travel.rows[V.FeatureSectionId(hints)])
+if F.Suite.Client.isForever then
+    assert(F.S.Config("professionHints").enabled, "Forever profile must enable hints by default")
+    assert(hintsRow.row:IsShown(), "Forever must show the profession hints switch")
+    assert(hintsRow.toggle.get(), "switch must reflect the saved default")
+    hintsRow.toggle.set(false)
+    assert(not F.S.Config("professionHints").enabled, "the switch must update the Suite profile")
+    hintsRow.toggle.set(true)
+    assert(F.S.Config("professionHints").enabled, "the profile must allow hints to turn on again")
+else
+    assert(not P.Available("professionHints") and not hintsRow.row:IsShown(), "Retail exposed the Forever switch")
+end
 print("PASS QoL fixed categories, lazy rows/details, wrapping clickable groups, filters, state, exact routes and Suite Gameplay")

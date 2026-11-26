@@ -4293,7 +4293,7 @@ local qolFeaturesByCategory = {
         "characterUpgradeWindow_upgrade_equipment", "socketGemSuggestions_socket_gems", "durabilityAlert_durability_warning",
     },
     lootMerchants = {
-        "lootRolls_loot_rolls", "cheapestItem_cheapestItem",
+        "lootRolls_loot_rolls",
          "loot_collection",  "vaultSpec_vault_spec",
         "loot_history", "merchantLevel_merchant_level", "lootContainers_open_containers",
         "qol_repair", "qol_junk",  "merchantList_merchant_list",

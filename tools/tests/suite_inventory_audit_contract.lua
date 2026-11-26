@@ -98,6 +98,19 @@ C_AddOns.LoadAddOn, S.NewContext = previousLoad, previousContext
 -- equipment sets" and leaves protection on, with its list.
 Check(P.QoLOwners.PageFor("inventoryProtection") == "suite_bags", "never-sell has no inventory owner")
 local qol = E.build("suite_bags")
+do
+    local id, page = "cheapestItem", "suite_bags"
+    local section = P.QoLView.FeatureSectionId(P.QoLView.FindFeature(id))
+    Check(P.QoLOwners.PageFor(id) == page, "Delete cheapest item has no Bags owner")
+    Check(qol.qualityOfLifeFeatureRows[section], "Bags does not render Delete cheapest item")
+    local loot = E.build("suite_qualityOfLife")
+    Check(not loot.qualityOfLifeFeatureRows[section], "Quality of Life still renders Delete cheapest item")
+    local old = P.Meta("suite_qualityOfLife", id, "quality", "setting", section)
+    local destination, target = P.QoLOwners.Resolve(old.pageKey, { controlId = old.controlId })
+    Check(destination == page and target.sectionId == section and target.settingKey == "msufsuite.cheapestItem.quality",
+        "old Delete cheapest item favorites do not lead to Bags")
+    Check(P.QoLView.GetFeaturePage(P.QoLView.FindFeature(id)) == page, "search sends Delete cheapest item to the wrong page")
+end
 E.inContext(qol, function() P.QoLView.FindFeature("inventoryProtection").reveal(true) end)
 local record = assert(qol.qualityOfLifeFeatureRows.suite_qualityOfLife_inventoryProtection_inventoryProtection)
 local protection = S.Config("inventoryProtection")

@@ -191,6 +191,18 @@
    "symbol": "C_Item"
   },
   {
+   "file": "MSUF_Suite_BuffReminders/Readers.lua",
+   "kind": "client",
+   "reason": "Forever 1.60.1.71139 ItemDocumentation.lua exposes separate temporary and imbue records. Only Forever layer-tagged weapons call it, after an availability check. Retail 12.1.0 and 12.1.5 use the PaperDoll reader.",
+   "symbol": "C_Item.GetWeaponEnchantInfo"
+  },
+  {
+   "file": "MSUF_Suite_BuffReminders/Readers.lua",
+   "kind": "client",
+   "reason": "Forever 1.60.1.71139 ItemConstantsDocumentation.lua defines Imbue and Temporary. The Forever reader checks the enum before indexing it; Retail 12.1.0 and 12.1.5 use the PaperDoll reader.",
+   "symbol": "Enum.ItemEnchantType"
+  },
+  {
    "file": "MSUF_Suite_BuffReminders/Preparation.lua",
    "kind": "lod",
    "reason": "The optional custom character-panel route is absent when the panel has not loaded. The ready-check gear link has a Suite settings fallback.",
@@ -3843,6 +3855,12 @@
    "kind": "state",
    "reason": "Menu2 owns the current page scroll frame. Reset scroll when the native frame is available after switching nameplate type.",
    "symbol": "scroll.SetVerticalScroll"
+  },
+  {
+   "file": "MSUF_Suite_Skin/Rendering/WindowControlChrome.lua",
+   "kind": "addon",
+   "reason": "A skin loaded on demand after a live install can encounter an already loaded MSUF_Suite caption API. NewBars enables owned glyph caching when that API supplies it.",
+   "symbol": "caption.NewBars"
   }
  ]
 }
