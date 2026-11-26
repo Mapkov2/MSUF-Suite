@@ -53,6 +53,7 @@ local function ShowInstaller()
     end
     SetCombatWait(false)
     Suite.Dispatch(Suite.Installer.MaybeShow, "login")
+    if Suite.AddonConflicts then Suite.Dispatch(Suite.AddonConflicts.Notice) end
 end
 
 -- PLAYER_ENTERING_WORLD distinguishes a real login from /reload. Optional
