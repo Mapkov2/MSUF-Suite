@@ -71,16 +71,42 @@ end
 
 -- Header and filter changes can themselves deliver UPDATE_FACTION. Refresh
 -- the known standings by ID on the echo without mutating the native list.
-local function VisibleStructure()
-    local keys = {}
-    for i = 1, Num(Factions.GetNumFactions()) or 0 do
-        local info = Data(Factions.GetFactionDataByIndex(i))
+local function RememberStanding(current, id, info)
+    if id <= 0 then return end
+    -- Both native readers return FactionData. A duplicate, header placeholder
+    -- or restricted/incomplete row still needs the explicit by-ID lookup.
+    if current[id] ~= nil or not Public(info.isHeader) or (info.isHeader ~= false and not Yes(info.isHeaderWithRep))
+        or not Num(info.reaction) or not Num(info.currentStanding)
+        or not Num(info.currentReactionThreshold) or not Num(info.nextReactionThreshold) then
+        current[id] = false
+    else
+        current[id] = info
+    end
+end
+
+local function VisibleStructure(keys, rows, current)
+    local count = Num(Factions.GetNumFactions()) or 0
+    if rows and #rows ~= count then rows = nil end
+    local n = 0
+    for i = 1, count do
+        local info = rows and Data(rows[i])
+        if not info or not Num(info.factionID) or not String(info.name)
+            or not Public(info.isCollapsed) or type(info.isCollapsed) ~= "boolean" then
+            info = Data(Factions.GetFactionDataByIndex(i))
+        end
         if info then
-            keys[#keys + 1] = (Num(info.factionID) or 0) .. ":" .. (String(info.name) or "")
-                .. (Yes(info.isCollapsed) and "-" or "+")
+            local id, name, collapsed = Num(info.factionID) or 0, String(info.name) or "", Yes(info.isCollapsed)
+            if current then
+                if keys[n + 1] ~= id or keys[n + 2] ~= name or keys[n + 3] ~= collapsed then return false end
+                RememberStanding(current, id, info)
+            else
+                keys[n + 1], keys[n + 2], keys[n + 3] = id, name, collapsed
+            end
+            n = n + 3
         end
     end
-    return table.concat(keys, "\031")
+    if current then return #keys == n end
+    for i = #keys, n + 1, -1 do keys[i] = nil end
 end
 
 function List.Update(state, event, id)
@@ -98,29 +124,45 @@ function List.Update(state, event, id)
     return true
 end
 
+local function RefreshStandings(state)
+    if not state.visible then return false end
+    local current = state.visibleProgress or {}
+    state.visibleProgress = nil
+    local same = VisibleStructure(state.visible, nil, current)
+    if same then
+        for i, info in ipairs(state.rows) do
+            local id = Num(info.factionID)
+            if id and id > 0 and (not Yes(info.isHeader) or Yes(info.isHeaderWithRep)) then
+                state.progress[i] = current[id] or Data(Factions.GetFactionDataByID(id))
+            end
+        end
+    end
+    state.visibleProgress = wipe(current)
+    return same
+end
+
 function List.Rows(state)
     local rows = state.rows
     if state.receivedUpdate then state.awaitingEcho, state.receivedUpdate = nil, nil end
-    if state.updateOnly and rows and state.visible == VisibleStructure() then
-        for i, info in ipairs(rows) do
-            local id = Num(info.factionID)
-            if id and id > 0 and (not Yes(info.isHeader) or Yes(info.isHeaderWithRep)) then
-                local current = Data(Factions.GetFactionDataByID(id))
-                state.progress[i] = current
-            end
-        end
-    else
+    if not (state.updateOnly and rows and RefreshStandings(state)) then
         local candidate = {}
         local ok, changed = Enumerate(candidate)
         state.wroteAt, state.awaitingEcho = changed and GetTime() or nil, changed
         if ok then
             rows = candidate
-            state.rows, state.ids, state.progress = rows, {}, {}
+            state.rows = rows
+            state.ids = state.ids and wipe(state.ids) or {}
+            state.progress = state.progress and wipe(state.progress) or {}
             for _, info in ipairs(rows) do
                 local id = Num(info.factionID)
                 if id and id > 0 then state.ids[id] = true end
             end
-            state.visible, collected = VisibleStructure(), state
+            -- A read-only scan already returned the visible tree in native order.
+            local visible = state.visible or {}
+            state.visible = nil
+            VisibleStructure(visible, not changed and rows)
+            state.visible = visible
+            collected = state
         end
     end
     state.updateOnly, state.forceScan = nil, nil
