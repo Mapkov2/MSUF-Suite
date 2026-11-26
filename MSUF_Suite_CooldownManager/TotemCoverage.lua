@@ -27,6 +27,8 @@ local families = {
         { [8076] = true, [8162] = true, [8163] = true, [10441] = true, [25362] = true }, 8076),
 }
 
+local grounding = Family(8177, { [8178] = true }, 8178)
+local resolved, visible = {}, {}
 local records, units, members, changed = {}, {}, {}, {}
 local driver, listening, watchUnits, scheduled, full, rosterDirty, prepare, hovered
 
@@ -44,14 +46,17 @@ local function CanRead(family)
     return FamilyName(family) ~= nil
 end
 
-local function SlotState(slot, family)
+local function SlotState(slot)
     local have, _, start, duration, _, _, id = GetTotemInfo(slot)
-    if not Public(have) then return OPAQUE, have end
-    if have ~= true then return NONE end
-    if not Public(id) then return OPAQUE end
-    if not S.Number(id) or C.Ranks.Canon(id) ~= family.cast then return NONE end
-    if S.Number(start) and S.Number(duration) and duration > 0 and start + duration <= GetTime() then return NONE end
-    return KNOWN
+    local family = families[slot]
+    if not Public(have) then return resolved[slot] or family, OPAQUE, have end
+    if have ~= true then return family, NONE end
+    if not Public(id) then return resolved[slot] or family, OPAQUE end
+    local cast = S.Number(id) and C.Ranks.Canon(id)
+    if slot == AIR_TOTEM_SLOT and cast == grounding.cast then family = grounding end
+    if cast ~= family.cast then return family, NONE end
+    if S.Number(start) and S.Number(duration) and duration > 0 and start + duration <= GetTime() then return family, NONE end
+    return family, KNOWN
 end
 
 local function Read(family, unit)
@@ -124,9 +129,8 @@ local function BadgeText(family)
     if total > 0 then return ("%d/%d"):format(family.with, total) end
 end
 
-local function UpdateFamily(family, slot)
+local function UpdateFamily(family)
     if full then
-        family.state, family.have = SlotState(slot, family)
         family.readable = family.state == KNOWN and #units > 0 and CanRead(family)
     end
     if not family.readable then return end
@@ -167,31 +171,44 @@ local function Flush()
     scheduled = false
     if not next(records) then return end
     if rosterDirty then Roster(units, members) end
-    local pendingPrepare = prepare and not InCombat() and not NS.Client.AuraBuildBlocked()
-    local allPrepared = pendingPrepare or #units == 0
-    local shouldWatch = false
-    for _, family in pairs(families) do family.visible = false end
+    wipe(visible)
     for icon, slot in pairs(records) do
-        if Visible(icon) then families[slot].visible = true end
+        if Visible(icon) then visible[slot] = true end
     end
-    for slot, family in pairs(families) do
-        if family.visible then
-            UpdateFamily(family, slot)
+    local shouldWatch = false
+    for slot, fallback in pairs(families) do
+        local family = resolved[slot] or fallback
+        if full and visible[slot] then
+            local selected, state, have = SlotState(slot)
+            if family ~= selected then
+                family = selected
+                resolved[slot], prepare = family, true
+                if hovered and records[hovered] == slot then Display.Hide(hovered) end
+            end
+            family.state, family.have = state, have
+        end
+        if visible[slot] then
+            UpdateFamily(family)
             shouldWatch = shouldWatch or family.readable
             family.badge = BadgeText(family)
         else
             family.readable, family.badge = false, nil
         end
     end
+    local pendingPrepare = prepare and not InCombat() and not NS.Client.AuraBuildBlocked()
+    local allPrepared = pendingPrepare or #units == 0
     for icon, slot in pairs(records) do
-        local family = families[slot]
+        local family = resolved[slot] or families[slot]
         if pendingPrepare and #units > 0 then
             local name = FamilyName(family)
             if not name or not Display.Prepare(icon, name, family.effects, units) then allPrepared = false end
         end
         SetBadge(icon, Visible(icon) and family.badge or nil)
     end
-    if hovered and full and not ShowDetails(hovered, families[records[hovered]]) then Display.Hide(hovered) end
+    if hovered and full then
+        local slot = records[hovered]
+        if not ShowDetails(hovered, resolved[slot] or families[slot]) then Display.Hide(hovered) end
+    end
     WatchUnits(shouldWatch)
     wipe(changed)
     full, rosterDirty, prepare = false, false, prepare and not allPrepared
@@ -262,6 +279,7 @@ function Coverage.Retire(icon)
         driver:UnregisterAllEvents()
         listening, watchUnits = false, nil
         wipe(changed)
+        wipe(resolved)
     end
 end
 
@@ -296,7 +314,8 @@ function Coverage.Hover(icon)
     if not records[icon] then return false end
     if hovered and hovered ~= icon then Coverage.Leave(hovered) end
     hovered = icon
-    local family = families[records[icon]]
+    local slot = records[icon]
+    local family = resolved[slot] or families[slot]
     -- When the active spell is opaque, the panel describes the named aura family.
     -- Keep the native tooltip available to identify the actual slot contents.
     return ShowDetails(icon, family) and family.state == KNOWN
@@ -312,8 +331,9 @@ function NS.ReportTotemCoverage(slot)
     if not Public(raid) or raid ~= true then return Notice("Join a raid to report totem coverage.") end
     local locked = NS.ChatLocked()
     if not S.Number(slot) then return Notice("Totem coverage is unavailable.") end
-    local family = families[slot]
-    if not family or SlotState(slot, family) ~= KNOWN or not CanRead(family) then
+    local family, state
+    if families[slot] then family, state = SlotState(slot) end
+    if state ~= KNOWN or not CanRead(family) then
         if locked then return Notice("Totem coverage cannot be sent right now.") end
         return Notice("Totem coverage is unavailable.")
     end

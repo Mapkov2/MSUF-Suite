@@ -27,6 +27,7 @@ TotemCoverage.lua
 Icons.lua
 Masque.lua
 TrackingBars.lua
+TotemPulse.lua
 Time.lua
 GlowLines.lua
 Effects.lua

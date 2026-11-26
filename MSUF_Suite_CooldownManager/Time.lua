@@ -596,8 +596,12 @@ end
 -- slot secret (haveTotem secret) the icon stays in its place and the
 -- client shows or hides it from the secret answer. Returns cooling and
 -- whether the slot is plainly empty.
+local TotemPulse = C.TotemPulse
 local function TotemState(entry, icon)
-    local have, _, start, length, texture = GetTotemInfo(entry.id)
+    local have, _, start, length, texture, _, spell = GetTotemInfo(entry.id)
+    if TotemPulse and (icon.totemPulseClock or entry.ov and entry.ov.totemPulse) then
+        TotemPulse.Sync(icon, entry, have, start, length, spell)
+    end
     local duration = GetTotemDuration(entry.id)
     -- A duration object can contain protected times. Its reference has to
     -- be accessible before it can be bound to a swipe or bar.

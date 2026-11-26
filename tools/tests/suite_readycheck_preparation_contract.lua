@@ -45,4 +45,28 @@ assert(detail:find(loadout[1], 1, true) == 1 and route == "loadouts", "loadout i
 local before = reads
 combat = true
 assert(S.ReadyCheckPreparation() == nil and reads == before, "combat ready check queried live data")
+
+combat = false
+local bagReads = 0
+local NS = { Client = { isForever = true }, InCombat = function() return combat end }
+S.Public = function(v) return not rawequal(v, secret) end
+C_Item.GetItemNameByID = function() end
+C_Item.GetItemCount = function(id, bank, uses, reagent)
+    assert(bank == false and uses == false and reagent == false)
+    bagReads = bagReads + 1
+    return id == 5175 and 0 or secret
+end
+Enum = { SpellBookSpellBank = { Player = 0 } }
+UnitClass = function() return "Shaman", "SHAMAN" end
+C_SpellBook = { IsSpellKnownOrInSpellBook = function(id, bank, overrides)
+    assert(bank == 0 and overrides == false)
+    return id == 8071 or id == 5394
+end }
+loadout, durability = nil, nil
+Load("MSUF_Suite_Modules/PreparationStatus.lua", { Suite = S, NS = NS })
+detail, route = S.ReadyCheckPreparation()
+assert(detail == "Missing Earth Totem" and route == "buffs" and bagReads == 2)
+combat = true
+assert(not S.ReadyCheckPreparation() and bagReads == 2)
+
 print("Ready-check preparation contract passed")

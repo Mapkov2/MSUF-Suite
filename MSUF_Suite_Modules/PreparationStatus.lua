@@ -20,7 +20,45 @@ local function ReminderName(entry)
     return S.PublicText(C_Item.GetItemInfo(entry.id))
 end
 
--- Read only the reminder owner's evaluated entries on the real Ready Check.
+-- The tools are checked on Ready Check only, using taught totems that
+-- require each item. Low-level Shamans are not reminded about future tools.
+local TOTEM_TOOLS = {
+    { item = 5175, label = "Earth Totem", spells = { 8071, 2484, 8075, 8143 } },
+    { item = 5176, label = "Fire Totem", spells = { 3599 } },
+    { item = 5177, label = "Water Totem", spells = { 5394, 5675 } },
+    { item = 5178, label = "Air Totem", spells = { 8177, 10595, 8512 } },
+}
+
+local function NeedsTool(spells)
+    for _, spell in ipairs(spells) do
+        local learned = C_SpellBook.IsSpellKnownOrInSpellBook(spell, Enum.SpellBookSpellBank.Player, false)
+        if S.Public(learned) and learned == true then return true end
+    end
+    return false
+end
+
+local function MissingTotemTools(lines)
+    if not (NS.Client and NS.Client.isForever) then return 0 end
+    local _, class = UnitClass("player")
+    if not S.Public(class) or class ~= "SHAMAN" then return 0 end
+    local skipped = 0
+    for _, tool in ipairs(TOTEM_TOOLS) do
+        if NeedsTool(tool.spells) then
+            local count = C_Item.GetItemCount(tool.item, false, false, false)
+            if S.Finite(count) and count == 0 then
+                if #lines < 6 then
+                    local name = S.PublicText(C_Item.GetItemNameByID(tool.item)) or S.Text(tool.label)
+                    lines[#lines + 1] = S.Text("Missing %s"):format(name)
+                else
+                    skipped = skipped + 1
+                end
+            end
+        end
+    end
+    return skipped
+end
+
+-- Read the reminder owner's evaluated entries and public bag counts on Ready Check.
 function S.ReadyCheckPreparation()
     if NS.InCombat() then return end
     local lines, unseen, route = {}, 0
@@ -52,6 +90,9 @@ function S.ReadyCheckPreparation()
             end
         end
     end
+    local beforeTools = #lines
+    unseen = unseen + MissingTotemTools(lines)
+    if #lines > beforeTools then route = route or "buffs" end
     if unseen > 0 then lines[#lines + 1] = S.Text("%d more preparation issues"):format(unseen) end
     if #lines > 0 then return table.concat(lines, "\n"), route end
 end

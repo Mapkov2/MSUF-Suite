@@ -39,6 +39,7 @@ end
 Flyouts.KINDS = { spell = true, item = true, toy = true, mount = true, macro = true, bag = true, spellbook = true }
 Flyouts.BAGS = { food = true, potion = true, bandage = true, keys = true, keystone = true }
 Flyouts.MAGE_BOOKS = { magePortals = { 12, 11 }, mageTeleports = { 8, 1 } }
+Flyouts.SHAMAN_BOOK = "shamanUtility"
 
 -- Blizzard's Hero's Path flyouts. Each set fits on an action bar flyout.
 -- The menu takes the expansion labels from GetFlyoutInfo at runtime.
@@ -127,6 +128,8 @@ local COMMON_PRESETS = {
 
 Flyouts.PRESETS = {
     forever = {
+        Preset({ key = Flyouts.SHAMAN_BOOK, iconSpell = 8143, class = "SHAMAN", entries = Spellbook(Flyouts.SHAMAN_BOOK) },
+            "Shaman utility", "Shows the spells you have learned."),
         Preset({ key = "keys", icon = 134237, entries = Bag("keys") },
             "Keys", "Shows keys in your bags and keyring."),
         Preset({ key = "hearthstones", iconItem = 6948, entries = FOREVER_RETURN },
@@ -215,7 +218,8 @@ function Flyouts.CleanEntry(entry)
     local kind, id = entry.kind, entry.id
     if kind == "bag" then return Flyouts.BAGS[id] and { kind = kind, id = id } or nil end
     if kind == "spellbook" then
-        if not Flyouts.MAGE_BOOKS[id] and id ~= "dungeonSeason" and not Whole(id, 2147483647) then return nil end
+        if not Flyouts.MAGE_BOOKS[id] and id ~= Flyouts.SHAMAN_BOOK and id ~= "dungeonSeason"
+            and not Whole(id, 2147483647) then return nil end
         return { kind = kind, id = id }
     end
     if kind == "macro" then

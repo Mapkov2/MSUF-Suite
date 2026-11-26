@@ -92,6 +92,22 @@ local FOREVER_MAGE_SPELLS = {
     mageTeleports = { 3561, 3562, 3565, 3567, 3563, 3566, 1308652 },
 }
 
+-- Highest known rank first for ranked utility. Each group contributes one button.
+local SHAMAN_UTILITY = { { 8012, 370 }, { 8143 }, { 8177 }, { 8166 }, { 8170 }, { 526 }, { 2870 } }
+local function ShamanUtility(spells)
+    local _, class = UnitClass("player")
+    if not Public(class) or class ~= "SHAMAN" then return end
+    for _, ranks in ipairs(SHAMAN_UTILITY) do
+        for _, spell in ipairs(ranks) do
+            local known = IsPlayerSpell(spell)
+            if Public(known) and known == true then
+                spells[#spells + 1] = { id = spell }
+                break
+            end
+        end
+    end
+end
+
 function Sources.BookSpells(group)
     local spells = {}
     local mageBooks = Data.MAGE_BOOKS[group]
@@ -105,6 +121,8 @@ function Sources.BookSpells(group)
                 if Public(known) and known == true then spells[#spells + 1] = { id = id } end
             end
         end
+    elseif group == Data.SHAMAN_BOOK then
+        if FOREVER then ShamanUtility(spells) end
     elseif group == "dungeonSeason" then
         local book = NS.DungeonPortalBook
         if book then

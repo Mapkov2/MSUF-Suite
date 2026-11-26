@@ -27,7 +27,8 @@ C_UnitAuras = {
         assert(not blocked, "Do not query protected auras")
         assert(filter == "HELPFUL|PLAYER", "Filter out the other shaman")
         reads = reads + 1
-        return name == "8515" and buffs[unit] and { spellId = buffs[unit] } or nil
+        local aura = buffs[unit]
+        return aura and tostring(aura) == name and { spellId = aura } or nil
     end,
 }
 C_Timer = { After = function(_, fn) pending[#pending + 1] = fn end }
@@ -67,12 +68,12 @@ local C = {
     bars = { cooldown = {} },
     TotemCoverageDisplay = {
         Prepare = function(_, _, ids, units)
-            assert(#units == 3 and ids[8515])
+            assert(#units == 3 and (ids[8515] or ids[8178]))
             prepared = true
             return true
         end,
         Show = function(icon, label, _, _, have)
-            assert(prepared and label == "8515")
+            assert(prepared and (label == "8515" or label == "8178"))
             if combat then assert(have == SECRET, "The native panel must mirror hidden slot visibility") end
             shown = icon
             return true
@@ -143,7 +144,14 @@ Fire("PLAYER_REGEN_ENABLED")
 Tick()
 assert(icon.totemCoverageValue == nil and not shown, "Replacing totem with an unsupported one removes its coverage")
 
-slots[4] = 10613
+slots[4], buffs.raid1, buffs.raid3 = 8177, 8178, nil
+Coverage.Update(icon)
+Tick()
+assert(icon.totemCoverageValue == "1/3", "Grounding uses its recipient aura on the air slot")
+assert(Coverage.Hover(icon) and shown == icon)
+Coverage.Leave(icon)
+
+slots[4], buffs.raid1, buffs.raid3 = 10613, 8515, 8515
 Coverage.Update(icon)
 Tick()
 assert(icon.totemCoverageValue == "2/3" and driver.events.UNIT_AURA)

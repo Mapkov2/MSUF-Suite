@@ -127,6 +127,60 @@ function D.Add(row)
     end)
 end
 
+function D.ShowsFlameShockSetup()
+    if not P.Suite.Client.isForever then return false end
+    local _, class = UnitClass("player")
+    return NS.Public(class) and class == "SHAMAN"
+end
+
+local FLAME_SHOCK = 8050
+function D.CanTrackFlameShock()
+    if P.Combat() or D.Pending() or P.Get("nameplates", "look") == 2 or not D.ShowsFlameShockSetup() then return false end
+    local spec = D.Spec()
+    if not spec or spec ~= A.Spec() then return false end
+    local rows = D.Rows()
+    if #rows < A.LIMIT then return true end
+    for _, row in ipairs(rows) do if row.id == FLAME_SHOCK then return true end end
+    return false
+end
+
+local function AddFlameRanks(row)
+    local present = {}
+    for _, id in ipairs(row.ids) do present[id] = true end
+    for _, id in ipairs(NS.HostBridge.ForeverAuraAliases(FLAME_SHOCK) or {}) do
+        if not present[id] then
+            row.ids[#row.ids + 1] = id
+            present[id] = true
+        end
+    end
+end
+
+function D.TrackFlameShock()
+    if not D.CanTrackFlameShock() then return false end
+    local spec = D.Spec()
+    local data = A.Decode(D.Get("auraColorsData"))
+    local rows = data[spec] or {}
+    local flame, others
+    for _, row in ipairs(rows) do
+        if row.id == FLAME_SHOCK then
+            flame = row
+        elseif row.enabled ~= false then
+            others = true
+        end
+    end
+    local new = not flame
+    if new then
+        flame = { id = FLAME_SHOCK, ids = { FLAME_SHOCK }, color = A.DEFAULT_COLOR }
+        rows[#rows + 1] = flame
+    end
+    AddFlameRanks(flame)
+    flame.enabled = true
+    data[spec] = rows
+    local values = { auraColorsEnabled = true, auraColorsData = A.Encode(data) }
+    if new and not others then values.auraColorsNoneEnabled = true end
+    return P.SetMany("nameplates", values)
+end
+
 function D.Config()
     local out = {}
     for _, key in ipairs(KEYS) do out[key] = D.Get(key) end
