@@ -12,6 +12,14 @@ NS.GenericWindowsShared = nil
 local Kit = NS.AdapterKit
 local Safety = NS.Safety
 
+-- A bag shell the running Bags module paints (SuiteOwnership). The skin keeps
+-- it cold: no opening pass, show hook or item refresh. Fonts and Blizzard
+-- gold text still reach it through their global FontObjects.
+local function OwnedBagShell(frame)
+    local ownership = NS.SuiteOwnership
+    return ownership.IsBagShell(frame) and ownership.Owns("bagWindows")
+end
+
 local DEFAULT_OWNER = Shared.DEFAULT_OWNER
 local OwnerState = Shared.OwnerState
 local OwnerKey = Shared.OwnerKey
@@ -199,6 +207,8 @@ end
 -- are updated separately by CommonMenus after Blizzard generates the bag.
 local bagMode = CatalogMode(nil)
 function GenericWindows.ApplyBagShell(frame, owner)
+    -- Bags paints this shell; the skin keeps no pass or state on it.
+    if OwnedBagShell(frame) then return true, "owned", nil end
     if NS.IsCombatLocked() then return ApplyFrameNow(frame, owner, bagMode) end
     local generation = Kit.SkinGeneration()
     local state = frameStates[frame]
@@ -276,6 +286,12 @@ local function PaintEntryFrame(request, index, prepareHidden)
     request.frames[index] = request.frames[index] or {}
     request.frames[index].pending = nil
     NS.WindowControls.TrackFocus(frame, owner)
+    -- Bags paints this shell (SuiteOwnership): no show hook, prepared surface
+    -- or pass. Window focus keeps it as a plain root rectangle.
+    if entry.id == "inventory" and OwnedBagShell(frame) then
+        StoreFrameResult(request, index, true, "owned")
+        return
+    end
     if NS.IsCombatLocked() and not CanSkin(frame) then
         StoreFrameResult(request, index, false, "waiting")
         DeferEntryFrame(request, index)

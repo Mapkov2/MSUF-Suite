@@ -332,7 +332,9 @@ local function MouseDown()
     local state = FindMouseWindow(foci[1])
     if state then
         inputWindow, inputControl = state, foci[1] ~= state.frame
-        if inputControl then state.chromeDirty = true else state.verifyTopology = true end
+        -- Every walked child and grandchild reports its own layout and
+        -- visibility. A click only needs the check for added children.
+        state.verifyTopology = true
         if state ~= Focus.active then Promote(state) end
         driver:RegisterEvent("GLOBAL_MOUSE_UP")
         QueueGeometry()
@@ -347,9 +349,7 @@ driver:SetScript("OnEvent", function(_, event)
     elseif event == "GLOBAL_MOUSE_UP" then
         local state, control = inputWindow, inputControl
         StopDriver()
-        if state and state.focusVisible then
-            if control then state.chromeDirty = true else state.verifyTopology = true end
-        end
+        if state and state.focusVisible then state.verifyTopology = true end
         Reconcile()
         if control and state and state.focusVisible then QueueGeometry() end
     else
@@ -450,9 +450,19 @@ function Focus.Track(frame, owner)
     if not name or not Safety.HasMethod(frame, "HookScript") then return false end
     local state = Focus.records[frame]
     if not state then
-        state = { frame = frame, name = name, owners = {}, rect = {}, veils = {}, order = 0 }
+        state = { frame = frame, name = name, owners = {}, rect = {}, veils = {}, order = 0, static = false }
         Focus.records[frame] = state
         Observe(frame)
+    end
+    -- A bag shell Bags paints is a plain rectangle: it still takes part in
+    -- focus, veils and cutouts, but nothing below its root is walked. The
+    -- skin rebuilds its owners when that ownership changes hands.
+    local ownership = NS.SuiteOwnership
+    local static = ownership ~= nil and ownership.IsBagShell(frame) and ownership.Owns("bagWindows") == true
+    if state.static ~= static then
+        state.static = static
+        -- Only a walked window has observed descendants to release.
+        if state.topologyCount then NS.WindowFocusChrome.Reset(state) end
     end
     owner = owner or "blizzardWindows"
     if generations[owner] == nil then generations[owner] = 0 end

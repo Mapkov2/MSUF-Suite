@@ -20,6 +20,14 @@ local Field = NS.Safety.Field
 local Dispatch = NS.Safety.Dispatch
 local Kit = NS.AdapterKit
 
+-- A bag shell the running Bags module paints (SuiteOwnership). The skin keeps
+-- it cold: no opening pass, show hook or item refresh. Fonts and Blizzard
+-- gold text still reach it through their global FontObjects.
+local function OwnedBagShell(frame)
+    local ownership = NS.SuiteOwnership
+    return ownership.IsBagShell(frame) and ownership.Owns("bagWindows")
+end
+
 local DEFAULT_OWNER = "blizzardWindows"
 local BAG_OPEN_CALLBACK = "ContainerFrame.OpenBag"
 local BAG_ITEM_LIMIT = 256
@@ -217,7 +225,8 @@ local function RefreshMailBags()
 end
 
 local function RefreshBag(frame, refreshItems)
-    if not frame or NS.IsCombatLocked() then return end
+    -- Bags paints this shell, its slots and its caption (SuiteOwnership).
+    if not frame or OwnedBagShell(frame) or NS.IsCombatLocked() then return end
     if NS.Client.isForever and NS.Safety.Read(Field(_G, "MailFrame"), "IsShown") == true then
         mailBags[frame] = refreshItems or mailBags[frame] == true
         NS.Registry.QueueJob(RefreshMailBags)
@@ -245,10 +254,18 @@ end
 local function RegisterCallbacks()
     local registered = false
     local callbackState = CommonMenus.callbackState
-    if not callbackState.bags then
+    -- While Bags paints the bag shells every OpenBag callback would only be
+    -- rejected, so none is registered. Bags keeps combined bags on; any other
+    -- native bag still gets its complete pass from the generate post-hook.
+    -- Ownership changes rebuild this adapter (SuiteOwnership.Refresh).
+    local openCallback = not NS.SuiteOwnership.Owns("bagWindows")
+    if openCallback and not callbackState.bags then
         EventRegistry:RegisterCallback(BAG_OPEN_CALLBACK, CommonMenus.OnBagOpened, CommonMenus)
         callbackState.bags = true
         registered = true
+    elseif not openCallback and callbackState.bags then
+        EventRegistry:UnregisterCallback(BAG_OPEN_CALLBACK, CommonMenus)
+        callbackState.bags = nil
     end
     if not callbackState.generateHook
         and NS.DeepWindows.InstallContainerGenerateHook(OnContainerGenerated) then
@@ -274,8 +291,25 @@ local function UnregisterCallbacks()
     }
 end
 
+-- The bag openings above stay cold while Bags paints the shells. The shared
+-- native search box and sort button (visible in the Blizzard grid and the
+-- combat layout) and the combined bag's money row keep their plates. They
+-- exist from login on and carry their surfaces through every reparenting,
+-- so they are painted with this owner's apply instead of on each opening.
+local function ApplyOwnedBagControls(state)
+    local combined = Field(_G, "ContainerFrameCombinedBags")
+    if not combined or not OwnedBagShell(combined) then return end
+    SkinMoneyFrame(state, combined)
+    local search, sort = Field(_G, "BagItemSearchBox"), Field(_G, "BagItemAutoSortButton")
+    if search then NS.ControlSkin.ApplySearchBox(search, state.owner, BAG_SEARCH_SPEC) end
+    if sort and NS.Surface.Attach(sort, BAG_ACTION_SPEC) then state.surfaces[sort] = true end
+end
+
 local function ApplyNow(state)
-    if NS.GenericWindows.IsCategoryEnabled("inventory") then RegisterCallbacks() end
+    if NS.GenericWindows.IsCategoryEnabled("inventory") then
+        RegisterCallbacks()
+        ApplyOwnedBagControls(state)
+    end
     FadeCosmeticGlobals(state)
 end
 

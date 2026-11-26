@@ -2,13 +2,20 @@ local _, NS = ...
 
 -- Discover a bounded visible native tree after show/layout/input, then keep
 -- relative chrome rectangles for drag updates. No closed-window polling.
+-- One walk of the root's children and grandchildren serves both roles: a
+-- clear window's footprint and a dimmed window's material and layer, so a
+-- focus change reuses it. Every walked node is observed: its own layout and
+-- visibility changes invalidate the walk, added children fail the check.
 local Chrome = {}
 NS.WindowFocusChrome = Chrome
 local Safety, Geometry = NS.Safety, NS.WindowFocusGeometry
 local Contour = NS.WindowFocusContour
 local observed = setmetatable({}, { __mode = "k" })
 local locallyShown = setmetatable({}, { __mode = "k" })
-local MAX_NODES, MAX_DEPTH, MAX_EXTENTS, MAX_GUTTER = 384, 5, 16, 64
+-- Frames that already carry our layout hooks. Hooks cannot be removed, so a
+-- released or re-observed frame never receives a second set.
+local hooked = setmetatable({}, { __mode = "k" })
+local MAX_NODES, MAX_DEPTH, MAX_EXTENTS, MAX_GUTTER = 384, 2, 16, 64
 local ranks = { BACKGROUND = 1, LOW = 2, MEDIUM = 3, HIGH = 4, DIALOG = 5,
     FULLSCREEN = 6, FULLSCREEN_DIALOG = 7, TOOLTIP = 8 }
 local Changed
@@ -20,7 +27,7 @@ function Chrome.SetHidden(predicate) Hidden = predicate end
 
 local function LayoutChanged(frame)
     local state = observed[frame]
-    if state and state.focusVisible and not state.chromeDirty then
+    if state and state.focusVisible and not state.chromeDirty and not state.static then
         state.chromeDirty = true
         Changed()
     end
@@ -29,6 +36,8 @@ end
 -- Parent Show/Hide also delivers these scripts to locally shown children.
 -- Only a change to the child's own visibility invalidates its geometry.
 local function VisibilityChanged(frame)
+    -- Released frames (a static window, see Chrome.Reset) keep inert hooks.
+    if not observed[frame] then return end
     local shown = Safety.Read(frame, "IsShown")
     if type(shown) == "boolean" and locallyShown[frame] == shown then return end
     locallyShown[frame] = shown
@@ -38,7 +47,8 @@ end
 local function Observe(frame, state, visible)
     locallyShown[frame] = visible or Safety.Read(frame, "IsShown")
     if observed[frame] == state then return end
-    if not observed[frame] then
+    if not hooked[frame] then
+        hooked[frame] = true
         for index = 1, #layoutScripts do
             local script = layoutScripts[index]
             if Safety.Read(frame, "HasScript", script) == true then
@@ -72,23 +82,6 @@ local function Enqueue(state, parent, depth, ...)
     topology[start + 1], state.topologyCount = write - start - 1, write
 end
 
--- Deep nodes below the veil have no layout observers. A later promotion can
--- raise an existing node without adding a child. Recheck just its layer when
--- this visible window next requires its complete stacking order.
-local function SameDeepLayers(state)
-    for index = 1, state.lowLayerCount do
-        local node = state.lowLayers[index]
-        if Safety.Read(node, "IsVisible") ~= true then return false end
-        local rank = ranks[Safety.Read(node, "GetFrameStrata")]
-        if not rank or rank > state.rank then return false end
-        if rank == state.rank then
-            local level = Safety.Read(node, "GetFrameLevel")
-            if type(level) ~= "number" or level >= state.level then return false end
-        end
-    end
-    return true
-end
-
 local function SameChildOrder(graph, first, count, ...)
     if select("#", ...) ~= count then return false end
     for offset = 0, count - 1 do
@@ -111,10 +104,9 @@ local function SameAnchors(state)
         and anchors.tutorial == state.probeAnchors.tutorial
 end
 
-local function SameTopology(state, footprintOnly, ordered)
+local function SameTopology(state, ordered)
     if not state.topologyCount or state.partialTopology or state.extentCount >= MAX_EXTENTS then return false end
     if state.layerAtDiscovery ~= state.rank or state.levelAtDiscovery ~= state.level then return false end
-    if not ordered and not footprintOnly and not SameDeepLayers(state) then return false end
     for index = 1, state.tabScriptCount, 2 do
         local enabled = Safety.Read(state.tabScripts[index], "GetScript", "OnMouseDown") ~= nil
         if enabled ~= state.tabScripts[index + 1] then return false end
@@ -215,44 +207,6 @@ local function Exterior(state, frame, depth, kind, uiScale)
     return true
 end
 
-local function Inspect(state, frame, depth, uiScale, deferChildren)
-    if frame == state.presentation or NS.WindowFocus.records[frame] or Hidden(frame) then return end
-    local kind = Safety.Read(frame, "GetObjectType")
-    if kind == "GameTooltip" then return end
-    local shown = Safety.Read(frame, "IsVisible") == true
-    if state.reopenCache then state.reopenCache.shown[frame] = shown end
-    if not shown then
-        -- Even an ordinary hidden container can reveal a raised descendant.
-        -- Its show hook requests a new pass before the veil is painted again.
-        Observe(frame, state, shown)
-        return
-    end
-    local layer = Safety.Read(frame, "GetFrameStrata")
-    local rank = ranks[layer]
-    -- Frame level only orders widgets within a stratum.
-    local level = rank and rank >= state.rank and Safety.Read(frame, "GetFrameLevel")
-    if state.reopenCache then
-        local layers = state.reopenCache.layers
-        local index = #layers
-        layers[index + 1], layers[index + 2], layers[index + 3] = frame, layer or false, level or false
-    end
-    local raised = type(level) == "number" and (rank > state.rank or level >= state.level)
-    if depth <= 2 and not state.presentation then Exterior(state, frame, depth, kind, uiScale) end
-    if depth <= 2 or raised then
-        Observe(frame, state, shown)
-    else
-        state.lowLayers = state.lowLayers or {}
-        state.lowLayerCount = state.lowLayerCount + 1
-        state.lowLayers[state.lowLayerCount] = frame
-    end
-    if raised then
-        if rank > state.chromeRank then state.chromeStrata, state.chromeRank, state.chromeLevel = layer, rank, level + 1
-        elseif rank == state.chromeRank then state.chromeLevel = math.max(state.chromeLevel, level + 1) end
-    end
-    if deferChildren then return true end
-    if depth < MAX_DEPTH then Enqueue(state, frame, depth + 1, Safety.Call(frame, "GetChildren")) end
-end
-
 local function Inside(cover, rect, gutter)
     return rect.left - gutter >= cover.left and rect.bottom - gutter >= cover.bottom
         and rect.left + rect.width + gutter <= cover.left + cover.width
@@ -276,39 +230,46 @@ local function EnqueueFootprint(state, parent, depth, uiScale, within, ...)
     for index = first, state.queueCount do state.bagBounds[index] = true end
 end
 
--- Clear windows only cut rectangles out of other windows' veils. Exterior
--- tabs and artwork can extend their bounds at depths one and two.
-local function InspectFootprint(state, frame, depth, uiScale, within)
-    -- Native portrait masks and tutorial art use their regions' actual bounds.
-    local ordinary = within and frame ~= state.anchors.portrait and frame ~= state.anchors.borderPortrait
-        and frame ~= state.anchors.tutorial
-    if ordinary and depth == 2 and observed[frame] == state then
-        if state.reopenCache then state.reopenCache.shown[frame] = "interior" end
-        return
-    end
+-- Children (depth 1) and grandchildren (depth 2) of the root. Their bounds
+-- can extend the shell (tabs, portrait and tutorial art) and their layers can
+-- rise above it. Each is observed, so its own layout change invalidates the
+-- walk; deeper descendants stay inside the window and below the veil.
+local function Inspect(state, frame, depth, uiScale, within)
+    if frame == state.presentation or NS.WindowFocus.records[frame] or Hidden(frame) then return end
     local kind = Safety.Read(frame, "GetObjectType")
-    if kind == "GameTooltip" or Hidden(frame) or NS.WindowFocus.records[frame] then return end
+    if kind == "GameTooltip" then return end
     local shown = Safety.Read(frame, "IsVisible") == true
     if state.reopenCache then state.reopenCache.shown[frame] = shown end
-    if shown and not ordinary then Exterior(state, frame, depth, kind, uiScale) end
+    -- Even an ordinary hidden container can reveal a raised child or a tab.
+    -- Its show hook requests a new pass before the veil is painted again.
     Observe(frame, state, shown)
-    if shown and depth == 1 then
-        EnqueueFootprint(state, frame, 2, uiScale, within, Safety.Call(frame, "GetChildren"))
+    if not shown then return end
+    local layer = Safety.Read(frame, "GetFrameStrata")
+    local rank = ranks[layer]
+    -- Frame level only orders widgets within a stratum.
+    local level = rank and rank >= state.rank and Safety.Read(frame, "GetFrameLevel")
+    if state.reopenCache then
+        local layers = state.reopenCache.layers
+        local index = #layers
+        layers[index + 1], layers[index + 2], layers[index + 3] = frame, layer or false, level or false
     end
-end
-
--- Exterior stores each accepted piece relative to the root, including across
--- moves. Resolve those same coordinates before dropping a covered deep walk.
-local function ExtentsInside(state, cover)
-    local root = state.rect
-    local right, top = cover.left + cover.width, cover.bottom + cover.height
-    for index = 1, state.extentCount do
-        local extent = state.extents[index]
-        local x, y = root.left + extent.left * root.width, root.bottom + extent.bottom * root.height
-        if x < cover.left or y < cover.bottom or x + extent.width * root.width > right
-            or y + extent.height * root.height > top then return false end
+    local raised = type(level) == "number" and (rank > state.rank or level >= state.level)
+    -- Bag slots inside the measured bag bounds cannot extend the shell.
+    -- Native portrait and tutorial art always use their own bounds.
+    local anchors = state.anchors
+    local interior = within and frame ~= anchors.portrait and frame ~= anchors.borderPortrait
+        and frame ~= anchors.tutorial
+    if not interior and not state.presentation then Exterior(state, frame, depth, kind, uiScale) end
+    if raised then
+        if rank > state.chromeRank then state.chromeStrata, state.chromeRank, state.chromeLevel = layer, rank, level + 1
+        elseif rank == state.chromeRank then state.chromeLevel = math.max(state.chromeLevel, level + 1) end
     end
-    return true
+    if depth >= MAX_DEPTH then return end
+    if state.bagBounds then
+        EnqueueFootprint(state, frame, depth + 1, uiScale, within, Safety.Call(frame, "GetChildren"))
+    else
+        Enqueue(state, frame, depth + 1, Safety.Call(frame, "GetChildren"))
+    end
 end
 
 -- The flat membership pass already established that this node is readable.
@@ -406,7 +367,7 @@ local function SameReopen(state, footprintOnly, uiScale)
     local cache, root = state.reopenCache, state.rect
     if not cache or cache.presentation ~= state.presentation or cache.uiScale ~= uiScale or cache.scale ~= root.unitScale
         or cache.left ~= root.left or cache.bottom ~= root.bottom or cache.width ~= root.width or cache.height ~= root.height
-        or not SameTopology(state, footprintOnly, true) or not SameReopenNodes(state, cache, uiScale) then return false end
+        or not SameTopology(state, true) or not SameReopenNodes(state, cache, uiScale) then return false end
     for parent, mode in pairs(cache.bounds) do
         if Safety.Read(parent, "IsIgnoringChildrenForBounds") ~= false then return false end
         if mode == "measured" and (not Geometry.Read(parent, state.boundsScratch, uiScale, "GetBoundsRect")
@@ -423,83 +384,82 @@ local function SameReopen(state, footprintOnly, uiScale)
     return true
 end
 
-local function Discover(state, footprintOnly, uiScale, cover)
+local function Discover(state, uiScale)
     BeginReopenCache(state, uiScale)
     state.checkReopenLayers = false
     state.chromeDirty, state.verifyTopology = false, false
     state.topology = state.topology or {}
     local previousCount = state.topologyCount or 0
-    if state.lowLayers then
-        for i = 1, state.lowLayerCount do state.lowLayers[i] = nil end
-    end
     if state.tabScripts then
         for i = 1, state.tabScriptCount do state.tabScripts[i] = nil end
     end
-    state.lowLayerCount, state.tabScriptCount = 0, 0
+    state.tabScriptCount = 0
     state.layerAtDiscovery, state.levelAtDiscovery = state.rank, state.level
     state.topologyCount, state.partialTopology = 0, false
-    state.footprintOnly = footprintOnly
     state.queue, state.depths = state.queue or {}, state.depths or {}
     state.extents, state.chromeScratch = state.extents or {}, state.chromeScratch or {}
     state.extentCount, state.queueCount = 0, 0
     state.anchors = Contour.Anchors(state.frame, state.anchors or {})
     state.chromeStrata, state.chromeRank, state.chromeLevel = state.strata, state.rank, state.level
-    -- A Suite presentation supplies its complete rectangle itself.
-    if footprintOnly and state.presentation then
-        for i = 1, previousCount do state.topology[i] = nil end
-        return
-    end
-    local visit = footprintOnly and InspectFootprint or Inspect
-    if footprintOnly and (state.frame == ContainerFrameCombinedBags or state.frame == ContainerFrame6) then
+    -- Bag slots are pooled children of the bag root. One bounds read can show
+    -- that none of them reaches outside the shell.
+    if state.frame == ContainerFrameCombinedBags or state.frame == ContainerFrame6 then
         state.bagBounds = state.bagBounds or {}
         EnqueueFootprint(state, state.frame, 1, uiScale, false, Safety.Call(state.frame, "GetChildren"))
     else
+        state.bagBounds = nil
         Enqueue(state, state.frame, 1, Safety.Call(state.frame, "GetChildren"))
     end
-    local index, firstParent = 1, nil
+    local index = 1
     while index <= state.queueCount do
-        local frame, depth = state.queue[index], state.depths[index]
-        if cover and depth == 2 then
-            -- Keep eligible parents in the existing breadth-first queue until
-            -- all possible exterior pieces have been measured.
-            firstParent = firstParent or index
-            if not Inspect(state, frame, depth, uiScale, true) then state.queue[index] = false end
-        else
-            local within = state.bagBounds and state.bagBounds[index]
-            if within then state.bagBounds[index] = nil end
-            visit(state, frame, depth, uiScale, within)
-            state.queue[index] = false
-        end
+        local within = state.bagBounds and state.bagBounds[index]
+        if within then state.bagBounds[index] = nil end
+        Inspect(state, state.queue[index], state.depths[index], uiScale, within)
+        state.queue[index] = false
         index = index + 1
-        if cover and index > state.queueCount then
-            state.footprintOnly = ExtentsInside(state, cover)
-            for parent = firstParent or index, index - 1 do
-                local branch = state.queue[parent]
-                if branch and not state.footprintOnly then Enqueue(state, branch, 3, Safety.Call(branch, "GetChildren")) end
-                state.queue[parent] = false
-            end
-            cover = nil
-        end
     end
     for i = state.topologyCount + 1, previousCount do state.topology[i] = nil end
 end
 
-function Chrome.Update(state, footprintOnly, uiScale, cover)
-    if state.checkAfterShow then
-        state.checkAfterShow, state.chromeDirty, state.verifyTopology = false, false, false
-        if not SameReopen(state, footprintOnly, uiScale) then state.chromeDirty = true end
+-- A window that turned static (WindowFocus.Track) drops its walk. Its former
+-- descendants keep inert hooks; a later walk reuses them (see Observe).
+function Chrome.Reset(state)
+    for frame, owner in pairs(observed) do
+        if owner == state then observed[frame], locallyShown[frame] = nil, nil end
     end
-    if state.checkReopenLayers and not footprintOnly then
-        state.checkReopenLayers = false
-        if not state.chromeDirty and not SameReopenLayers(state, state.reopenCache) then state.chromeDirty = true end
-    end
-    if state.verifyTopology and not state.chromeDirty then
-        state.verifyTopology = false
-        if not SameTopology(state, footprintOnly) then state.chromeDirty = true end
-    end
-    if state.chromeDirty or not state.extents or state.footprintOnly and not footprintOnly
-        and (not cover or not ExtentsInside(state, cover)) then
-        Discover(state, footprintOnly, uiScale, cover)
+    state.extents, state.reopenCache, state.topologyCount, state.extentCount = nil, nil, nil, 0
+    state.checkAfterShow, state.verifyTopology, state.checkReopenLayers = false, false, false
+    state.chromeDirty = true
+end
+
+local function PlainRoot(state)
+    state.extentCount = 0
+    state.chromeStrata, state.chromeRank, state.chromeLevel = state.strata, state.rank, state.level
+end
+
+-- footprintOnly: the window is clear and only cuts its footprint out of
+-- other veils. One walk serves both roles, so a focus change reuses it.
+function Chrome.Update(state, footprintOnly, uiScale)
+    if state.static then
+        -- Bags paints this shell (SuiteOwnership): its plain root rectangle is
+        -- the whole window, so nothing below it is walked or observed.
+        state.chromeDirty, state.verifyTopology = false, false
+        state.checkAfterShow, state.checkReopenLayers = false, false
+        PlainRoot(state)
+    else
+        if state.checkAfterShow then
+            state.checkAfterShow, state.chromeDirty, state.verifyTopology = false, false, false
+            if not SameReopen(state, footprintOnly, uiScale) then state.chromeDirty = true end
+        end
+        if state.checkReopenLayers and not footprintOnly then
+            state.checkReopenLayers = false
+            if not state.chromeDirty and not SameReopenLayers(state, state.reopenCache) then state.chromeDirty = true end
+        end
+        if state.verifyTopology and not state.chromeDirty then
+            state.verifyTopology = false
+            if not SameTopology(state) then state.chromeDirty = true end
+        end
+        if state.chromeDirty or not state.extents then Discover(state, uiScale) end
     end
     if state.chromeRank > state.rank then state.strata, state.rank, state.level = state.chromeStrata, state.chromeRank, state.chromeLevel
     elseif state.chromeRank == state.rank then state.level = math.max(state.level, state.chromeLevel) end
@@ -555,21 +515,16 @@ local function UpdateDimmed(state, windows, uiScale)
     for _, clear in pairs(windows) do
         if clear.keepClear and clear.readable and Inside(clear.rect, state.rect, 0) then
             if Inside(clear.rect, state.rect, gutter) then
+                -- New children can appear while no veil is drawn here.
                 state.covered, state.verifyTopology = true, true
-                state.footprintOnly = true
                 return
             end
             cover = clear.rect
         end
     end
-    Chrome.Update(state, false, uiScale, cover)
+    Chrome.Update(state, false, uiScale)
     state.covered = cover and Inside(cover, state.materialRect, 0)
-    if state.covered then
-        -- New deep children can appear while no veil is drawn here.
-        state.footprintOnly = true
-    else
-        NS.WindowFocusLayers.Prepare(state)
-    end
+    if not state.covered then NS.WindowFocusLayers.Prepare(state) end
 end
 
 function Chrome.UpdateWindows(windows, needsVeil, uiScale)
