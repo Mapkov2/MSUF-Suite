@@ -71,6 +71,10 @@ end
 
 -- The broker data object of a binding, or nil.
 function Sources.BrokerObject(binding)
+    if NS.Extensions then
+        local object, reserved = NS.Extensions.Broker(binding.broker)
+        if reserved then return object end
+    end
     local lib = Broker()
     return lib and lib:GetDataObjectByName(binding.broker) or nil
 end
@@ -353,6 +357,24 @@ local function BrokerChanged(_, name)
         local binding = Sources.bindings[key]
         if binding and binding.kind == "broker" and binding.broker == name then owner:UpdateSource(key, true) end
     end
+end
+
+-- SDK publishers share a single repaint job per frame while data bars run.
+local changedBrokers, refreshBrokers = {}, false
+local function FlushBrokers()
+    refreshBrokers = false
+    for name in pairs(changedBrokers) do
+        changedBrokers[name] = nil
+        BrokerChanged(nil, name)
+    end
+end
+
+function Sources.ExtensionChanged(name)
+    if not owner or not owner.active then return end
+    changedBrokers[name] = true
+    if refreshBrokers then return end
+    refreshBrokers = true
+    C_Timer.After(0, FlushBrokers)
 end
 
 -- A provider with a delay folds a burst of its events (a login's friend

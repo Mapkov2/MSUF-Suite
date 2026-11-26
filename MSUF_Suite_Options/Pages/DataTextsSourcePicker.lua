@@ -235,13 +235,15 @@ local function BrokerMenu(anchor, block)
             if #names >= 256 then break end
         end
     end
+    if Suite.Extensions then Suite.Extensions.AddBrokers(names) end
     table.sort(names)
     P.ContextMenu(anchor, function(_, menu)
         menu:SetScrollMode(340)
         menu:CreateTitle(Tr("Choose loaded broker"))
         if #names == 0 then menu:CreateTitle(Tr("No broker plugins are loaded. You can enter a name below.")) end
         for _, name in ipairs(names) do
-            menu:CreateRadio(name, function() return detailSession == session and Current(session) and P.Get(ID, block .. "Broker") == name end,
+            local extension = Suite.Extensions and Suite.Extensions.Broker(name)
+            menu:CreateRadio(extension and extension.label or name, function() return detailSession == session and Current(session) and P.Get(ID, block .. "Broker") == name end,
                 function() if detailSession == session and Current(session) then P.Set(ID, block .. "Broker", name) end end)
         end
     end)

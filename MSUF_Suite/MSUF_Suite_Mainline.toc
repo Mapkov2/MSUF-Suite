@@ -142,6 +142,7 @@ Core\DevBarAnimation.lua
 Core\DevQuestTurnIn.lua
 Core\DevMode.lua
 Core\API.lua
+Core\Extensions.lua
 Core\PlannerCommand.lua
 Core\QuickActionsCommand.lua
 Core\Startup.lua

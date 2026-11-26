@@ -98,6 +98,7 @@ Pages\HUDPreviewViews.lua
 Pages\HUDAFKPreview.lua
 Pages\HUD.lua
 Pages\AddonConflicts.lua
+Pages\ProfilePacks.lua
 Pages\BuffRemindersVisibility.lua
 Pages\BuffRemindersEditor.lua
 Pages\BuffRemindersPreview.lua
