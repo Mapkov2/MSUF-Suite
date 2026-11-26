@@ -364,8 +364,14 @@ local function Unit(t, data)
         if c.mythicForces then Forces(t, unit, data.lines) end
         if c.hideHealth then HideHealth(t) end
     end
-    UnitDetails.Paint(t, data, unit, c)
+    local order = M.unitOrder
+    if M.creatureOrder then
+        local player = UnitIsPlayer(unit)
+        if S.Public(player) and player == false then order = M.creatureOrder end
+    end
+    UnitDetails.Paint(t, data, unit, c, order)
     UnitLevel(t, unit)
+    if NS.Extensions then NS.Extensions.TooltipLines("Unit", unit, t, Lines.Line) end
 end
 
 ------------------------------------------------------------------ items, spells, mounts
@@ -373,12 +379,17 @@ local function Item(t, data)
     Border.Item(t, data, M.config.borderColor)
     if not S.Finite(data.id) then return end
     local _, _, _, _, _, _, _, stack, _, icon = C_Item.GetItemInfo(data.id)
-    if M.config.maxStack and S.Finite(stack) and stack > 1 then Detail(t, "Maximum stack", stack) end
-    if M.config.iconID and S.Finite(icon) then Detail(t, "Item icon ID", icon) end
+    local showStack = M.config.maxStack and S.Finite(stack) and stack > 1
+    local showIcon = M.config.iconID and S.Finite(icon)
+    if M.iconFirst and showIcon then Detail(t, "Item icon ID", icon) end
+    if showStack then Detail(t, "Maximum stack", stack) end
+    if not M.iconFirst and showIcon then Detail(t, "Item icon ID", icon) end
+    if NS.Extensions then NS.Extensions.TooltipLines("Item", data.id, t, Lines.Line) end
 end
 
 local function Spell(t, data)
     if M.config.iconID then Lines.SpellIcon(t, data, .9, .9, .9) end
+    if NS.Extensions then NS.Extensions.TooltipLines("Spell", data.id, t, Lines.Line) end
 end
 
 -- The mount data post-call runs before native sizing. Read the documented
@@ -749,7 +760,17 @@ local function Install(self)
     self.hooked = true
 end
 
+local function ReadOrder(self)
+    local content = NS.TooltipContent
+    if not content then return end
+    self.unitOrder = content.Order("unit", self.config.unitContentOrder)
+    self.creatureOrder = self.config.creatureContentOrder ~= "" and self.config.creatureContentOrder ~= nil
+        and content.Order("creature", self.config.creatureContentOrder) or nil
+    self.iconFirst = content.Order("item", self.config.itemContentOrder)[1] == "icon"
+end
+
 function M:Enable()
+    ReadOrder(self)
     if NS.Client.modernEquipment and NS.HostBridge then NS.HostBridge.ReleaseLegacyTooltipHealth = ReleaseLegacyHealth end
     self.lastInspect = Now()
     self.context:Event("INSPECT_READY", InspectReady)
@@ -760,6 +781,7 @@ function M:Enable()
 end
 
 function M:Refresh()
+    ReadOrder(self)
     ListenForInspectKey(self)
     RefreshAnchor()
     LayoutPreview(self)

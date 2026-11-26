@@ -253,13 +253,34 @@ local function TargetedBy(tooltip, unit, nearby)
     Lines.Line(tooltip, "Targeted by", value)
 end
 
-function UnitDetails.Paint(tooltip, data, unit, config)
+local function PaintGuild(tooltip, _, unit, config)
+    if config.guildRank and not config.hideGuild then GuildRank(tooltip, unit) end
+end
+
+local function PaintTarget(tooltip, _, unit, config)
+    if config.target then Target(tooltip, unit, config.selfTarget) end
+end
+
+local function PaintLocation(tooltip, _, unit, config)
+    if config.unitLocation then Location(tooltip, unit) end
+end
+
+local function PaintThreat(tooltip, data, unit, config)
+    if config.unitThreatStatus or config.unitThreatPercent then Threat(tooltip, data, unit, config) end
+end
+
+local function PaintTargeters(tooltip, _, unit, config)
+    if config.unitTargeters and config.unitTargeters > 1 then TargetedBy(tooltip, unit, config.unitTargeters == 3) end
+end
+
+local painters = { guild = PaintGuild, target = PaintTarget, location = PaintLocation, threat = PaintThreat,
+    watchers = PaintTargeters }
+local DEFAULT_ORDER = { "guild", "target", "location", "threat", "watchers" }
+
+function UnitDetails.Paint(tooltip, data, unit, config, order)
     if config.unitCombatStatus or config.unitIdentityIcons or config.unitFaction or config.unitClassification then
         Markers(tooltip, data, unit, config)
     end
-    if config.guildRank and not config.hideGuild then GuildRank(tooltip, unit) end
-    if config.target then Target(tooltip, unit, config.selfTarget) end
-    if config.unitLocation then Location(tooltip, unit) end
-    if config.unitThreatStatus or config.unitThreatPercent then Threat(tooltip, data, unit, config) end
-    if config.unitTargeters and config.unitTargeters > 1 then TargetedBy(tooltip, unit, config.unitTargeters == 3) end
+    order = order or DEFAULT_ORDER
+    for index = 1, #order do painters[order[index]](tooltip, data, unit, config) end
 end

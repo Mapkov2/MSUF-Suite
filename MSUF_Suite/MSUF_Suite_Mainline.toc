@@ -58,6 +58,7 @@ Core\CharacterBindings.lua
 Core\Catalog\CharacterPanel.lua
 Core\Catalog\QualityOfLife.lua
 Core\Catalog\Tooltips.lua
+Core\TooltipContent.lua
 Core\Catalog\LootRolls.lua
 Core\Catalog\QualityOfLifeIndicators.lua
 Core\Catalog\LootWindow.lua

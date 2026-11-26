@@ -178,6 +178,9 @@ Tooltips.Module("tooltipDetails", {
     optIn = true, defaultEnabled = false, page = "suite_qualityOfLife",
     editElement = "tooltip",
 })
+Tooltips.Add("tooltipDetails", { key = "unitContentOrder", default = "", maxLength = 80, hidden = true })
+Tooltips.Add("tooltipDetails", { key = "creatureContentOrder", default = "", maxLength = 48, hidden = true })
+Tooltips.Add("tooltipDetails", { key = "itemContentOrder", default = "", maxLength = 32, hidden = true })
 local HIDDEN_LINE = "Blanks the text on unit tooltips. Text the game keeps private is never changed."
 B.Section("tooltipDetails", "tooltip_details", "Tooltip details", {
     Choice("anchor", "General tooltip anchor", 1, { "Blizzard", "Cursor", "Fixed screen corner" }),

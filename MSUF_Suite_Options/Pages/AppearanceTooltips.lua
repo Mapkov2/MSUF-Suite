@@ -13,7 +13,7 @@ local layoutRules = { tooltipDetails = { anchor = true, growth = true }, tooltip
 local EDITOR_TABS = {
     { id = "basics", label = "Basics", sections = basicsSection .. " " .. typesSection },
     { id = "appearance", label = "Appearance", sections = "suite_skin_tooltip_builder" },
-    { id = "layout", label = "Layout", sections = layoutSection .. " suite_skin_tooltip_source_positions" },
+    { id = "layout", label = "Layout", sections = layoutSection .. " suite_skin_tooltip_source_positions suite_tooltip_content_order" },
     { id = "details", label = "Tooltip details", sections = "suite_skin_unit_tooltips" },
 }
 local presetKeys = { "compact", "detailed", "minimal", "dense", "custom" }
@@ -564,8 +564,7 @@ local function PaintUnitPreviewDetails(preview, sample, nativePlayer, Add, Appen
     Add("target", "Target", target)
     if sample.enemy then
         Add("unitClassification", "Classification", Tr("Elite"))
-        local indicator = Add("unitThreatStatus", "Threat status", "!")
-        if indicator then indicator:SetTextColor(1, .2, .2) end
+        Add("unitThreatStatus", "Threat status", "!")
         Add("unitThreatPercent", "Threat", "100%")
         if sample.keystone and P.Suite.Client.modernEquipment then Add("mythicForces", "Forces", "+1.25%") end
     else
@@ -590,9 +589,34 @@ local function PaintUnitPreviewDetails(preview, sample, nativePlayer, Add, Appen
     end
 end
 
+local function OrderPreviewDetails(sample, details)
+    local content = P.Suite.TooltipContent
+    local kind = sample.id == "unit" and sample.enemy and "creature" or sample.id
+    local field = content and content.Fields[kind]
+    local saved = field and P.Get("tooltipDetails", field)
+    if kind == "creature" and (not saved or saved == "") and content then
+        kind, saved = "unit", P.Get("tooltipDetails", content.Fields.unit)
+    end
+    if not saved or saved == "" then return end
+    local ranks, slots, ordered = content.Priorities(kind, saved), {}, {}
+    for i = 1, #details do
+        local row = details[i]
+        if ranks[row[1]] then
+            slots[#slots + 1] = i
+            ordered[#ordered + 1] = row
+            row.rank, row.index = ranks[row[1]], i
+        end
+    end
+    table.sort(ordered, function(a, b)
+        if a.rank == b.rank then return a.index < b.index end
+        return a.rank < b.rank
+    end)
+    for i = 1, #ordered do details[slots[i]] = ordered[i] end
+end
+
 function P.PaintTooltipPreviewBody(preview, sample)
     local rows = sample.rows
-    local extra = 0
+    local lines = {}
     local details = rows and P.TooltipDetailsEnabled()
         and not (sample.id == "unit" and P.TooltipPreviewUsesPanel(preview))
     local nativePlayer = ShowsNativePlayerDetails(preview, sample)
@@ -605,10 +629,7 @@ function P.PaintTooltipPreviewBody(preview, sample)
         row[2]:SetTextColor(detail and .9 or .62, detail and .9 or .83, detail and .9 or 1)
     end
     local function Append(key, label, value, detail)
-        extra = extra + 1
-        Row(3 + extra, Tr(label), value, detail)
-        if preview.rowSettings then preview.rowSettings[3 + extra] = key end
-        return preview.rows[3 + extra][2]
+        lines[#lines + 1] = { key, label, value, detail }
     end
     local function Add(key, label, value)
         if P.Get("tooltipDetails", key) then return Append(key, label, value, true) end
@@ -637,8 +658,15 @@ function P.PaintTooltipPreviewBody(preview, sample)
             end
         end
     end
-    for i = 4 + extra, #preview.rows do Row(i, "", "", false) end
-    return extra * 19
+    OrderPreviewDetails(sample, lines)
+    for i, line in ipairs(lines) do
+        local index, key = 3 + i, line[1]
+        Row(index, Tr(line[2]), line[3], line[4])
+        if preview.rowSettings then preview.rowSettings[index] = key end
+        if key == "unitThreatStatus" then preview.rows[index][2]:SetTextColor(1, .2, .2) end
+    end
+    for i = 4 + #lines, #preview.rows do Row(i, "", "", false) end
+    return #lines * 19
 end
 
 function P.PaintTooltipPreviewSample(preview, sample, rich, matching)
@@ -692,6 +720,7 @@ local function BuildPage(ctx)
     if not skin then
         BuildBasics(ctx, builder)
         BuildTooltipLayout(ctx, builder)
+        P.BuildTooltipContentOrder(ctx, builder)
         P.BuildTooltipSourcePositions(ctx, builder)
         P.BuildSkinUnitTooltipSection(ctx, builder)
         P.QoLOwners.Build(ctx, builder, PAGE, nil, "tooltips")
@@ -705,6 +734,7 @@ local function BuildPage(ctx)
     P.BuildSkinTooltipBuilder(ctx, workspace, skin)
     BuildTypeStyles(ctx, workspace, skin)
     BuildTooltipLayout(ctx, workspace, skin)
+    P.BuildTooltipContentOrder(ctx, workspace)
     P.BuildTooltipSourcePositions(ctx, workspace, ui)
     P.BuildSkinUnitTooltipSection(ctx, workspace, skin)
     P.QoLOwners.Build(ctx, ui and ui.groups.details.builder or workspace, PAGE,
