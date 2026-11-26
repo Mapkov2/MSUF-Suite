@@ -2,6 +2,9 @@ local addonName, NS = ...
 
 -- Optional consumers get current appearance inputs only after Skinning loaded.
 NS.Registry.AddListener(NS, function(_, domain, key)
+    if NS.Client.isForever and (domain == "profile" or domain == "adapter" and key == "master") then
+        NS.SpellLearning.SyncTrainerNotice()
+    end
     if domain == "theme" or domain == "profile" or domain == "color" or domain == "typography"
         or domain == "appearance" or domain == "geometry" or domain == "adapter" and key == "master" then
         local tooltips = NS.SuiteCore().Tooltips
@@ -48,6 +51,7 @@ local function ApplyLogin()
     dispatch(NS.Checkmarks.Apply)
     dispatch(NS.Typography.ApplyConfigured)
     dispatch(NS.Adapters.ApplyAll)
+    if NS.Client.isForever then dispatch(NS.SpellLearning.SyncTrainerNotice) end
     -- Prepare hidden native combat windows on the next frame, outside
     -- PLAYER_LOGIN, so their protected shells can be painted while unlocked.
     if NS.Client.isMainline then C_Timer.After(0, NS.Adapters.PrepareCombatWindows) end

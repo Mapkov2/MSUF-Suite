@@ -217,6 +217,7 @@ NS.Defaults = {
         includeSpecial = true,
     },
     foreverSpellLearning = true,
+    foreverTrainerReminder = false,
     addonSkins = {
         enabled = false, registered = true,
         aceGUI = true, discovered = {}, looks = {},

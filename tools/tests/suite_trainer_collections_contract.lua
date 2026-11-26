@@ -153,6 +153,7 @@ ClassTrainerFrame_InitServiceButton(row, 11, true)
 assert(row.surfaceVisible == false and row.normal.alpha == 1)
 
 -- The original grip covered the action's bottom-right corner in both panels.
+assert(loadfile(skin .. "Rendering/WindowControlNativeArt.lua"))("skin", NS)
 assert(loadfile(skin .. "Rendering/WindowControlChrome.lua"))("skin", NS)
 NS.WindowControlPolicy = { ScreenRatio = function() return 1 end }
 UIParent = { GetWidth = function() return 1280 end }

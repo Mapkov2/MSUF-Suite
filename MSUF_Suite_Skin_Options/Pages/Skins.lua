@@ -19,7 +19,7 @@ local function AdapterLabel(definitions, id)
 end
 
 local function BuildToggleList(page, order, definitions)
-    local extras = NS.Client.isForever and 1 or 0
+    local extras = NS.Client.isForever and 2 or 0
     local listScroll, list = O.CreateLeftColumn(page, 500, (#order + 1 + extras) * 46 + 10, LIST_WIDTH)
     page._mskinSkinListScroll = listScroll
     page._mskinSkinListContent = list
@@ -48,7 +48,11 @@ local function BuildToggleList(page, order, definitions)
                 NS.SpellLearning.SetEnabled(value)
             end, LIST_WIDTH)
             learning:SetPoint("TOPLEFT", previous, "BOTTOMLEFT", 0, -8)
-            previous = learning
+            local reminder = O.CreateToggle(list, L["Trainer reminders on level-up"], function()
+                return NS.DB.foreverTrainerReminder == true
+            end, NS.SpellLearning.SetTrainerNotice, LIST_WIDTH)
+            reminder:SetPoint("TOPLEFT", learning, "BOTTOMLEFT", 0, -8)
+            previous = reminder
         end
     end
 end

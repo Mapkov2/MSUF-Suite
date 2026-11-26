@@ -527,4 +527,44 @@ ns.SpellLearning.SetEnabled(false)
 assert(not state.learningButton:IsShown() and ns.DB.foreverSpellLearning == false)
 ns.SpellLearning.SetEnabled(true)
 assert(state.learningButton:IsShown() and not panel:IsShown())
+
+local trainerDriver, noticeTimer
+local oldCreate = CreateFrame
+CreateFrame = function(...)
+    trainerDriver = oldCreate(...)
+    return trainerDriver
+end
+C_Timer = { After = function(delay, run) assert(delay == 0); noticeTimer = run end }
+function Widget:UnregisterEvent(event) self.events[event] = nil end
+ns.ForeverSpellLearningData[8] = "501:22:1:1 502:23:2:1 503:23:0:3 504:23:0:1:0:0:0:505 "
+ns.ForeverSpellLearningPendingQuests[8] = nil
+ns.ForeverSpellLearningQuestSources[8] = nil
+spellNames[501], spellNames[502] = "Training Spell I", "Training Spell II"
+ns.SpellLearning.SetTrainerNotice(true)
+assert(trainerDriver.events.PLAYER_LEVEL_UP and not noticeTimer)
+local trainerEvent = trainerDriver.scripts.OnEvent
+trainerEvent(trainerDriver, "PLAYER_LEVEL_UP", "secret")
+assert(not noticeTimer)
+local beforeNotice = #notices
+combatEdge = true
+trainerEvent(trainerDriver, "PLAYER_LEVEL_UP", 22)
+trainerEvent(trainerDriver, "PLAYER_LEVEL_UP", 23)
+assert(noticeTimer)
+local Flush = noticeTimer
+noticeTimer = nil
+Flush()
+assert(#notices == beforeNotice and trainerDriver.events.PLAYER_REGEN_ENABLED and not noticeTimer)
+combatEdge = false
+trainerEvent(trainerDriver, "PLAYER_REGEN_ENABLED")
+assert(noticeTimer)
+Flush = noticeTimer
+noticeTimer = nil
+Flush()
+assert(#notices == beforeNotice + 1 and notices[#notices]:find("Training Spell (Rank 2)", 1, true), "only the highest newly trainable rank")
+assert(not notices[#notices]:find("Rank 1", 1, true) and not notices[#notices]:find("Spell 503", 1, true)
+    and not notices[#notices]:find("Spell 504", 1, true))
+assert(not trainerDriver.events.PLAYER_REGEN_ENABLED)
+ns.SpellLearning.SetTrainerNotice(false)
+assert(not next(trainerDriver.events))
+
 print("suite_forever_spell_learning_contract: ok")

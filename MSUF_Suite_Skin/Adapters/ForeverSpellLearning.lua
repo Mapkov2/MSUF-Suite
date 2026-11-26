@@ -309,9 +309,7 @@ local function CreateCategoryDropdown(panel)
     return dropdown
 end
 
-local function Refresh(panel)
-    if not panel:IsShown() or NS.IsCombatLocked() then return end
-    panel.entries = panel.entries or ReadIndex()
+local function ReadLearned(panel)
     local learned = {}
     panel.ranksByID, panel.ranksByName, panel.byID, panel.bookIDs = {}, {}, {}, {}
     for _, entry in ipairs(panel.entries) do
@@ -334,6 +332,13 @@ local function Refresh(panel)
         end
     end
     LearnedRanks(panel, learned)
+    return learned
+end
+
+local function Refresh(panel)
+    if not panel:IsShown() or NS.IsCombatLocked() then return end
+    panel.entries = panel.entries or ReadIndex()
+    local learned = ReadLearned(panel)
     local count = 0
     for _, entry in ipairs(panel.entries) do
         if entry.name and not entry.known and not panel.bookIDs[entry.id] then
@@ -551,5 +556,86 @@ end
 function Learning.SetEnabled(value)
     NS.DB.foreverSpellLearning = value == true
     Learning.RefreshSetting()
+    return true
+end
+
+local noticeFrame, firstLevel, lastLevel, noticeQueued
+local function TrainerNoticeEnabled()
+    return NS.DB and NS.DB.enabled ~= false and NS.DB.foreverTrainerReminder == true
+end
+
+local function TrainerSpells(first, last)
+    local model = { entries = ReadIndex() }
+    local learned = ReadLearned(model)
+    local entries, indexed = {}, {}
+    for _, entry in ipairs(model.entries) do
+        local prereq = entry.requiredQuest
+        if entry.source == SOURCE.trainer and entry.level >= first and entry.level <= last and entry.name
+            and not entry.known and not model.bookIDs[entry.id] and not entry.pendingQuest
+            and (not prereq or prereq == 0 or model.bookIDs[prereq] or model.byID[prereq] and model.byID[prereq].learned) then
+            local rank, family = entry.rank, entry.family
+            if rank == 0 or rank > (learned[family] or 0) then
+                local key = rank == 0 and entry.id or family
+                local index = indexed[key]
+                if not index then
+                    entries[#entries + 1] = entry
+                    indexed[key] = #entries
+                elseif rank > entries[index].rank then
+                    entries[index] = entry
+                end
+            end
+        end
+    end
+    return entries
+end
+
+local function FlushTrainerNotice()
+    noticeQueued = false
+    if not firstLevel or not TrainerNoticeEnabled() then return end
+    if NS.SuiteCore().InCombat() then
+        noticeFrame:RegisterEvent("PLAYER_REGEN_ENABLED")
+        return
+    end
+    noticeFrame:UnregisterEvent("PLAYER_REGEN_ENABLED")
+    local first, last = firstLevel, lastLevel
+    firstLevel, lastLevel = nil, nil
+    local entries = TrainerSpells(first, last)
+    if #entries == 0 then return end
+    local names = {}
+    for i = 1, math.min(#entries, 6) do
+        local entry = entries[i]
+        names[i] = entry.rank > 0 and (entry.family .. " (" .. NS.L["Rank %d"]:format(entry.rank) .. ")") or entry.name
+    end
+    if #entries > 6 then names[7] = "…" end
+    NS.Print(NS.L["Check your class trainer for %s."]:format(table.concat(names, ", ")))
+end
+
+local function TrainerEvent(_, event, level)
+    if event == "PLAYER_LEVEL_UP" then
+        if not Public(level) or type(level) ~= "number" or level < 1 or level > 100 or level % 1 ~= 0 then return end
+        firstLevel = math.min(firstLevel or level, level)
+        lastLevel = math.max(lastLevel or level, level)
+    end
+    if noticeQueued or not firstLevel then return end
+    noticeQueued = true
+    C_Timer.After(0, FlushTrainerNotice)
+end
+
+function Learning.SyncTrainerNotice()
+    if TrainerNoticeEnabled() then
+        if not noticeFrame then
+            noticeFrame = CreateFrame("Frame")
+            noticeFrame:SetScript("OnEvent", TrainerEvent)
+        end
+        noticeFrame:RegisterEvent("PLAYER_LEVEL_UP")
+    elseif noticeFrame then
+        noticeFrame:UnregisterAllEvents()
+        firstLevel, lastLevel = nil, nil
+    end
+end
+
+function Learning.SetTrainerNotice(value)
+    NS.DB.foreverTrainerReminder = value == true
+    Learning.SyncTrainerNotice()
     return true
 end

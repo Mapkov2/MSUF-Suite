@@ -2,6 +2,8 @@ local _, NS = ...
 
 NS.RegisterLocale("enUS", {
     ["Spells to Learn"] = "Spells to Learn",
+    ["Trainer reminders on level-up"] = "Trainer reminders on level-up",
+    ["Check your class trainer for %s."] = "Check your class trainer for %s.",
     ["All"] = "All",
     ["Unknown"] = "Unknown",
     ["Finish combat first."] = "Finish combat first.",
