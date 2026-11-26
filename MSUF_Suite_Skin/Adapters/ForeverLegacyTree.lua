@@ -180,6 +180,9 @@ local function PaintShell(root)
         PaintButton(Field(root, "CloseButton"))
     end
     PaintTabs(root)
+end
+
+local function PrepareOpening(root)
     if NS.IsCombatLocked() then
         NS.WindowControls.TrackFocus(root, OWNER)
         RequestReplay()
@@ -297,9 +300,8 @@ local function PaintRewardCards(page)
     for index = 1, #cards do PaintRewardCard(Field(cards, index)) end
 end
 
-local function PaintRewards(page, shellReady)
-    if not page then return end
-    if shellReady and CanPaint(page) then Fade(state, Field(page, "Background")) end
+local function PaintRewards(page, root)
+    if state.surfaces[root] and CanPaint(page) then Fade(state, Field(page, "Background")) end
     PaintProgress(Field(page, "LegacyRewardProgressBar"), Field(page, "ProgressBarBackground"))
     ColorText(Field(page, "Points"), "text")
     ColorText(Field(page, "PointsLabel"), "title")
@@ -408,9 +410,8 @@ local function PaintObjectives(frame)
     Kit.ForEachActive(Field(frame, "criteriaPool"), math.huge, PaintCriterion)
 end
 
-local function PaintChallenges(page, shellReady)
-    if not page then return end
-    if shellReady and CanPaint(page) then Fade(state, Field(page, "Background")) end
+local function PaintChallenges(page, root)
+    if state.surfaces[root] and CanPaint(page) then Fade(state, Field(page, "Background")) end
     Kit.FadeAtlas(state, Field(page, "VerticalDivider"), "Legacy-Tree-Frame-divider-Vertical")
     local points = Field(page, "LegacyChallengePointSummary")
     PaintProgress(Field(points, "PointsBar"), Field(points, "ProgressBarBackground"))
@@ -430,19 +431,34 @@ local function PaintChallenges(page, shellReady)
     PaintObjectives(objectives)
 end
 
-local function PaintLegacyPages(root)
-    local shellReady = state.surfaces[root]
-    PaintRewards(Field(root, "RewardTrackPage"), shellReady)
-    PaintChallenges(Field(root, "ChallengesPage"), shellReady)
+local function ApplyPage(page, paint, root)
+    if page and not Safety.IsForbidden(page) and not Kit.DeferHidden(page, state, paint, page, root) then
+        paint(page, root)
+    end
 end
 
-local function HookNative(root, selection)
-    if state.hookedRoot == root then return end
-    state.hookedRoot = root
-    Kit.HookFunction(root, "SelectPage", Safety.Isolated(OnPageSelected))
-    Kit.HookFunction(Field(root, "RewardTrackPage"), "SetupRewardTrack", Safety.Isolated(PaintRewardCards))
-    Kit.HookFunction(selection, "UpdateSelection", Safety.Isolated(OnCategorySelected))
-    Kit.HookFunction(selection, "RefreshTreeButtons", Safety.Isolated(OnCategoriesRebuilt))
+local function OnRewardTrackUpdated(page)
+    if not state.root then return end
+    -- Native OnShow may build cards before our pending full-page paint runs.
+    -- Leave that job registered when the page has just become visible.
+    if Kit.IsHidden(page) and Kit.DeferHidden(page, state, PaintRewards, page, state.root) then return end
+    PaintRewardCards(page)
+end
+
+local function PaintTreePage(page, root)
+    local panel, selection = Field(page, "LegacyTreeTraitPanel"), Field(page, "LegacyTreeSelectionPanel")
+    if not panel or not selection then return end
+    if state.hookedSelection ~= selection then
+        state.hookedSelection = selection
+        Kit.HookFunction(selection, "UpdateSelection", Safety.Isolated(OnCategorySelected))
+        Kit.HookFunction(selection, "RefreshTreeButtons", Safety.Isolated(OnCategoriesRebuilt))
+    end
+    if not state.panel then
+        panel:RegisterCallback(ACQUIRED, Safety.Isolated(PaintTalent), state)
+        state.panel = panel
+    end
+    PaintTree(page, panel, selection, state.surfaces[root])
+    for button in panel:EnumerateAllTalentButtons() do PaintTalent(state, button) end
 end
 
 local function OnThemeChanged(_, domain, key)
@@ -458,24 +474,38 @@ local function OnThemeChanged(_, domain, key)
     end
 end
 
+local function PaintWindow(root, prepareOpening)
+    if not state.active or not Enabled() then return false, "disabled" end
+    if Safety.IsForbidden(root) then return false, "missing" end
+    local rewards = Field(root, "RewardTrackPage")
+    if state.hookedRoot ~= root then
+        state.hookedRoot = root
+        Kit.HookFunction(root, "SelectPage", Safety.Isolated(OnPageSelected))
+        Kit.HookFunction(rewards, "SetupRewardTrack", Safety.Isolated(OnRewardTrackUpdated))
+    end
+    state.root = root
+    PaintShell(root)
+    if prepareOpening then PrepareOpening(root) end
+    -- Blizzard selects one page with SetShown. Its other two trees may already
+    -- contain rows, talent buttons and scrollbars before the player visits them.
+    ApplyPage(rewards, PaintRewards, root)
+    ApplyPage(Field(root, "ChallengesPage"), PaintChallenges, root)
+    ApplyPage(Field(root, "TreePage"), PaintTreePage, root)
+    NS.Registry.AddListener(state, OnThemeChanged)
+    return true, "applied"
+end
+
 Refresh = function()
     if not state.active or not Enabled() then return false, "disabled" end
     local root = Field(_G, "LegacySystemFrame")
-    local page = Field(root, "TreePage")
-    local panel = Field(page, "LegacyTreeTraitPanel")
-    local selection = Field(page, "LegacyTreeSelectionPanel")
-    if not panel or not selection or Safety.IsForbidden(root) then return false, "missing" end
-    HookNative(root, selection)
-    if not state.panel then
-        panel:RegisterCallback(ACQUIRED, Safety.Isolated(PaintTalent), state)
-        state.panel = panel
+    if not root or Safety.IsForbidden(root) then return false, "missing" end
+    if Kit.DeferHidden(root, state, PaintWindow, root) then
+        -- The native opening and saved geometry must see their original hooks
+        -- on the very first Show, before the frame becomes visible.
+        PrepareOpening(root)
+        return true, "waiting"
     end
-    PaintShell(root)
-    PaintTree(page, panel, selection, state.surfaces[root])
-    PaintLegacyPages(root)
-    for button in panel:EnumerateAllTalentButtons() do PaintTalent(state, button) end
-    NS.Registry.AddListener(state, OnThemeChanged)
-    return true, "applied"
+    return PaintWindow(root, true)
 end
 
 loadFrame:SetScript("OnEvent", Safety.Isolated(function(_, _, addon)
@@ -489,7 +519,7 @@ function LegacyTree.Apply()
         local released, reason = LegacyTree.Disable()
         return released, reason or "disabled"
     end
-    if state.active and state.panel and NS.IsCombatLocked() then return true, "applied" end
+    if state.active and state.root and NS.IsCombatLocked() then return true, "applied" end
     state.active = true
     if not Field(_G, "LegacySystemFrame") then
         if NS.Client.HasAddOn(ADDON) == false then return true, "unavailable" end
@@ -504,6 +534,8 @@ function LegacyTree.Disable()
     if not state.active then return true end
     if NS.IsCombatLocked() then return false, "combat" end
     state.active = false
+    state.root = nil
+    Kit.CancelHidden(state)
     state.selectedTree, state.selectedPage = nil, nil
     loadFrame:UnregisterEvent("ADDON_LOADED")
     NS.CombatGate.Cancel(REPLAY)

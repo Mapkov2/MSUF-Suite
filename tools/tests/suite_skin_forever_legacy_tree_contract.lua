@@ -166,7 +166,7 @@ window.CloseButton = Frame()
 window.CloseButton.isClose, window.CloseButton.NormalTexture = true, Texture("native-close")
 window.RewardTrackPage, window.ChallengesPage = Frame(), Frame()
 local rewardPage, challengePage = window.RewardTrackPage, window.ChallengesPage
-rewardPage.shown, challengePage.shown = false, false
+rewardPage.shown, challengePage.shown, page.shown = true, false, false
 rewardPage.Background, challengePage.Background = Texture("reward-background"), Texture("challenge-background")
 
 local function Progress(parent, key)
@@ -263,7 +263,16 @@ for _, key in ipairs(tabs) do
     tab.Icon, tab.Mask, tab.Background, tab.SelectedTexture = Texture("tab"), Texture("mask"), Texture(), Texture()
     window[key] = tab
 end
-function window:SelectPage(index) self.currentPage = index end
+function window:SelectPage(index)
+    self.currentPage = index
+    for i, view in ipairs({ rewardPage, challengePage, page }) do
+        local show = i == index
+        local entering = self.shown and show and not view.shown
+        view.shown = show
+        if entering and view.nativeOnShow then view:nativeOnShow() end
+        if entering and view.scripts.OnShow then view.scripts.OnShow(view) end
+    end
+end
 page.Background, page.VerticalDivider = Texture("tree-background"), { VerticalDivider = Texture() }
 page.LegacyTreePointSummary = Frame()
 page.LegacyTreePointSummary.Border = Texture()
@@ -298,7 +307,20 @@ function selection:UpdateSelection(index)
 end
 selection:RefreshTreeButtons()
 
+window.shown = false
 loader.scripts.OnEvent(loader, "ADDON_LOADED", "Blizzard_LegacySystem")
+assert(not surfaces[window] and allocations == 0, "hidden load constructed the Legacy window")
+window.shown = true
+window.scripts.OnShow(window)
+print(("Legacy first visible page: %d surfaces, %d shape writes, %d scrollbars"):format(allocations, paints, scrollbars))
+assert(surfaces[window] and rewardPage.Background.alpha == 0, "first visible reward page missed its skin")
+assert(not surfaces[panel] and not surfaces[categoryRow] and not panel.TalentButtonAcquired and scrollbars == 0,
+    "opening rewards painted hidden talents or challenges")
+window:SelectPage(2)
+assert(surfaces[categoryRow] and scrollbars == 2 and not surfaces[panel], "first visible challenges page missed rows")
+window:SelectPage(3)
+assert(surfaces[panel] and panel.TalentButtonAcquired, "first visible talent page missed nodes")
+window:SelectPage(1)
 assert(not loader.events.ADDON_LOADED, "native load listener was left registered")
 assert(rewardPage.Background.alpha == 0 and challengePage.Background.alpha == 0 and divider.alpha == 0,
     "legacy page backgrounds were left visible on a cold combat open")
@@ -410,6 +432,9 @@ local key, replay = next(pending)
 assert(key and replay, "no deferred window controls")
 pending[key] = nil
 replay()
+window:SelectPage(2)
+window:SelectPage(1)
+window:SelectPage(3)
 assert(controls == 1 and surfaces[panel.ResetButton] and not surfaces[panel.UndoButton], "protection replay incorrect")
 assert(surfaces[categoryRow].active and surfaces[freshDetail].active and not surfaces[card].active,
     "combat replay missed existing reward or challenge selection")
@@ -444,6 +469,27 @@ local fallbackKey, fallback = next(pending)
 pending[fallbackKey] = nil
 fallback()
 assert(page.Background.alpha == 0 and surfaces[window].visible, "backdrop did not replay with the shell")
+rewardPage.nativeOnShow = function(self) self:SetupRewardTrack({ card }) end
+window:SelectPage(1)
+assert(rewardPage.Background.alpha == 0 and surfaces[card].visible,
+    "native reward OnShow cancelled its queued full-page skin")
+assert(adapter.Disable())
+window:SelectPage(2)
+assert(challengePage.Background.alpha == 1 and not surfaces[categoryRow].visible,
+    "disabled skin painted a previously pending challenge page")
+window.shown = false
+local openingWatches, beforeControls = 0, controls
+NS.ContentMotion.Watch = function(frame)
+    assert(frame == window)
+    openingWatches = openingWatches + 1
+end
+assert(adapter.Apply())
+assert(openingWatches == 1 and controls == beforeControls + 1 and not surfaces[window].visible,
+    "first opening lost its animation hook or saved native geometry")
+window.shown = true
+window.scripts.OnShow(window)
+assert(openingWatches == 1 and controls == beforeControls + 1 and surfaces[window].visible,
+    "first visible paint reattached window controls or missed the shell")
 assert(adapter.Disable())
 
 print("Forever Legacy: cold combat, reward and challenge reuse, native art, lifecycle and warm budget passed")

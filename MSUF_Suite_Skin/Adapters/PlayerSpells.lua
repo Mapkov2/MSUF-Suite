@@ -36,13 +36,15 @@ local DROPDOWN_SPEC = { role = "button", shape = "round", radius = 6, inset = 2 
 local WINDOW_BUTTON_SPEC = { role = "button", shape = "round", radius = 6, inset = 2 }
 local PREVIOUS_PAGE_SPEC = { role = "button", shape = "round", radius = 6, inset = 3 }
 local NEXT_PAGE_SPEC = { role = "buttonPrimary", shape = "round", radius = 6, inset = 3 }
-local TAB_SPEC = {
+local TAB_SPEC = NS.ControlSkin.MarkFixedButtonSpec({
+    nativeTabSystem = true,
+    allowImplicitProtected = true,
     role = "navigation",
     activeRole = "navigationActive",
     useControlShape = true,
     pillHeight = 32,
     inset = 1,
-}
+})
 
 local PAGE_MODE = {
     role = "panel",
@@ -185,17 +187,33 @@ local function SkinSearchPreview(state, preview)
     end
 end
 
+local function SyncTextColor(state, text, role)
+    if not Safety.Public(text) or not text then return end
+    local colors = state.textColors
+    if colors.roles[text] == role and Kit.ShowsTextColor(colors, text, Safety.ReadColor(text, "GetTextColor")) then
+        return
+    end
+    SetThemeTextColor(state, text, role, true)
+end
+
 local function SkinTab(state, tab)
     if not tab or not CanCreateRegions(tab) then
         return
     end
-    Kit.SkinControl(state, tab, TAB_SPEC, "ApplyTab")
+    local applied = Kit.SkinControl(state, tab, TAB_SPEC, "ApplyTab")
     local selected = PublicField(tab, "isSelected") == true
-    NS.ControlSkin.Refresh(tab, selected)
+    -- ApplyTab already repairs replaced native textures and paints the current
+    -- selection. Some tab templates expose another value through isSelected.
+    local surface = applied and NS.Registry.GetSurface(tab)
+    local control = surface and surface.kind == "button" and NS.ControlSkin.states[tab]
+    if not (control and control.enabled and control.owner == state.owner and not control.windowAction
+        and surface.spec == control.spec and surface.visible and surface.active == selected) then
+        NS.ControlSkin.Refresh(tab, selected)
+    end
     -- Blizzard changes the tab's FontObject whenever selection changes. Save
     -- that current native color before applying ours so Disable restores the
     -- latest selected/unselected state rather than the first state we saw.
-    SetThemeTextColor(state, PublicField(tab, "Text"), selected and "accentBright" or "muted", true)
+    SyncTextColor(state, PublicField(tab, "Text"), selected and "accentBright" or "muted")
 end
 
 local function SkinTabSystem(state, tabSystem, unpreparedOnly)
@@ -210,20 +228,11 @@ local function SkinTabSystem(state, tabSystem, unpreparedOnly)
     end
 end
 
-local function SkinRowText(state, text, role)
-    if not Safety.Public(text) or not text then return end
-    local colors = state.textColors
-    if colors.roles[text] == role and Kit.ShowsTextColor(colors, text, Safety.ReadColor(text, "GetTextColor")) then
-        return
-    end
-    SetThemeTextColor(state, text, role, true)
-end
-
 local function SkinHeader(state, header)
     Kit.Ensure(state, header, LIST_CARD_SPEC)
     SuppressVertexAlpha(state, PublicField(header, "Backplate"))
     SuppressVertexAlpha(state, PublicField(header, "Border"))
-    SkinRowText(state, PublicField(header, "Text"), "title")
+    SyncTextColor(state, PublicField(header, "Text"), "title")
 end
 
 local function SkinSpellItem(state, item, button, textContainer)
@@ -239,9 +248,9 @@ local function SkinSpellItem(state, item, button, textContainer)
         SuppressVertexAlpha(state, PublicField(button, "Border"))
     end
     if Safety.IsForbidden(textContainer) then textContainer = nil end
-    SkinRowText(state, PublicField(item, "Name") or PublicField(textContainer, "Name"), "text")
-    SkinRowText(state, PublicField(item, "SubName") or PublicField(textContainer, "SubName"), "muted")
-    SkinRowText(state, PublicField(item, "RequiredLevel") or PublicField(textContainer, "RequiredLevel"), "warning")
+    SyncTextColor(state, PublicField(item, "Name") or PublicField(textContainer, "Name"), "text")
+    SyncTextColor(state, PublicField(item, "SubName") or PublicField(textContainer, "SubName"), "muted")
+    SyncTextColor(state, PublicField(item, "RequiredLevel") or PublicField(textContainer, "RequiredLevel"), "warning")
 end
 
 local function SkinDisplayedSpellFrames(state, book)
@@ -267,7 +276,7 @@ end
 
 local function SkinPagingControls(state, pagingControls)
     if not pagingControls or Safety.IsForbidden(pagingControls) then return end
-    SkinRowText(state, PublicField(pagingControls, "PageText"), "muted")
+    SyncTextColor(state, PublicField(pagingControls, "PageText"), "muted")
     SkinGlyphButton(state, PublicField(pagingControls, "PrevPageButton"), "<", PREVIOUS_PAGE_SPEC)
     SkinGlyphButton(state, PublicField(pagingControls, "NextPageButton"), ">", NEXT_PAGE_SPEC)
 end
@@ -495,10 +504,16 @@ local function SkinRootStatic(state, skipWindowControls)
 end
 
 local function RefreshThemeColors(state)
+    state.themeDirty = nil
     Kit.RefreshTextColors(state.textColors)
     for glyph, colorKey in pairs(state.glyphs) do
         glyph:SetTextColor(NS.Theme.GetColor(colorKey))
     end
+end
+
+local function ShownPage(frame, key)
+    local page = PublicField(frame, key)
+    if page and not Safety.IsForbidden(page) and not Kit.IsHidden(page) then return page end
 end
 
 local function RefreshVisualState(state, refreshPages)
@@ -508,8 +523,8 @@ local function RefreshVisualState(state, refreshPages)
     local toggle = state.ranksToggle
     if toggle and toggle.on ~= (GetCVarBool(RANKS_CVAR) == true) then SyncRanksToggle(toggle) end
     SkinTabSystem(state, PublicField(state.frame, "TabSystem"))
-    local book = PublicField(state.frame, "SpellBookFrame")
-    if book and not Safety.IsForbidden(book) then
+    local book = ShownPage(state.frame, "SpellBookFrame")
+    if book then
         SkinTabSystem(state, PublicField(book, "CategoryTabSystem"))
         SkinDisplayedSpellFrames(state, book)
     end
@@ -517,7 +532,9 @@ local function RefreshVisualState(state, refreshPages)
         SkinSpecializationAndTalentPages(state)
         NS.WindowControls.Attach(state.frame, state.owner)
     end
-    RefreshThemeColors(state)
+    -- Tab/row callbacks already reconcile the displayed native labels. Recolor
+    -- the complete ledger only when the profile changed while the UI was hidden.
+    if state.themeDirty then RefreshThemeColors(state) end
 end
 
 local function RefreshPendingState()
@@ -544,11 +561,6 @@ local function HasPageSurface(state, page)
     if not (state.surfaces[page] or state.pagesSkinned and state.pagesSkinned[page]) then return false end
     local surface = NS.Registry.GetSurface(page)
     return surface and Safety.Read(surface.fill, "IsShown") == true
-end
-
-local function ShownPage(frame, key)
-    local page = PublicField(frame, key)
-    if page and not Safety.IsForbidden(page) and not Kit.IsHidden(page) then return page end
 end
 
 local function RefreshCombatPage(state, book)
@@ -672,7 +684,7 @@ local function RefreshActiveColors()
     local state = PlayerSpellsSkin.activeState
     if state and state.active and not NS.IsCombatLocked() then
         if Safety.Read(state.frame, "IsShown") == false then
-            state.pendingRefresh = true
+            state.pendingRefresh, state.themeDirty = true, true
         else
             RefreshThemeColors(state)
         end
@@ -706,7 +718,7 @@ end
 
 local function RestoreState(state)
     state.active = false
-    state.combatPrepared = nil
+    state.combatPrepared, state.themeDirty = nil, nil
     state.pendingRefresh, state.pendingPageRefresh = nil, nil
     NS.GenericWindows.Disable(state.owner)
     state.pagesSkinned = nil
