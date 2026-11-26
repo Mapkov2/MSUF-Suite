@@ -13,12 +13,20 @@ local MODES = { [BANK_VIEW.TABS] = "Bank tabs", [BANK_VIEW.CHARACTER] = "Combine
     [BANK_VIEW.WARBANK] = "Combined warbank", [BANK_VIEW.CATEGORIES] = "Bank categories" }
 local WATCH_EVENTS = { "BAG_UPDATE", "PLAYER_REGEN_ENABLED", "PLAYER_REGEN_DISABLED",
     "GET_ITEM_INFO_RECEIVED", "BANK_TABS_CHANGED", "PLAYER_ACCOUNT_BANK_TAB_SLOTS_CHANGED", "INVENTORY_SEARCH_UPDATE",
-    "ITEM_LOCK_CHANGED", "BAG_UPDATE_COOLDOWN", "BANK_TAB_SETTINGS_UPDATED" }
+    "ITEM_LOCK_CHANGED", "BAG_UPDATE_COOLDOWN", "BANK_TAB_SETTINGS_UPDATED", "EQUIPMENT_SETS_CHANGED", "PLAYER_EQUIPMENT_CHANGED" }
 local GRID_TOP = NS.Client.isForever and 68 or 40
+
+local function PauseBankLoads()
+    if M.active and M.config.showBankItemLevel and (next(M.bankPending) or M.bankLoads.count > 0) then M:PauseItemInfo() end
+end
 
 local function WatchBank(watching)
     if BankInventory.watching == watching then return end
     BankInventory.watching = watching
+    if watching then
+        Index.Retry(BankInventory.index)
+        P.InventoryDetails.Invalidate()
+    end
     local events = BankInventory.events
     for _, event in ipairs(WATCH_EVENTS) do
         if watching then
@@ -231,14 +239,6 @@ local function Create()
     BankInventory.modeButton:SetPoint("TOPRIGHT", BankFrame.BankPanel, "BOTTOMRIGHT", -22, 2)
     BankInventory.listButton = Button(BankFrame, "Show as list", 112, ToggleList)
     BankInventory.listButton:SetPoint("RIGHT", BankInventory.modeButton, "LEFT", -6, 0)
-    BankFrame:HookScript("OnShow", function()
-        Index.Retry(BankInventory.index)
-        Request()
-    end)
-    BankFrame:HookScript("OnHide", function()
-        if BankInventory.frame then BankInventory.frame:Hide() end
-        P.BankActions.Cancel()
-    end)
 end
 
 -- The pooled item button number shows item at (x, y); returns number.
@@ -351,7 +351,7 @@ local function RenderList(sidebar, font)
 end
 
 Render = function()
-    if not BankInventory.active or not BankFrame:IsShown() or NS.IsCombatLocked() then return end
+    if not BankInventory.active or not BankFrame.BankPanel:IsVisible() or NS.IsCombatLocked() then return end
     local categories = M.config.bankView == BANK_VIEW.CATEGORIES
     local sidebar = categories and 170 or 12
     BankInventory.columns = Model.BankColumns(BankInventory.frame:GetWidth(), categories)
@@ -397,7 +397,7 @@ local function PrepareModel(state)
 end
 
 Flush = function()
-    if not BankInventory.enabled or not M.active or not BankFrame:IsShown() then return end
+    if not BankInventory.enabled or not M.active or not BankFrame.BankPanel:IsVisible() then return end
     local nativeGamepad = NS.Client.isForever and S.GamepadUI()
     local organize = M.config.bankView ~= BANK_VIEW.TABS and not nativeGamepad
     WatchBank(organize or not BankInventory.frame)
@@ -441,14 +441,14 @@ end
 
 -- One pass per frame (a ctx:Coalesce job): requests in between ride along.
 Request = function()
-    if not BankInventory.enabled or not BankFrame:IsShown() then return end
+    if not BankInventory.enabled or not BankFrame.BankPanel:IsVisible() then return end
     BankInventory.flushJob = BankInventory.flushJob or M.context:Coalesce(0, Flush)
     BankInventory.flushJob:Request()
 end
 
 local function Event(_, event, value, success)
     if event == "BAG_UPDATE_COOLDOWN" or event == "INVENTORY_SEARCH_UPDATE" then
-        if BankInventory.active and BankInventory.frame:IsShown() then
+        if BankInventory.active and BankInventory.frame:IsVisible() then
             local font = Grid.FontPath()
             for i = 1, #BankInventory.buttons do
                 local button = BankInventory.buttons[i]
@@ -463,9 +463,14 @@ local function Event(_, event, value, success)
         end
         return
     end
-    if event == "BAG_UPDATE" or event == "BANKFRAME_OPENED" then P.InventoryDetails.Invalidate() end
+    if event == "BAG_UPDATE" or event == "EQUIPMENT_SETS_CHANGED" or event == "PLAYER_EQUIPMENT_CHANGED" then
+        P.InventoryDetails.Invalidate()
+    end
     if event == "BANKFRAME_CLOSED" or event == "PLAYER_REGEN_DISABLED" then
-        if event == "BANKFRAME_CLOSED" then WatchBank(false) end
+        if event == "BANKFRAME_CLOSED" then
+            PauseBankLoads()
+            WatchBank(false)
+        end
         BankInventory.active, M.organizedBankActive = false, false
         if BankInventory.frame and not NS.IsCombatLocked() then BankInventory.frame:Hide() end
         return
@@ -484,6 +489,12 @@ end
 
 BankInventory.Request = Request
 
+local function PanelHidden()
+    if not BankInventory.enabled then return end
+    PauseBankLoads()
+    WatchBank(false)
+end
+
 function BankInventory.Refresh()
     BankInventory.enabled = M.active == true
     Grid.RefreshFonts()
@@ -491,6 +502,16 @@ function BankInventory.Refresh()
     if not BankInventory.events then
         BankInventory.events = S.CreateFrame("Frame")
         BankInventory.events:SetScript("OnEvent", Event)
+        local panel = BankFrame.BankPanel
+        panel:HookScript("OnShow", Request)
+        panel:HookScript("OnHide", PanelHidden)
+        BankFrame:HookScript("OnShow", Request)
+        BankFrame:HookScript("OnHide", function()
+            if not BankInventory.enabled then return end
+            PanelHidden()
+            if BankInventory.frame then BankInventory.frame:Hide() end
+            P.BankActions.Cancel()
+        end)
     end
     BankInventory.events:RegisterEvent("BANKFRAME_OPENED")
     BankInventory.events:RegisterEvent("BANKFRAME_CLOSED")

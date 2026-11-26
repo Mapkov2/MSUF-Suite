@@ -134,6 +134,7 @@ do
     P.InventoryModel = { DecodeCategories=function() return {} end }
     assert(loadfile(root .. "/MSUF_Suite_Bags/SmartSearch.lua"))("Bags", P)
     local edit = { text = "quality>=3", GetText = function(self) return self.text end,
+        IsShown = function(self) return not self.hidden end,
         SetText = function(self, value) self.text = value end }
     local function Find(parent, text)
         for _, child in ipairs(parent.children) do if child.text == text then return child end end
@@ -143,6 +144,13 @@ do
         "the presets lost their entries")
     Find(menu, "Bind on Equip").callback()
     equal(edit.text, "is:boe", "a preset fills the box")
+    edit.hidden = true
+    Find(menu, "Warbound items").callback()
+    equal(edit.text, "is:boe", "an open menu cannot filter a subsequently hidden search box")
+    P.InventorySearch.Menu({}, edit)
+    assert(not Find(menu, "Smart search presets"), "a hidden search still offers presets")
+    edit.hidden = false
+    P.InventorySearch.Menu({}, edit)
     assert(Find(menu, "Saved searches") and Find(menu, "level=200-300"), "saved searches are listed")
     Find(menu, "level=200-300").callback()
     equal(edit.text, "level=200-300", "a saved search fills the box")

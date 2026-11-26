@@ -52,12 +52,12 @@ local function Changed(_, event, unit)
     if event == "PLAYER_SPECIALIZATION_CHANGED" and (not S.Public(unit) or unit ~= "player") then return end
     Gear.revision = Gear.revision + 1
     P.InventoryView.Request()
-    if not NS.Client.isForever then P.BankInventory.Request() end
+    if P.BankInventory then P.BankInventory.Request() end
 end
 
 function Gear.Refresh()
     local c = M.config
-    local categories = c.inventoryView == NS.BagsView.CATEGORIES or not NS.Client.isForever and c.bankView == NS.BagsBankView.CATEGORIES
+    local categories = c.inventoryView == NS.BagsView.CATEGORIES or c.bankView == NS.BagsBankView.CATEGORIES
     local wanted = M.active == true and (c.showUpgradeMarker == true or c.category_myArmorSlot == true and categories)
     if wanted == Gear.listening then return end
     Gear.listening, Gear.revision = wanted, Gear.revision + 1

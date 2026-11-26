@@ -90,14 +90,19 @@ end
 -- Static gradients; opening motion animates the Suite shell only. There is
 -- no particle driver, native item animation or per-frame decoration work.
 function Panel.Paint(t, c, opacity)
-    local ar, ag, ab = S.RGB(c.accentColor)
-    t.feather:SetColorTexture(1, 1, 1)
-    t.feather:SetGradient("HORIZONTAL", CreateColor(0, 0, 0, .12 * opacity), CreateColor(0, 0, 0, 0))
-    t.ribbon:SetColorTexture(1, 1, 1)
-    t.ribbon:SetGradient("HORIZONTAL", CreateColor(ar, ag, ab, 0), CreateColor(ar, ag, ab, .32))
-    t.glow:SetColorTexture(1, 1, 1)
-    t.glow:SetGradient("HORIZONTAL", CreateColor(ar, ag, ab, 0), CreateColor(ar, ag, ab, .025))
-    t[4]:SetColorTexture(ar, ag, ab, .12)
+    if t.panelOpacity ~= opacity then
+        t.panelOpacity = opacity
+        t.feather:SetColorTexture(1, 1, 1)
+        t.feather:SetGradient("HORIZONTAL", CreateColor(0, 0, 0, .12 * opacity), CreateColor(0, 0, 0, 0))
+    end
+    if t.panelAccent ~= c.accentColor then
+        t.panelAccent = c.accentColor
+        local ar, ag, ab = S.RGB(c.accentColor)
+        t.ribbon:SetColorTexture(1, 1, 1)
+        t.ribbon:SetGradient("HORIZONTAL", CreateColor(ar, ag, ab, 0), CreateColor(ar, ag, ab, .32))
+        t.glow:SetColorTexture(1, 1, 1)
+        t.glow:SetGradient("HORIZONTAL", CreateColor(ar, ag, ab, 0), CreateColor(ar, ag, ab, .025))
+    end
     t.heading:SetTextColor(.94, .95, .98)
     S.SetFont(t.heading, S.ResolveFont(c.font) or S.GlobalFontPath(), 22, "")
     t.heading:SetText(S.Text("Backpack"))

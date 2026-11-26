@@ -58,8 +58,16 @@ end
 local function DetachKeyring()
     if not keyringClick or not keyringClick.owner then return end
     if GameTooltip:IsOwned(keyringClick) then GameTooltip_Hide() end
-    if NS.IsCombatLocked() then return end
+    if NS.IsCombatLocked() then
+        if not keyringClick:IsEventRegistered("PLAYER_REGEN_ENABLED") then
+            keyringClick:UnregisterEvent("PLAYER_REGEN_DISABLED")
+            keyringClick:RegisterEvent("PLAYER_REGEN_ENABLED")
+        end
+        return
+    end
     keyringClick.owner = nil
+    keyringClick:UnregisterEvent("PLAYER_REGEN_DISABLED")
+    keyringClick:UnregisterEvent("PLAYER_REGEN_ENABLED")
     keyringClick:Hide()
     keyringClick:ClearAllPoints()
 end
@@ -84,8 +92,6 @@ local function KeyringClick()
     button:SetScript("OnEnter", KeyringTooltip)
     button:SetScript("OnLeave", DetachKeyring)
     button:SetScript("OnEvent", DetachKeyring)
-    button:RegisterEvent("PLAYER_REGEN_DISABLED")
-    button:RegisterEvent("PLAYER_REGEN_ENABLED")
     button:Hide()
     RegisterStateDriver(button, "visibility", "[combat] hide")
     keyringClick = button
@@ -107,6 +113,7 @@ local function KeyringEnter(button)
     local target = NativeKeyring()
     if not target then return end
     local click = KeyringClick()
+    if not click.owner then click:RegisterEvent("PLAYER_REGEN_DISABLED") end
     click.owner = button
     click:SetAttribute("clickbutton", target)
     click:SetFrameStrata(button:GetFrameStrata())

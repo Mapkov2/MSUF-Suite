@@ -35,16 +35,23 @@ local function Metadata(client)
     W.Settle()
     local warm = Item(W, 10)
     local version = warm.version
+    local lookup, warmLookups = C_Item.GetItemInfo, 0
+    C_Item.GetItemInfo = function(link)
+        if link == warm.link then warmLookups = warmLookups + 1 end
+        return lookup(link)
+    end
     assert(W.requested[20] == 1 and not Item(W, 20).loaded, client .. ": cold lookup not requested once")
     W.Fire("GET_ITEM_INFO_RECEIVED", 20, false)
     W.Settle()
     Repaint(W)
     assert(W.requested[20] == 1, client .. ": failed metadata retried on a normal repaint")
+    W.P.InventoryIndex.Retry(W.P.InventoryView.index)
+    assert(warm.version == version, client .. ": metadata retry dirtied an already loaded slot")
     W.CloseBags()
     W.OpenBags()
     W.Settle()
     assert(W.requested[20] == 2, client .. ": unchanged native bag reopening did not retry failed metadata")
-    assert(Item(W, 10) == warm and warm.version == version and warm.name == "Bread",
+    assert(Item(W, 10) == warm and warmLookups == 0 and warm.name == "Bread",
         client .. ": retry invalidated an already loaded record")
     Repaint(W)
     W.Fire("GET_ITEM_INFO_RECEIVED", 20, false)

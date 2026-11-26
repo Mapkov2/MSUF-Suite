@@ -18,6 +18,7 @@ function methods:Show() self.shown = true end
 function methods:Hide() self.shown = false end
 function methods:SetShown(value) self.shown = value end
 function methods:IsShown() return self.shown end
+function methods:IsVisible() return self.shown and (not self.parent or self.parent:IsVisible()) end
 function methods:SetText(value) self.text = value end
 function methods:GetText() return self.text end
 function methods:SetSize(width, height) self.width, self.height = width, height end

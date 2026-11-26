@@ -201,12 +201,16 @@ local function OwnChrome(self, frame, textures)
     end
 end
 
-function M:UpdatePresentation()
+function M:UpdatePresentation(closing, layout)
     local t = self.windows and self.windows[self.frame]
     if not t then return end
-    local combat = Private.InventoryView.layout ~= "suite"
+    local combat = (layout or Private.InventoryView.layout) ~= "suite"
     local panel = Private.BagPresentation.IsPanel(self.config) and not combat or false
     local rail = panel and Private.BagPresentation.Rail(self.config) or 0
+    t.combat = combat
+    -- The close still releases Blizzard's title and the drag handle before combat.
+    -- Paint the appropriate surface when the frame actually shows again.
+    if not closing and (t.panel ~= panel or t.rail ~= rail) then PaintWindow(t, self.config) end
     if t.presentation == panel and t.presentationRail == rail then return end
     t.presentation, t.presentationRail, t.combat = panel, rail, combat
     PaintWindow(t, self.config)

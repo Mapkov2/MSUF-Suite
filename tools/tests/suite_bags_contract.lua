@@ -154,6 +154,7 @@ ContainerFrameCombinedBags = {
     SetPoint = function(self, ...) self.point = { ... } end,
     ClearAllPoints = function(self) self.point = {} end,
     EnumerateValidItems = function() enumerations = enumerations + 1; return ipairs(buttons) end,
+    UpdateItemSlots = function() end,
     UpdateItems = function() end,
     HookScript = function(self, name, callback) hooks[name] = callback end,
 }
@@ -178,6 +179,7 @@ ContainerFrame6 = {
     HookScript = function(self, name, callback) hooks["Reagent" .. name] = callback end,
 }
 for _, frame in ipairs({ ContainerFrameCombinedBags, ContainerFrame6 }) do
+    frame.IsVisible = frame.IsShown
     frame.IsProtected = function() return true end
     frame.TitleContainer = VisualFrame(frame)
     frame.GetChildren = function(self) return self.TitleContainer, self.PortraitButton end
@@ -202,7 +204,7 @@ hooksecurefunc = function(frame, name, callback)
     if frame == "UpdateContainerFrameAnchors" then
         hooks.NativeAnchors = name
     else
-        assert(name == "UpdateItems")
+        assert(name == "UpdateItems" or frame == ContainerFrameCombinedBags and name == "UpdateItemSlots")
         hooks[frame == ContainerFrame6 and "ReagentItems" or name] = callback
     end
 end
@@ -227,6 +229,7 @@ Enum = { BagIndex = { ReagentBag = 5 }, ItemQuality = {Common=1}, ItemBind = { N
     ToWoWAccount = 7, ToBnetAccount = 8, ToBnetAccountUntilEquipped = 9 } }
 -- WoW Forever has no global GetItemQualityColor (Retail keeps it only as a
 -- deprecated alias): quality colours come from C_Item on both clients.
+ColorManager = { GetColorDataForBagItemQuality = function() end }
 C_Item = {
     IsEquippableItem = function(link) return link ~= "food" end,
     GetDetailedItemLevelInfo = function(link) levelCalls = levelCalls + 1; return levels[link] end,
@@ -1221,6 +1224,7 @@ for _, forever in ipairs({ false, true }) do
     end
     bankPanel = CopyMethods({
         IsShown = function() return true end,
+        IsVisible = function() return true end,
         HookScript = function(self, name, callback)
             assert(name == "OnShow" and not self.onShowHook, "bank show hook was duplicated")
             self.onShowHook = callback

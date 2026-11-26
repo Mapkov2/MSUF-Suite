@@ -137,6 +137,7 @@ B.Section("bags", "transmog", "Transmog collection", {
 
 B.Section("bags", "window", "Combined bag window", {
     B.Choice("windowPresentation", "Bag presentation", NS.BagsPresentation.PANEL, { "Compact window", "Side panel" }),
+    B.Bool("hideSearchBar", "Hide Search Bar"),
     B.Bool("panelFullHeight", "Use full screen height", false),
     B.Bool("showSessionGold", "Show gold summary", true),
     B.Number("windowScale", "Window size", 1, 0.65, 1.5, 0.05),

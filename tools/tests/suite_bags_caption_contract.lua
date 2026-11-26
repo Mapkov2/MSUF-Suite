@@ -44,6 +44,19 @@ local function RestoreTab(W)
     end
 end
 
+local function CheckEvents(W, enter, leave, scale, why)
+    for _, frame in ipairs(W.frames) do
+        local handler = frame:GetScript("OnEvent")
+        if handler and debug.getinfo(handler, "S").source:find("BagCaption.lua", 1, true) then
+            assert(frame:IsEventRegistered("PLAYER_REGEN_DISABLED") == enter, why .. ": combat entry")
+            assert(frame:IsEventRegistered("PLAYER_REGEN_ENABLED") == leave, why .. ": combat exit")
+            assert(frame:IsEventRegistered("UI_SCALE_CHANGED") == scale, why .. ": UI scale")
+            return
+        end
+    end
+    assert(not enter and not leave and not scale, why .. ": no listener for visible caption")
+end
+
 local function Fill(cell) return cell.caption.fill.color end
 
 -- The anchor of frame at point (a two-point anchor's one side).
@@ -78,8 +91,20 @@ do
     local resizedX, _, resizedWidth = frame:GetScaledRect()
     assert(resizedWidth <= W.screenWidth and Near(resizedX + resizedWidth / 2, W.screenWidth / 2),
         "maximized bag did not refit the changed viewport")
+    W.S.GamepadUI = function() return true end
+    W.Native(frame.CloseButton.Hide, frame.CloseButton)
+    CheckEvents(W, false, false, true, "visible maximized native grid under gamepad UI")
+    W.S.GamepadUI = function() return false end
+    W.Native(frame.CloseButton.Show, frame.CloseButton)
+    W.CloseBags()
+    CheckEvents(W, false, false, false, "hidden maximized bag")
     W.screenWidth = screenWidth
     W.Fire("UI_SCALE_CHANGED")
+    W.OpenBags()
+    W.Settle()
+    local shownX, _, shownWidth = frame:GetScaledRect()
+    assert(Near(shownX + shownWidth / 2, W.screenWidth / 2),
+        "reopening a maximized bag used the viewport from before it closed")
     W.EnterCombat()
     assert(button.bagDisabled, "maximize still takes input in combat")
     W.LeaveCombat()
@@ -186,6 +211,14 @@ assert(delegate:IsShown() and not minimize.caption.hover, "moving off the minus 
 Click(delegate)
 assert(not W.CF:IsShown() and #W.taint == 0, "minimize did not close the bag through Blizzard's X")
 local tab = assert(RestoreTab(W), "minimize left no restore tab")
+CheckEvents(W, true, true, true, "restore tab without the bag")
+W.EnterCombat()
+assert(not delegate:IsShown(), "the standalone restore delegate was left armed at combat entry")
+W.LeaveCombat()
+W.Settle()
+assert(Delegate(W, W.Backpack) == delegate, "combat exit did not rearm a standalone restore tab")
+W.Fire("UI_SCALE_CHANGED")
+SameRect(W, delegate, tab, "restoring after a scale notification left the secure hit rectangle behind")
 assert(tab:IsShown() and tab:GetFrameStrata() == "DIALOG", "the restore tab does not show")
 assert(delegate:IsShown() and Delegate(W, W.Backpack) == delegate and not Delegate(W, X),
     "the secure input did not move to the restore tab")
@@ -215,6 +248,7 @@ assert(tab:IsShown(), "a second minimize left no tab")
 Click(delegate, "RightButton")
 assert(not tab:IsShown() and not W.CF:IsShown() and not delegate:IsShown() and #W.taint == 0,
     "the right button did not dismiss the tab and its click area")
+CheckEvents(W, false, false, false, "dismissed restore tab")
 -- The player's own key opens the bag: the tab goes.
 W.OpenBags(); W.Settle()
 Click(delegate)
@@ -274,6 +308,7 @@ SameRect(W, reagent.close, W.Reagent.CloseButton, "the reagent bag's X does not 
 ---------------------------------------------------------------- release
 W.S.Set("bags", "enabled", false)
 assert(not W.M.active, "Bags did not stop")
+CheckEvents(W, false, false, false, "disabled bag profile")
 assert(X.alpha == 1 and X:GetWidth() == (flavor == "Forever" and 28 or 24), "the stop kept Blizzard's X faded or resized")
 local point = X.points[1]
 assert(point[1] == "TOPRIGHT" and point[4] == (flavor == "Forever" and 0 or 1) and point[5] == (flavor == "Forever" and 3 or 0),
@@ -299,5 +334,57 @@ local G = World({ inventoryView = 4 })
 local grid = G.P.BagCaption.states[G.CF]
 assert(grid.close:IsVisible() and grid.maximize:IsMouseEnabled() and not grid.minimize.bagDisabled,
     "Blizzard's bag grid lost a caption control")
+
+do
+    local Q = World({ inventoryView = 4 })
+    local cap = Q.P.BagCaption
+    local originalSync, hiddenPaints = cap.Sync, 0
+    cap.Sync = function(entry, event)
+        if event and not entry.frame:IsVisible() then hiddenPaints = hiddenPaints + 1 end
+        return originalSync(entry, event)
+    end
+    Q.Native(Q.Reagent.Show, Q.Reagent)
+    Q.Native(Q.Reagent.Hide, Q.Reagent)
+    Q.CloseBags()
+    CheckEvents(Q, false, false, false, "all previously created bag windows closed")
+    Q.Fire("UI_SCALE_CHANGED")
+    Q.EnterCombat()
+    Q.LeaveCombat()
+    assert(hiddenPaints == 0, "closed combat edges repainted historical caption states")
+    Q.OpenBank()
+    CheckEvents(Q, false, false, false, "bank without a backpack caption")
+    Q.CloseBank()
+    Q.Native(Q.Reagent.Show, Q.Reagent)
+    CheckEvents(Q, false, false, true, "independent reagent close glyph")
+    Q.EnterCombat()
+    Q.LeaveCombat()
+    assert(cap.states[Q.Reagent].close:IsVisible() and hiddenPaints == 0, "reagent combat processing reached a hidden bag")
+    Q.Native(Q.Reagent.Hide, Q.Reagent)
+    if flavor == "Forever" then
+        local standalone = Q.NewIndividualBag("CaptionStandalone", 1)
+        Q.Native(standalone.Show, standalone)
+        cap.Attach(Q.M, standalone, { shell = standalone })
+        CheckEvents(Q, false, false, true, "independent standalone close glyph")
+        Q.Native(standalone.Hide, standalone)
+    end
+    CheckEvents(Q, false, false, false, "last independently shown bag closed")
+    Q.OpenBags()
+    Q.Settle()
+    CheckEvents(Q, true, true, true, "backpack reopened")
+    local proxy = assert(Delegate(Q, Q.CF.CloseButton))
+    -- Model the edge where protected writes have already locked before the
+    -- caption can release an armed proxy. The secure state driver owns hiding.
+    Q.combat, Q.fighting = true, true
+    Q.CloseBags()
+    CheckEvents(Q, false, true, false, "locked delegate cleanup")
+    Q.M.active = false
+    cap.Release()
+    CheckEvents(Q, false, true, false, "profile release while cleanup is blocked")
+    Q.LeaveCombat()
+    assert(not proxy:IsShown() and proxy:GetNumPoints() == 0 and not proxy:GetAttribute("clickbutton1"),
+        "protected delegate was not released when combat ended")
+    CheckEvents(Q, false, false, false, "protected cleanup complete")
+    assert(#Q.taint == 0 and #Q.combatLayout == 0, "visibility routing triggered a protected write")
+end
 
 print("Bags caption " .. flavor .. ": cells, close, maximize, minimize, restore, combat, gamepad, reagent and release passed")

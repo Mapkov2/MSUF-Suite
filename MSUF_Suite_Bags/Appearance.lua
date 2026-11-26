@@ -2,6 +2,9 @@ local _, P = ...
 local S = P.Suite
 local Appearance = { buttons = setmetatable({}, { __mode = "k" }) }
 P.BagAppearance = Appearance
+-- The optional global button skin can reuse its material on these Suite-created
+-- actions. The Bags owner already keeps their exact identities for font refresh.
+S.BagActionButtons = Appearance.buttons
 
 local FOREVER_LOOK = 3
 local GLASS_SOFT_ALPHA, GLASS_DARK_ALPHA = .88, .94
@@ -77,7 +80,7 @@ function Appearance.Window(t, c)
     t[1]:SetColorTexture(0, 0, 0, (glass and .10 or .5) * opacity)
     PaintBody(t, glass, panel, r, g, b, opacity)
     t[3]:SetColorTexture(r + .025, g + .025, b + .025, (glass or panel) and .28 * opacity or opacity)
-    t[4]:SetColorTexture(ar, ag, ab, .24)
+    t[4]:SetColorTexture(ar, ag, ab, panel and .12 or .24)
     if t[5] then t[5]:SetColorTexture(r * .7, g * .7, b * .7, (glass or panel) and .46 * opacity or opacity) end
     PaintBorder(t, c, ar, ag, ab)
     if t.goldLabel then

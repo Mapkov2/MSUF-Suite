@@ -16,6 +16,99 @@ local function Fill(W)
     end
     W.Apply(); W.OpenBags(); W.Settle()
 end
+do
+    local W = H.New(root, { client = arg[2], catalogPresentation = true, config = { look = 3 } })
+    Fill(W)
+    local t = W.M.windows[W.CF]
+    local lineWrites = 0
+    local original = t[4].SetColorTexture
+    t[4].SetColorTexture = function(line, ...)
+        lineWrites = lineWrites + 1
+        return original(line, ...)
+    end
+    local gradientWrites = 0
+    for _, gradient in ipairs({ t[2], t.feather, t.ribbon, t.glow }) do
+        local set = gradient.SetGradient
+        gradient.SetGradient = function(texture, ...)
+            gradientWrites = gradientWrites + 1
+            return set(texture, ...)
+        end
+    end
+    W.CloseBags()
+    assert(lineWrites == 0, "closed panel repainted its divider: " .. lineWrites)
+    W.OpenBags()
+    W.Settle()
+    assert(lineWrites == 0 and gradientWrites == 0,
+        "unchanged panel repainted on reopen: " .. lineWrites .. " dividers, " .. gradientWrites .. " gradients")
+    assert(t[4].color[4] == .12 and W.CF.TitleContainer.TitleText:GetAlpha() == 0, "native title obscures panel heading")
+    W.CloseBags()
+    W.EnterCombat()
+    W.OpenBags()
+    assert(t[4].color[4] == .24 and not t.heading:IsShown(), "protected reopen initially showed the panel")
+    W.Settle()
+    W.LeaveCombat()
+    W.Settle()
+    assert(t[4].color[4] == .12 and t.heading:IsShown(), "panel did not restore after combat")
+    local state = W.S.ModuleState
+    local function Unavailable(id)
+        if id ~= "bags" then return state(id) end
+    end
+    local function AssertNative(reason)
+        assert(t[4].color[4] == .24 and not t.heading:IsShown() and W.CF.TitleContainer.TitleText:GetAlpha() == 1, reason)
+    end
+    W.CloseBags()
+    W.S.ModuleState = Unavailable
+    W.OpenBags()
+    AssertNative("missing profile on show did not keep the native skin")
+    W.Settle()
+    W.S.ModuleState = state
+    W.P.InventoryView.Request()
+    W.Settle()
+    W.CloseBags()
+    W.OpenBags()
+    W.S.ModuleState = Unavailable
+    W.Settle()
+    AssertNative("profile became unavailable before the deferred pass")
+    W.S.ModuleState = state
+    W.P.InventoryView.Request()
+    W.Settle()
+    local owner = next(W.P.InventoryView.visibleButtons)
+    W.CloseBags()
+    W.OpenBags()
+    W.Native(function() W.StackSplitFrame:OpenStackSplitFrame(2, owner) end)
+    W.Settle()
+    AssertNative("the physical stack-split owner was waiting for the native layout")
+    W.SplitCancel()
+    W.Settle()
+    assert(t.heading:IsShown() and t[4].color[4] == .12, "panel missing after stack split closed")
+end
+do
+    local W = H.New(root, { client = arg[2], catalogPresentation = true, config = { look = 3 } })
+    W.sizes[0] = 12
+    W.Apply()
+    local t = W.M.windows[W.CF]
+    local paints, gradients = 0, 0
+    local line, body = t[4].SetColorTexture, t[2].SetGradient
+    t[4].SetColorTexture = function(texture, ...)
+        paints = paints + 1
+        return line(texture, ...)
+    end
+    t[2].SetGradient = function(texture, ...)
+        gradients = gradients + 1
+        return body(texture, ...)
+    end
+    W.OpenBags()
+    W.Settle()
+    assert(paints == 1 and gradients == 1 and t.heading:IsShown(), "the first panel must be painted once")
+    W.CloseBags()
+    W.S.Set("bags", "inventoryView", W.NS.BagsView.BLIZZARD_GRID)
+    W.Settle()
+    paints, gradients = 0, 0
+    W.OpenBags()
+    assert(not t.heading:IsShown() and t[2].gradient[1] == "VERTICAL", "native grid must show its own shell immediately")
+    W.Settle()
+    assert(paints == 0 and gradients == 0 and not t.heading:IsShown(), "native grid repainted on reopen")
+end
 for _, height in ipairs({600, 768, 1080}) do
     for _, scale in ipairs({.65, 1, 1.5}) do
         for _, columns in ipairs({8, 12, 20}) do

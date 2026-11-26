@@ -34,7 +34,9 @@ Caption.PANEL_TITLE = Caption.PANEL_TOOLS + 3 * 32 + 24 + 12
 local TEXT, MUTED = { .94, .95, .98, 1 }, { .45, .48, .53, 1 }
 local states, natives = Caption.states, setmetatable({}, { __mode = "k" })
 local delegate, tab, events
-local SyncDelegate, ShowTab
+local visible = {}
+local watchStart, watchEnd, watchScale = false, false, false
+local SyncDelegate, ShowTab, SyncEvents
 
 local function Painter() return S.WindowCaption end
 
@@ -80,6 +82,7 @@ local function Detach()
     delegate:SetAttribute("type1", nil)
     delegate:SetAttribute("clickbutton1", nil)
     Hover(owner, false)
+    SyncEvents()
 end
 
 local function DelegateEnter(button)
@@ -257,6 +260,7 @@ end
 local function TabHidden(button)
     button.state = nil
     if delegate and delegate.owner == button then Detach() end
+    SyncEvents()
 end
 
 local function Tab()
@@ -280,6 +284,7 @@ local function Tab()
     tab:SetScript("OnEnter", TabEnter)
     tab:SetScript("OnLeave", TabLeave)
     tab:SetScript("OnClick", TabClick)
+    tab:SetScript("OnShow", SyncEvents)
     tab:SetScript("OnHide", TabHidden)
     tab:Hide()
     hooksecurefunc(tab, "SetPoint", function(button)
@@ -328,6 +333,8 @@ function Caption.Sync(state, event)
     local module = P.BagsModule
     local shown = module.active and state.owned and not S.GamepadUI() and state.native:IsShown() == true
     for _, cell in ipairs(state.cells) do cell:SetShown(shown) end
+    visible[state] = shown and state.close:IsVisible() or nil
+    SyncEvents()
     if not shown then return SyncDelegate(state, event) end
     if state.minimize then
         local c, held = module.config, NS.InCombat(event) or S.editMode
@@ -423,9 +430,9 @@ end
 local function WindowHidden(frame)
     local state = states[frame]
     if not state then return end
-    if delegate and delegate.owner and delegate.owner.bagCaption == state then
-        Detach()
-    end
+    visible[state] = nil
+    if delegate and delegate.owner and delegate.owner.bagCaption == state then Detach() end
+    SyncEvents()
 end
 
 local function New(frame, t)
@@ -458,24 +465,54 @@ local function New(frame, t)
     return state
 end
 
-local function CaptionEvent(_, event)
-    if event == "UI_SCALE_CHANGED" then
-        local module = P.BagsModule
-        if module.nativeMaximized then module:RefreshWindowLayout() end
-        return
-    end
-    -- PLAYER_REGEN_DISABLED runs before the lockdown: the delegate lets go.
-    if delegate then delegate.clicking = nil end
-    Detach()
-    for _, state in pairs(states) do Caption.Sync(state, event) end
+local function MaximizedGridShown(module)
+    return module.active and module.nativeMaximized and module.frame and module.frame:IsVisible()
 end
 
-local function WatchCombat()
-    events = events or S.CreateFrame("Frame")
-    events:SetScript("OnEvent", CaptionEvent)
-    events:RegisterEvent("PLAYER_REGEN_DISABLED")
-    events:RegisterEvent("PLAYER_REGEN_ENABLED")
-    events:RegisterEvent("UI_SCALE_CHANGED")
+local function CaptionEvent(_, event)
+    local module = P.BagsModule
+    local state = states[module.frame]
+    local restore = tab and tab.state and tab:IsVisible() and tab.state
+    if event == "UI_SCALE_CHANGED" then
+        if MaximizedGridShown(module) then
+            module:RefreshWindowLayout()
+        else
+            Caption.Moved()
+        end
+        if restore then SyncDelegate(restore) end
+        return
+    end
+    -- Combat starts before lockdown. A prior locked detach may still need
+    -- the exit edge even after the last window closed or the module stopped.
+    if delegate then delegate.clicking = nil end
+    Detach()
+    if state and visible[state] then Caption.Sync(state, event) end
+    if restore then SyncDelegate(restore, event) end
+    SyncEvents()
+end
+
+local function Watch(event, wanted)
+    if wanted then events:RegisterEvent(event) else events:UnregisterEvent(event) end
+end
+
+SyncEvents = function()
+    local module = P.BagsModule
+    local restore = tab and tab.state and tab:IsVisible()
+    local combined = visible[states[module.frame]]
+    local start = module.active and (combined or restore) or delegate and delegate.clicking or false
+    local finish = start or delegate ~= nil and delegate.owner ~= nil
+    -- Even when Gamepad hides the X, a visible maximized native grid must
+    -- still refit on a viewport change. A closed maximized grid owns no event.
+    local scale = module.active and (next(visible) ~= nil or restore or MaximizedGridShown(module)) or false
+    if start == watchStart and finish == watchEnd and scale == watchScale then return end
+    if not events then
+        events = S.CreateFrame("Frame")
+        events:SetScript("OnEvent", CaptionEvent)
+    end
+    if start ~= watchStart then Watch("PLAYER_REGEN_DISABLED", start) end
+    if finish ~= watchEnd then Watch("PLAYER_REGEN_ENABLED", finish) end
+    if scale ~= watchScale then Watch("UI_SCALE_CHANGED", scale) end
+    watchStart, watchEnd, watchScale = start, finish, scale
 end
 
 -- StyleWindows: t is the window's Suite style (BagWindow.lua NewWindowStyle).
@@ -489,22 +526,20 @@ end
 
 -- A window layout pass moved or scaled a window.
 function Caption.Moved()
-    for _, state in pairs(states) do
-        if state.owned and state.close:IsVisible() then
-            Snap(state)
-            SyncDelegate(state)
-        end
+    for state in pairs(visible) do
+        Snap(state)
+        SyncDelegate(state)
     end
 end
 
 function Caption.Refresh()
-    WatchCombat()
     if P.BagsModule.config.inventoryView ~= BLIZZARD_GRID then P.BagsModule.nativeMaximized = nil end
     for _, state in pairs(states) do
         Own(state, P.BagsModule.context)
         Caption.Sync(state)
     end
     Caption.PaintTab(tab and tab:IsMouseOver())
+    SyncEvents()
 end
 
 -- The module stops: its context hands Blizzard's X back afterwards.
@@ -512,10 +547,11 @@ function Caption.Release()
     P.BagsModule.nativeMaximized = nil
     for _, state in pairs(states) do
         state.owned = false
+        visible[state] = nil
         for _, cell in ipairs(state.cells) do cell:Hide() end
     end
     if tab then tab:Hide() end
     if delegate then delegate.clicking = nil end
     Detach()
-    if events then events:UnregisterAllEvents() end
+    SyncEvents()
 end

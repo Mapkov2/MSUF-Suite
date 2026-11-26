@@ -17,7 +17,7 @@ local function Shown(text)
 end
 
 local function Apply(edit, text)
-    if not NS.IsCombatLocked() then edit:SetText(text) end
+    if edit:IsShown() and not NS.IsCombatLocked() then edit:SetText(text) end
 end
 
 -- Saved searches: apply one, save what the box holds now, or remove one.
@@ -178,7 +178,10 @@ end
 function Search.Menu(button, edit, view)
     P.BagFilterMenu.Show(button, function(_, menu)
         if view then AddInventoryTools(menu, button, view) end
-        menu:CreateButton(S.Text("Build search visually"), function() P.QueryEditor.Open(edit) end)
+        if not edit:IsShown() then return end
+        menu:CreateButton(S.Text("Build search visually"), function()
+            if edit:IsShown() then P.QueryEditor.Open(edit) end
+        end)
         menu:CreateTitle(S.Text("Smart search presets"))
         for i = 1, #PRESETS do
             local preset = PRESETS[i]
@@ -226,6 +229,19 @@ function Search.Create(view, request, parent, place)
     place = place or PlaceInBag
     place(edit, button)
     view.smartSearch, view.filterButton = edit, button
+end
+
+function Search.RefreshBagVisibility(view, hidden)
+    local edit = view.smartSearch
+    if edit:IsShown() == not hidden then return end
+    if hidden then
+        if P.BagFilterMenu.owner == view.filterButton then P.BagFilterMenu.Close() end
+        if P.QueryEditor.target == edit then P.QueryEditor.Close() end
+        edit:ClearFocus()
+        if view.smartQuery and view.smartQuery ~= "" then edit:SetText("") end
+    end
+    edit:SetShown(not hidden)
+    view.filterButton:SetText(hidden and S.Text("Tools") or S.Text("Filters"))
 end
 
 function Search.RuleControls(editor, label, input, action)

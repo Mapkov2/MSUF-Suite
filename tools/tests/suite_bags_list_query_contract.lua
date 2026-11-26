@@ -7,6 +7,12 @@ W.Define(10, { name = "Zebra", class = 0, maxStack = 20 })
 W.Define(20, { name = "Apple", class = 0, maxStack = 20 })
 W.Put(0, 1, 10, 2)
 W.Put(0, 2, 20, 4)
+local function MoveNativeSearch(frame)
+    W.NativeSearch:SetParent(frame)
+end
+local backpack = ContainerFrame1 or CreateFrame("Frame", "ContainerFrame1", UIParent)
+W.CF.UpdateSearchBox, backpack.UpdateSearchBox = MoveNativeSearch, MoveNativeSearch
+W.CF.SearchBoxIcon = CreateFrame("Frame", nil, W.CF)
 W.Apply()
 W.OpenBags()
 W.Settle()
@@ -157,6 +163,60 @@ W.Settle()
 local bank = W.P.BankInventory
 Search(bank, "vial")
 Expect(bank, "30", "combined bank uses the same search")
+
+local box = view.smartSearch
+local setText = box.SetText
+-- The real EditBox invokes OnTextChanged for programmatic edits as well.
+function box:SetText(query)
+    setText(self, query)
+    W.Insecure(self:GetScript("OnTextChanged"), self)
+end
+assert(not W.config.hideSearchBar and box:IsShown(), "bag search should be visible by default")
+Search(view, "apple")
+Expect(view, "20", "bag search is active before hiding")
+box:SetFocus()
+W.P.QueryEditor.Open(box)
+assert(W.S.Set("bags", "hideSearchBar", true))
+W.Settle()
+assert(not box:IsShown() and not box.focus and not W.P.QueryEditor.open, "hidden bag search kept input focus or editor")
+assert(view.filterButton:IsShown() and view.filterButton:GetText() == "Tools", "hiding search removed the inventory tools")
+Expect(view, "10,20,30,40,50,70", "hidden bag search must clear its active filter")
+assert(bank.smartSearch:IsShown() and bank.smartSearch:GetText() == "vial", "bag setting changed bank search")
+assert(W.S.Set("bags", "hideSearchBar", false))
+W.Settle()
+assert(box:IsShown() and box:GetText() == "" and view.filterButton:GetText() == "Filters", "bag search did not restore")
+
+local native = W.NativeSearch
+assert(W.S.Set("bags", "inventoryView", W.NS.BagsView.BLIZZARD_GRID))
+W.Settle()
+assert(native:GetAlpha() == 1 and native:IsEnabled(), "native bag search should be visible and enabled by default")
+native:SetText("apple")
+native:SetFocus()
+assert(W.S.Set("bags", "hideSearchBar", true))
+W.Settle()
+assert(native:GetAlpha() == 0 and not native:IsMouseEnabled() and not native:IsEnabled()
+    and not native:HasFocus() and native:GetText() == "", "native bag search stayed interactive or kept its query")
+assert(W.CF.SearchBoxIcon:GetAlpha() == 0, "the native search prompt stayed visible")
+assert(W.NativeSort:GetAlpha() == 1, "hiding native search also hid native sort")
+W.Native(backpack.UpdateSearchBox, backpack)
+assert(native:GetAlpha() == 1 and native:IsEnabled(), "the individual backpack inherited the combined bag's hidden search")
+native:SetText("apple")
+W.EnterCombat()
+W.Native(W.CF.UpdateSearchBox, W.CF)
+assert(native:GetAlpha() == 1 and native:IsEnabled() and native:GetText() == "apple",
+    "opening the combined bag in combat hid a search that was still filtering")
+assert(W.queuedApply, "native search hide did not queue a refresh for combat end")
+W.LeaveCombat()
+W.queuedApply = nil
+W.Apply()
+W.Settle()
+assert(native:GetAlpha() == 0 and not native:IsEnabled() and native:GetText() == "",
+    "a deferred native search hide never applied after combat")
+assert(W.S.Set("bags", "hideSearchBar", false))
+W.Settle()
+assert(native:GetAlpha() == 1 and native:IsMouseEnabled() and native:IsEnabled(), "native bag search did not restore")
+assert(W.CF.SearchBoxIcon:GetAlpha() == 1, "the native search prompt did not restore")
+
 local function SelectTab(key)
     for _, button in ipairs(bank.categories) do
         if button:IsShown() and button.key == key then
@@ -173,5 +233,11 @@ SelectTab("tab:7")
 Expect(bank, "", "a same-sized bank tab cannot reuse another tab's name")
 SelectTab("tab:6")
 Expect(bank, "30", "returning to the first bank tab restores its match")
+
+assert(W.S.Set("bags", "hideSearchBar", true))
+assert(W.S.Set("bags", "enabled", false))
+assert(native:GetAlpha() == 1 and native:IsEnabled(), "disabling Bags did not restore the native search")
+assert(W.S.Set("bags", "enabled", true))
+assert(native:GetAlpha() == 0 and not native:IsEnabled(), "re-enabling Bags did not reapply the saved setting")
 
 print("Bags list, native slot identity, indexed search, bank scopes, column order and nested rules passed")

@@ -29,6 +29,7 @@ function methods:Hide()
 end
 function methods:SetShown(value) if value then self:Show() else self:Hide() end end
 function methods:IsShown() return self.shown end
+function methods:IsVisible() return self.shown and (not self.parent or self.parent:IsVisible()) end
 function methods:SetText(value) self.text = value end
 function methods:GetText() return self.text end
 function methods:SetSize(w, h) self.width, self.height = w, h end
@@ -79,6 +80,7 @@ Enum = { BankType = { Character = 1, Account = 2 }, TooltipDataType = { Item = 0
 TooltipDataProcessor = { AddTooltipPostCall = function() end }
 BankFrame = Widget()
 BankFrame.BankPanel, BankFrame.TabIDToBankType = Widget(), { [4] = 1, [7] = 2 }
+BankFrame.BankPanel:SetParent(BankFrame)
 BankFrame.activeType = 1
 function BankFrame:GetActiveBankType() return self.activeType end
 -- Switching Blizzard's bank type from Suite code taints BankPanel.

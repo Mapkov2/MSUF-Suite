@@ -53,7 +53,10 @@ local function ApplyMetadata(index, item)
     if data then
         for i = 1, #METADATA do item[METADATA[i]] = data[METADATA[i]] end
         item.loaded = true
+        if index.unresolved then index.unresolved[item] = nil end
     else
+        if not index.unresolved then index.unresolved = setmetatable({}, { __mode = "k" }) end
+        index.unresolved[item] = true
         item.name, item.search, item.loaded = tostring(item.itemID), tostring(item.itemID), false
     end
 end
@@ -317,6 +320,7 @@ function Index.ReadContainer(index, frame, recent)
     Index.ExpireRecent(recent, now)
     local synced, free, excluded = nil, 0, 0
     local firstInBag, excludeBag = 0, false
+    local bagName
     for i = 1, #order do
         local key = order[i]
         local bag, slot = math.floor(key / KEY), key % KEY
@@ -327,11 +331,11 @@ function Index.ReadContainer(index, frame, recent)
                 firstInBag = free
                 excludeBag = bag >= 0 and ExcludesFromRegularCount(index, bag, size)
             end
-            synced = bag
+            synced, bagName = bag, BagName(index, bag)
         end
         local info, quest, version = Slots.Get(bag, slot)
         local item = Index.ReadButton(index, index.buttons[key], info, quest, version, bag, slot)
-        item.bagName = BagName(index, bag)
+        item.bagName = bagName
         if bag == REAGENT_BAG then item.reagentBag = P.ReagentInventory and P.ReagentInventory.active or nil end
         if not item.itemID then
             free = free + 1
@@ -391,15 +395,22 @@ function Index.Refresh(index, itemID)
 end
 
 function Index.Retry(index)
-    -- Retry failed requests only on the next explicit window opening. A
-    -- failure event must not cause an immediate request/failure loop.
-    Loads.Retry(index.loads)
-    for _, item in pairs(index.records) do
-        if item.loaded == false then item.version = nil end
+    -- A request can also fail while the closed window is not subscribed.
+    -- On reopening only unresolved records need another metadata lookup.
+    if index.loads.count > 0 then
+        Loads.Reset(index.loads)
+        for id in pairs(index.pending) do index.pending[id] = nil end
+    end
+    if index.unresolved then
+        for item in pairs(index.unresolved) do
+            if item.loaded == false then item.version = nil end
+        end
+        index.unresolved = nil
     end
 end
 
 function Index.Reset(index)
+    index.unresolved = nil
     Loads.Reset(index.loads)
     for _, key in ipairs({ "items", "records", "metadata", "pending", "bagNames", "bagFamilies", "freshItems",
         "buttons", "order" }) do

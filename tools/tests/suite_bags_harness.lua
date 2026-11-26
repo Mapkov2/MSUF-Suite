@@ -602,6 +602,7 @@ function H.New(root, options)
         now = 1000, events = {}, calls = { info = 0, quest = 0, newItem = 0, itemInfo = 0, splits = {}, pickups = {},
         uses = {}, setTab = 0, sort = {} }, items = {}, sizes = {}, data = {}, newItems = {}, postCalls = {},
         frames = {}, updates = {}, cursor = nil, money = options.money or 500000, popups = {}, errors = {}, messages = {} }
+    ColorManager = { GetColorDataForBagItemQuality = function() end }
     W.client = options.client or "Mainline"
     local forever = W.client == "Forever"
 
@@ -879,6 +880,7 @@ function H.New(root, options)
     function Widget:SetNumeric(value) self.numeric = value end
     function Widget:SetFocus() self.focus = true end
     function Widget:ClearFocus() self.focus = false end
+    function Widget:HasFocus() return self.focus == true end
     function Widget:HighlightText() end
     function Widget:SetID(id) self.id = id end
     function Widget:GetID() return self.id or 0 end
@@ -1229,6 +1231,7 @@ function H.New(root, options)
         KEYRING = "Keyring"
     end
     C_Container = {
+        HasContainerItem = function(bag, slot) return W.Item(bag, slot) ~= nil end,
         GetContainerNumSlots = function(bag) return W.sizes[bag] or 0 end,
         IsBattlePayItem = function(bag, slot) return (W.battlePay or {})[bag * KEY + slot] == true end,
         GetContainerNumFreeSlots = function(bag)

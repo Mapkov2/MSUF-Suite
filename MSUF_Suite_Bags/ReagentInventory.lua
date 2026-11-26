@@ -12,6 +12,10 @@ end
 
 local function Changed()
     if not M.active then return end
+    if not P.InventoryView.active or not P.InventoryView.frame:IsVisible() then
+        P.InventoryView.hiddenLayoutDirty = true
+        return
+    end
     P.InventoryIndex.Invalidate(P.InventoryView.index)
     P.InventoryView.positionsDirty = true
     for _, slot in pairs(P.InventoryView.slotState) do slot.x, slot.y = nil, nil end
@@ -19,6 +23,12 @@ local function Changed()
 end
 
 local function LayoutChanged()
+    if not M.active then return end
+    if not ContainerFrame6:IsVisible() then
+        M.slotStyle = (M.slotStyle or 0) + 1
+        Changed()
+        return
+    end
     for _, button in ContainerFrame6:EnumerateValidItems() do
         local record = M.overlays[button]
         if record then record.slotStyle, record.strokeStyle = nil, nil end
@@ -87,7 +97,7 @@ end
 -- item actions, cooldowns, search, tooltips and new-item handling.
 function Reagent.Prepare()
     local view, frame = P.InventoryView, ContainerFrame6
-    if not Reagent.Enabled(M.config) or not view.frame:IsShown() then
+    if not Reagent.Enabled(M.config) or not view.frame:IsVisible() then
         Reagent.Release()
         return
     end

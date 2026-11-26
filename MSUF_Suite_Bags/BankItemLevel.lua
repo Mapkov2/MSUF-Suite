@@ -2,7 +2,6 @@ local _, P = ...
 local NS, S = P.NS, P.Suite
 local M = assert(P.BagsModule, "Bags.lua must load before BankItemLevel.lua")
 local Loads = P.ItemLoads
-local IN_COMBAT = { inCombat = true }
 
 M.bankOverlays = setmetatable({}, { __mode = "k" })
 M.bankPending, M.bankLoads = {}, Loads.New()
@@ -14,7 +13,10 @@ function M:HideBankLevels()
     for _, record in pairs(self.bankOverlays) do
         if record.label then record.label:Hide() end
     end
-    for itemID in pairs(self.bankPending) do self.bankPending[itemID] = nil end
+    if next(self.bankPending) then
+        for itemID in pairs(self.bankPending) do self.bankPending[itemID] = nil end
+        self:ResumeItemInfo()
+    end
     Loads.Reset(self.bankLoads)
 end
 
@@ -24,7 +26,7 @@ end
 -- after the native Refresh).
 local function BankVisible(self)
     return self.active and not self.organizedBankActive and self.config.showBankItemLevel
-        and BankFrame:IsShown() and BankFrame.BankPanel:IsShown()
+        and BankFrame.BankPanel:IsVisible()
 end
 
 -- Reads the item level of a bank button's item, or asks for its item data
@@ -49,7 +51,7 @@ end
 
 local function PaintBankButton(self, button, info)
     local record = self.bankOverlays[button]
-    if not BankVisible(self) or not button or NS.Safety.IsForbidden(button)
+    if not button or NS.Safety.IsForbidden(button)
         or not button:IsShown() or not S.Public(info) or not info
         or (S.Public(info.isFiltered) and info.isFiltered) then
         if record and record.label then record.label:Hide() end
@@ -131,11 +133,12 @@ local function HookBankButton(self, button)
 end
 
 function M:UpdateBank(searchChanged)
-    if not BankVisible(self) then
+    if not self.active or self.organizedBankActive or not self.config.showBankItemLevel then
         self:HideBankLevels()
         return
     end
     local panel = BankFrame.BankPanel
+    if not panel:IsVisible() then return end
     for button in panel:EnumerateValidItems() do
         HookBankButton(self, button)
         -- Native Refresh has already fetched itemInfo. A search change only
@@ -146,13 +149,13 @@ function M:UpdateBank(searchChanged)
         end
         PaintBankButton(self, button, info)
     end
-    if next(self.bankPending) then self.context:Event("GET_ITEM_INFO_RECEIVED", M.ItemInfoReceived, IN_COMBAT) end
+    if next(self.bankPending) then self:ResumeItemInfo() end
 end
 
 BankButtonRefreshed = function(button)
-    if not M.active or not M.config.showBankItemLevel then return end
+    if not BankVisible(M) then return end
     PaintBankButton(M, button, button.itemInfo)
-    if next(M.bankPending) then M.context:Event("GET_ITEM_INFO_RECEIVED", M.ItemInfoReceived, IN_COMBAT) end
+    if next(M.bankPending) then M:ResumeItemInfo() end
 end
 
 local function BankSearchUpdated(panel)

@@ -12,6 +12,7 @@ local SlotCache = { info = {}, quest = {}, version = {}, sizes = {}, dirtyBags =
     KEY = 1000 }
 P.SlotCache = SlotCache
 local KEY = SlotCache.KEY
+local RECHECK = "recheck"
 local client = P.NS and P.NS.Client
 local KEYRING_BAG = client and client.isForever and KEYRING_CONTAINER or nil
 local Finite, Public = S.Finite, S.Public
@@ -56,7 +57,15 @@ end
 -- Brings one container up to date and returns its slot count.
 function SlotCache.Sync(bag)
     if not Finite(bag) then return 0 end
-    if SlotCache.paused then SlotCache.Resume() end
+    if SlotCache.paused then
+        -- A native OnShow can read before the visibility hook runs. A
+        -- one-off request with every window closed observes just this bag.
+        if P.BagsIdle.NeedsSlotEvents() then
+            SlotCache.Resume()
+        else
+            SlotCache.dirtyBags[bag] = RECHECK
+        end
+    end
     local size
     if client and client.isForever and bag == KEYRING_BAG then
         local keyringSize = GetKeyRingSize
@@ -68,8 +77,27 @@ function SlotCache.Sync(bag)
     if not Finite(size) or size < 0 or size >= KEY then size = 0 end
     local base = bag * KEY
     local known = SlotCache.sizes[bag]
-    if SlotCache.dirtyBags[bag] or known ~= size then
-        for slot = 1, size do Read(bag, slot) end
+    local dirty = SlotCache.dirtyBags[bag]
+    if dirty or known ~= size then
+        if dirty == RECHECK then
+            for slot = 1, size do
+                -- The native item-info table is local to Blizzard: reread
+                -- occupied slots, including same-ID stack/instance changes.
+                local key = base + slot
+                if SlotCache.info[key] == false then
+                    local occupied = C_Container.HasContainerItem(bag, slot)
+                    if Public(occupied) and occupied == false then
+                        SlotCache.dirtySlots[key] = nil
+                    else
+                        Read(bag, slot)
+                    end
+                else
+                    Read(bag, slot)
+                end
+            end
+        else
+            for slot = 1, size do Read(bag, slot) end
+        end
         for slot = size + 1, known or 0 do Forget(base + slot) end
         SlotCache.sizes[bag], SlotCache.dirtyBags[bag] = size, nil
     elseif next(SlotCache.dirtySlots) then
@@ -202,9 +230,8 @@ function SlotCache.Stop()
     SlotCache.Reset()
 end
 
--- A fight with every bag window closed pauses the cache (CombatIdle.lua).
--- Nothing is known about the slots after that: Resume marks every container
--- for a full read, and the first read while paused resumes by itself.
+-- Closed windows have no cache listeners. Each previously observed bag
+-- is verified when a visible view or an explicit reader next needs it.
 function SlotCache.Pause()
     if not SlotCache.listening or SlotCache.paused then return end
     SlotCache.events:UnregisterAllEvents()
@@ -215,5 +242,5 @@ function SlotCache.Resume()
     if not SlotCache.paused then return end
     SlotCache.paused = false
     Listen()
-    SlotCache.MarkAll()
+    for bag in pairs(SlotCache.sizes) do SlotCache.dirtyBags[bag] = RECHECK end
 end

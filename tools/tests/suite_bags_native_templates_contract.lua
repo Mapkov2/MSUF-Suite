@@ -97,6 +97,30 @@ if flavor == "Forever" then
         if frame:GetAttribute("clickbutton") == nativeKeyring then delegate = frame end
     end
     assert(delegate and delegate:IsShown() and delegate:GetParent() == W.UIParent, "secure keyring delegate is missing")
+    local function AssertKeyringEvents(start, finish)
+        assert(not not delegate:IsEventRegistered("PLAYER_REGEN_DISABLED") == start
+            and not not delegate:IsEventRegistered("PLAYER_REGEN_ENABLED") == finish,
+            "secure keyring combat listeners outlived their owner or missed deferred cleanup")
+    end
+    for _, transition in ipairs({ "OnLeave", "OnHide" }) do
+        local source = transition == "OnHide" and keyring or delegate
+        W.RunScript(source, transition)
+        AssertKeyringEvents(false, false)
+        assert(not delegate.owner and delegate:GetNumPoints() == 0 and not GameTooltip:IsShown())
+        W.RunScript(keyring, "OnEnter")
+        AssertKeyringEvents(true, false)
+        -- The secure state driver hides the protected delegate. Simulate a
+        -- client delivering leave/hide after lockdown has already started.
+        W.combat = true
+        W.Native(delegate.Hide, delegate)
+        W.RunScript(source, transition)
+        AssertKeyringEvents(false, true)
+        assert(delegate.owner == keyring and delegate:GetNumPoints() > 0 and not GameTooltip:IsShown())
+        W.LeaveCombat()
+        AssertKeyringEvents(false, false)
+        assert(not delegate.owner and delegate:GetNumPoints() == 0)
+        W.RunScript(keyring, "OnEnter")
+    end
     assert(GameTooltip.lines[1] == KEYRING, "keyring tooltip must use the client's label")
     W.SecureClick(delegate)
     assert(nativeClicks == 1 and separate:IsVisible(), "keyring click did not open the native window")
@@ -160,6 +184,7 @@ if flavor == "Forever" then
     assert(delegate:IsShown(), "keyring delegate did not reopen")
     W.EnterCombat()
     assert(not delegate:IsShown() and delegate:GetNumPoints() == 0, "keyring delegate survived the combat transition")
+    AssertKeyringEvents(false, false)
     assert(mouseButton:IsVisible() and #mouseButton.clicks == 0 and #mouseButton.drag == 0,
         "owned keyring slots must stay visible but take no clicks in combat")
     W.LeaveCombat()

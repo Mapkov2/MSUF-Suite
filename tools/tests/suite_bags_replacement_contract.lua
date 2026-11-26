@@ -126,6 +126,16 @@ if arg[2] == "Forever" then
     F.S.Set("bags", "inventoryView", F.NS.BagsView.BLIZZARD_GRID)
     F.CloseBags()
     F.Native(function() F.Reagent:Hide() end)
+    F.EnterCombat()
+    primary = "K"
+    F.Fire("UPDATE_BINDINGS")
+    F.Fire("BAG_UPDATE", 5)
+    assert(overrides.I and not overrides.K, "protected binding changed while the bags slept")
+    F.LeaveCombat()
+    F.Settle()
+    assert(overrides.K == "OPENALLBAGS" and not overrides.I, "waking missed a closed-window binding change")
+    primary = "I"
+    F.Fire("UPDATE_BINDINGS")
     -- Both native bindings open the backpack. Only ToggleAllBags opens the reagent bag too.
     F.OpenBags()
     if overrides.I == "OPENALLBAGS" then F.Native(OpenBag, Enum.BagIndex.ReagentBag) end

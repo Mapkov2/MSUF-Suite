@@ -72,7 +72,7 @@ function M:StyleSlot(button)
     end
     if activating then
         record.slotOuter:Show()
-        record.slotInner:Show()
+        record.edgeWidth = nil -- disabling hides every stroke
     end
     -- Our own textures: their layer may change in combat, as items are used.
     -- HasItem is 1 or nil (ContainerFrameItemButtonMixin:SetHasItem), never secret.
@@ -92,7 +92,7 @@ function M:StyleSlot(button)
 end
 
 local function StyleVisibleSlots(self, frame)
-    if not frame:IsShown() then return end
+    if not frame:IsVisible() then return end
     local synced
     for _, button in frame:EnumerateValidItems() do
         local bag = button:GetBagID()
@@ -307,7 +307,7 @@ local function ItemInfoReceived(module, _, itemID, success)
     module.pending[itemID] = nil
     -- A failure nothing waits for is not remembered.
     Loads.Received(module.loads, itemID, loaded or not waiting)
-    if waiting and module.frame and module.frame:IsShown() then
+    if waiting and module.frame and module.frame:IsVisible() then
         for i = 1, #waiting do
             local button = waiting[i]
             local bag, slot = button:GetBagID(), button:GetID()
@@ -321,23 +321,28 @@ local function ItemInfoReceived(module, _, itemID, success)
         module.pendingPool[#module.pendingPool + 1] = waiting
     end
     if bankWaiting then module:OnBankItemInfoReceived(itemID, success, bankWaiting) end
-    if not next(module.pending) and not next(module.bankPending) then
-        module.context:RemoveEvent("GET_ITEM_INFO_RECEIVED")
-    end
+    module:ResumeItemInfo()
 end
 M.ItemInfoReceived = ItemInfoReceived
 M.StyleItemLevel = Style
 
--- A fight with every bag window closed (CombatIdle.lua): no badge can wait
--- on screen. Opening a window repaints the visible slots and retries the
--- loads (CombinedShown, the bank's own refresh).
+-- The bag and native bank share one listener but own separate load requests.
+-- The client may finish a request while its window has no listener.
 function M:PauseItemInfo()
-    self.context:RemoveEvent("GET_ITEM_INFO_RECEIVED")
+    if self.loads.count > 0 and not self.frame:IsVisible() then Loads.Reset(self.loads) end
+    if (self.bankLoads.count > 0 or next(self.bankPending)) and not BankFrame.BankPanel:IsVisible() then
+        for itemID in pairs(self.bankPending) do self.bankPending[itemID] = nil end
+        Loads.Reset(self.bankLoads)
+    end
+    self:ResumeItemInfo()
 end
 
 function M:ResumeItemInfo()
-    if next(self.pending) or next(self.bankPending) then
+    if next(self.pending) and self.frame:IsVisible()
+        or next(self.bankPending) and BankFrame.BankPanel:IsVisible() then
         self.context:Event("GET_ITEM_INFO_RECEIVED", ItemInfoReceived, IN_COMBAT)
+    else
+        self.context:RemoveEvent("GET_ITEM_INFO_RECEIVED")
     end
 end
 M.PaintItemLevelQuality = PaintQuality
@@ -365,7 +370,7 @@ end
 -- shared cache (SlotCache.lua): an unchanged bag costs no client call.
 function M:UpdateVisible()
     local frame = self.frame
-    if not self.active or not frame or not frame:IsShown() then return end
+    if not self.active or not frame or not frame:IsVisible() then return end
     if NS.IsCombatLocked() then self.needsItemRefresh = true end
     if not self.config.showItemLevel then
         HideItemLevels(self)
@@ -397,11 +402,7 @@ function M:UpdateVisible()
         end
     end
     Loads.Prune(self.loads, pending)
-    if next(pending) or next(self.bankPending) then
-        self.context:Event("GET_ITEM_INFO_RECEIVED", ItemInfoReceived, IN_COMBAT)
-    else
-        self.context:RemoveEvent("GET_ITEM_INFO_RECEIVED")
-    end
+    self:ResumeItemInfo()
 end
 
 local function RefreshMovers()
@@ -422,6 +423,11 @@ local function CombinedShown()
     RefreshMovers()
 end
 
+local function CombinedHidden()
+    if M.active and (next(M.pending) or M.loads.count > 0) then M:PauseItemInfo() end
+    RefreshMovers()
+end
+
 local function ReagentItemsUpdated()
     if M.active then StyleVisibleSlots(M, ContainerFrame6) end
 end
@@ -439,11 +445,12 @@ local function ReagentShown()
     RefreshMovers()
 end
 
-local function StandaloneSlotsAssigned(frame)
+-- A pooled item button can be reassigned to a different bag or slot.
+local function NativeSlotsAssigned(frame)
     if not M.active then return end
     for _, button in frame:EnumerateValidItems() do
         local record = M.overlays[button]
-        if record then record.slotStyle, record.strokeStyle = nil, nil end
+        if record then record.slotStyle, record.strokeKey = nil, nil end
     end
 end
 
@@ -466,7 +473,7 @@ local function InstallStandaloneHooks(self)
     for _, frame in ipairs(frames) do
         if frame ~= ContainerFrame1 and frame ~= ContainerFrame6 then
             standalone[#standalone + 1] = frame
-            hooksecurefunc(frame, "UpdateItemSlots", StandaloneSlotsAssigned)
+            hooksecurefunc(frame, "UpdateItemSlots", NativeSlotsAssigned)
             hooksecurefunc(frame, "UpdateItems", StandaloneItemsUpdated)
             frame:HookScript("OnShow", StandaloneShown)
         end
@@ -477,9 +484,14 @@ end
 local function InstallHooks(self)
     if self.hooked then return end
     local frame = self.frame
+    hooksecurefunc(frame, "UpdateItemSlots", NativeSlotsAssigned)
     hooksecurefunc(frame, "UpdateItems", CombinedItemsUpdated)
+    if frame.UpdateSearchBox then hooksecurefunc(frame, "UpdateSearchBox", Private.InventoryView.NativeSearchMoved) end
+    if ContainerFrame1 and ContainerFrame1.UpdateSearchBox then
+        hooksecurefunc(ContainerFrame1, "UpdateSearchBox", Private.InventoryView.NativeSearchMoved)
+    end
     frame:HookScript("OnShow", CombinedShown)
-    frame:HookScript("OnHide", RefreshMovers)
+    frame:HookScript("OnHide", CombinedHidden)
     hooksecurefunc(ContainerFrame6, "UpdateItems", ReagentItemsUpdated)
     ContainerFrame6:HookScript("OnShow", ReagentShown)
     ContainerFrame6:HookScript("OnHide", ReagentHidden)
@@ -563,18 +575,27 @@ local function RunSubmodules(slot)
     end
 end
 
+function M:WatchBackpackBindings(active)
+    if not NS.Client.isForever then return end
+    if active then
+        local equipped = Private.EquippedBags
+        self.context:Event("UPDATE_BINDINGS", equipped.RefreshBackpackBindings, IN_COMBAT)
+        self.context:Event("BAG_UPDATE", equipped.BackpackBagsChanged, IN_COMBAT)
+        self.context:Event("CVAR_UPDATE", equipped.BackpackStyleChanged, IN_COMBAT)
+    else
+        self.context:RemoveEvent("UPDATE_BINDINGS")
+        self.context:RemoveEvent("BAG_UPDATE")
+        self.context:RemoveEvent("CVAR_UPDATE")
+    end
+end
+
 function M:Enable()
     self.frame = ContainerFrameCombinedBags
     Slots.Start()
     InstallHooks(self)
     self.context:Event("USE_COMBINED_BAGS_CHANGED", CombinedModeChanged, IN_COMBAT)
     self.context:Event("PLAYER_REGEN_ENABLED", CombatEnded, IN_COMBAT)
-    if NS.Client.isForever then
-        local equipped = Private.EquippedBags
-        self.context:Event("UPDATE_BINDINGS", equipped.RefreshBackpackBindings, IN_COMBAT)
-        self.context:Event("BAG_UPDATE", equipped.BackpackBagsChanged, IN_COMBAT)
-        self.context:Event("CVAR_UPDATE", equipped.BackpackStyleChanged, IN_COMBAT)
-    end
+    self:WatchBackpackBindings(true)
     self:ApplyBankLevels()
     self:Refresh()
 end
@@ -663,6 +684,7 @@ function M:Refresh()
         self.labelStyle = (self.labelStyle or 0) + 1
     end
     if slotChanged then
+        self.slotPaintRevision = (self.slotPaintRevision or 0) + 1
         self.slotStyle = (self.slotStyle or 0) + 1
     end
     local deferredItems = self.needsItemRefresh

@@ -116,6 +116,94 @@ local function AssertClean(W, label)
         .. table.concat(W.errors, "; ") .. table.concat(W.taint, "; ") .. table.concat(W.combatLayout, "; "))
 end
 
+-- The real closed city bag profile records its gold history and keeps the
+-- normal Recent section, without observed pickup totals or transfer tracking.
+do
+    local W = World(true)
+    local view, gear, marker = W.P.InventoryView, W.P.PlayerGear, W.P.UpgradeMarker
+    local function Watches(frame, event)
+        for _, listener in ipairs(W.events[event] or {}) do if listener == frame then return true end end
+        return false
+    end
+    assert(W.P.SlotCache.paused and not Watches(W.P.SlotCache.events, "UNIT_QUEST_LOG_CHANGED")
+        and not Watches(W.P.SlotCache.events, "BAG_UPDATE"), "unused closed cache still observes physical state")
+    assert(not Watches(view.events, "TRADE_SHOW") and not Watches(view.events, "GET_ITEM_INFO_RECEIVED"),
+        "closed inventory view still receives presentation events")
+    assert(not Watches(gear.events, "SPELLS_CHANGED") and not Watches(marker.events, "PLAYER_EQUIPMENT_CHANGED"),
+        "closed equipment display still receives equipment events")
+    local reads = 0
+    local containerInfo = C_Container.GetContainerItemInfo
+    C_Container.GetContainerItemInfo = function(...)
+        if not W.secure then reads = reads + 1 end
+        return containerInfo(...)
+    end
+    W.OpenBags()
+    W.Settle()
+    local occupied = forever and 29 or 28
+    assert(reads == occupied, "warm reopen must only reread occupied slots; actual " .. reads)
+    reads = 0
+    assert(Watches(view.events, "TRADE_SHOW") and Watches(gear.events, "SPELLS_CHANGED"),
+        "opening did not restore live transaction and equipment events")
+    W.CloseBags()
+    W.Put(0, 1, 950, 1)
+    W.BagChanged(0)
+    W.Put(0, 2, 102, 9, { bound = true, locked = true, quest = true })
+    assert(reads == 0, "a hidden slot change eagerly scanned inventory")
+    W.OpenBags()
+    W.Settle()
+    assert(Shows(W, 950) and reads == occupied, "an unobserved change used stale slots or reread empties: " .. reads)
+    local updated, quest = W.P.SlotCache.Get(0, 2)
+    assert(updated.itemID == 102 and updated.stackCount == 9 and updated.isBound and updated.isLocked and quest,
+        "same-ID changes to stack size, binding, lock or quest state were missed")
+
+    W.CloseBags()
+    -- Parent visibility can change while the child stays locally shown.
+    -- Frame scripts propagate in the client; the fixture exposes those edges explicitly.
+    W.OpenBags()
+    view.Request()
+    W.Native(function()
+        UIParent:Hide()
+        W.RunScript(W.CF, "OnHide")
+    end)
+    local revision = view.index.revision
+    W.Settle()
+    assert(W.CF:IsShown() and not W.CF:IsVisible() and W.P.SlotCache.paused
+        and view.index.revision == revision and not Watches(view.events, "TRADE_SHOW"),
+        "a scheduled refresh ran behind a hidden parent")
+    W.Native(function()
+        UIParent:Show()
+        W.RunScript(W.CF, "OnShow")
+    end)
+    W.Settle()
+    assert(view.index.revision > revision and Watches(view.events, "TRADE_SHOW"),
+        "restoring the parent missed the first inventory pass")
+    -- Blizzard may clear its native search box between two window edges.
+    view.scroll = 3
+    BagItemSearchBox:SetText("Old search")
+    W.CloseBags()
+    BagItemSearchBox:SetText("")
+    W.Fire("INVENTORY_SEARCH_UPDATE")
+    assert(view.scroll == 3, "a hidden search event changed the inventory")
+    W.OpenBags()
+    assert(view.scroll == 0, "a changed hidden search retained its old scroll offset")
+    W.CloseBags()
+    W.S.Set("bags", "bankView", W.NS.BagsBankView.CATEGORIES)
+    W.OpenBank()
+    W.Settle()
+    assert(Watches(gear.events, "SPELLS_CHANGED") and not Watches(view.events, "TRADE_SHOW"),
+        "bank-only display failed to isolate equipment from the closed backpack")
+    W.CloseBank()
+    W.Settle()
+    assert(not Watches(gear.events, "SPELLS_CHANGED"), "bank closure kept the equipment display active")
+    W.S.Set("bags", "bankView", W.NS.BagsBankView.TABS)
+    W.OpenBank()
+    W.Settle()
+    assert(W.P.SlotCache.paused and not Watches(marker.events, "PLAYER_EQUIPMENT_CHANGED"),
+        "native bank tabs armed the Suite slot cache or inventory upgrade display")
+    W.CloseBank()
+
+end
+
 for _, unprotected in ipairs({ true, false }) do
     local label = (unprotected and "stock" or "protected") .. " bags, " .. client
     local W = World(unprotected)
@@ -147,13 +235,12 @@ for _, unprotected in ipairs({ true, false }) do
     local same, change = SameRegistrations(registered, Registrations(W))
     assert(same, label .. ": waking did not restore the event registrations: " .. tostring(change))
     assert(TodayEarned(W) == earned + 4321, label .. ": the gold history lost the fight's income")
-    local gold = W.M.windows[W.CF].goldLabel:GetText()
-    assert(gold ~= goldBefore and gold:find(S_MONEY(4321), 1, true), label .. ": session gold not repainted: "
-        .. tostring(goldBefore) .. " -> " .. tostring(gold))
-    assert(W.P.PlayerGear.revision > gearRevision and W.P.UpgradeMarker.dirty,
-        label .. ": equipment answers from before the fight were kept")
+    assert(W.M.windows[W.CF].goldLabel:GetText() == goldBefore, label .. ": invisible session footer was painted")
     W.OpenBags()
     W.Settle()
+    local gold = W.M.windows[W.CF].goldLabel:GetText()
+    assert(gold ~= goldBefore and gold:find(S_MONEY(4321), 1, true), label .. ": visible session footer missed the combat gain")
+    assert(W.P.PlayerGear.revision > gearRevision, label .. ": stale gear eligibility after reopening")
     assert(Shows(W, 950), label .. ": loot from the fight is missing")
     assert(not W.M.pending[960], label .. ": a badge still waits for data that arrived in the fight")
     if forever then assert(Shows(W, 901), label .. ": a key from the fight is missing") end
@@ -185,7 +272,7 @@ for _, unprotected in ipairs({ true, false }) do
     local Slots = W.P.SlotCache
     Slots.Sync(1)
     local info = Slots.Get(1, 14)
-    assert(not Slots.paused and info and info.itemID == 103, label .. ": a read while paused returned stale slots")
+    assert(Slots.paused and info and info.itemID == 103, label .. ": isolated read returned stale slots or armed the closed cache")
 
     -- An open bank keeps the Bags awake.
     W.LeaveCombat()

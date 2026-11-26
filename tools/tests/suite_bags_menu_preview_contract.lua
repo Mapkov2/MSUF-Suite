@@ -43,8 +43,17 @@ assert(loads==1 and paints==1 and preview.nativeBackpack and preview.nativeBackp
  "visible regen never paints a cold Blizzard grid preview")
 assert(not preview.categories:IsShown(), "cold Blizzard grid shows Suite categories")
 assert(not preview.caption[2].previewMuted, "Blizzard-grid preview dims the working maximize control")
+assert(preview.search:IsShown(), "Blizzard-grid search is hidden by default")
+W.config.hideSearchBar = true;ui.refreshPreview()
+assert(not preview.search:IsShown(), "Blizzard-grid preview ignores Hide Search Bar")
 W.config.inventoryView = W.NS.BagsView.CATEGORIES
 ui.refreshPreview()
+assert(not preview.search:IsShown(), "Suite bags preview ignores Hide Search Bar")
+W.config.hideSearchBar = false;ui.refreshPreview()
+assert(preview.search:IsShown(), "bags preview did not restore search")
+preview.search:GetScript("OnClick")()
+assert(focused == "suite_bags_window", "search preview does not open its window settings")
+preview.window:Hide();preview.window:Show()
 assert(next(preview.slots), "switching from the cold Blizzard grid never paints Suite slots")
 assert(not W.M.active and not W.CF:IsShown(),"preview activated bag replacement")
 local before=paints;ui.refreshPreview();assert(paints==before,"unchanged preview repainted")
@@ -211,12 +220,14 @@ W.config.showSessionGold=false;ui.refreshPreview();GuideIs(nil)
 assert(not preview.sessionJump:IsShown(),"hidden gold period retains its hit target")
 W.config.showSessionGold=true;ui.refreshPreview()
 preview.equipped:GetScript("OnClick")();GuideIs(preview.equipped,2)
+W.config.hideSearchBar=true
 ui.selected="bank";ui.refreshPreview();GuideIs(nil)
 for _,view in ipairs({1,2,3,4}) do
  ui.selected="bank";W.config.bankView=view;ui.refreshPreview();CurrentItems()
  assert(not preview.equipped:IsShown() and not preview.goldJump:IsShown() and not preview.chrome.goldLabel:IsShown(),
  "bank preview retains bag-only targets")
  assert(not preview.sessionJump:IsShown(),"bank preview retains the gold period target")
+ assert(preview.search:IsShown(),"hiding bag search also hid the bank search preview")
  for _,button in ipairs(preview.viewButtons) do assert(not button:IsShown(),"bank preview retains bag tabs") end
  if view==1 then
   local native=assert(preview.nativeBank,"Bank tabs still previews the combined bank")

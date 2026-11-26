@@ -91,4 +91,26 @@ do
     item.loaded=true;W.P.UpgradeMarker.Read(item)
     assert(item.beatsEquipped,"loaded metadata retains cached unknown eligibility")
 end
+do
+    local W = World(5)
+    W.S.Set("bags", "showUpgradeMarker", true)
+    W.Settle()
+    local function Weapon()
+        for _, item in ipairs(W.P.InventoryView.index.items) do if item.itemID == 105 then return item end end
+    end
+    assert(Weapon().beatsEquipped, "fixture must start with an upgrade")
+    W.CloseBags()
+    W.Define(501, {name="Newly equipped", class=2, equipLoc="INVTYPE_2HWEAPON", level=150})
+    W.worn[16] = "item:501"
+    W.trained = false
+    local queries = W.useQueries
+    W.Fire("PLAYER_EQUIPMENT_CHANGED", 16)
+    W.Fire("SPELLS_CHANGED")
+    W.Settle()
+    assert(queries == W.useQueries, "closed item display queried player eligibility")
+    W.OpenBags()
+    W.Settle()
+    local ids = IDs(W)
+    assert(not Weapon().beatsEquipped and not ids[105], "first visible inventory used the previous weapon or proficiency")
+end
 print("Character armor/weapon eligibility, alias projection and cache passed: "..client)

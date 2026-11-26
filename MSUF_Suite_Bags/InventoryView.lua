@@ -15,7 +15,7 @@ InventoryView.nativeCountFonts = setmetatable({}, { __mode = "k" })
 InventoryView.visibleButtons, InventoryView.slotState = {}, setmetatable({}, { __mode = "k" })
 P.InventoryView = InventoryView
 local max, min = math.max, math.min
-local Request, Render, Flush
+local Request, Render, Flush, RegisterEvents
 -- Windows that take items one physical stack at a time: merged stacks split
 -- up while one is open. Blizzard_GuildBankUI loads on demand.
 local Transactions = { "MailFrame", "TradeFrame", "AuctionHouseFrame", "AuctionFrame", "BankFrame", "MerchantFrame",
@@ -55,13 +55,51 @@ end
 
 InventoryView.MoveScroll = MoveScroll
 
+-- Blizzard reuses this box for the combined bag and the individual backpack.
+-- Mainline/ContainerFrame.lua: Retail ab5cb850, Forever d9c22e32.
+local function UpdateNativeSearch(chromeShown)
+    local edit, frame = BagItemSearchBox, M.frame
+    local parent = M.active and M.config.hideSearchBar and frame and edit
+        and not NS.Safety.IsForbidden(edit) and edit:GetParent()
+    local hidden = S.Public(parent) and parent ~= nil and parent == frame
+    local locked = NS.IsCombatLocked()
+    if hidden and not InventoryView.nativeSearchHidden and not locked then
+        local focused, query = edit:HasFocus(), edit:GetText()
+        if S.Public(focused) and focused then edit:ClearFocus() end
+        if S.Public(query) and type(query) == "string" and query ~= "" then edit:SetText("") end
+        M.context:Property(edit, "IsEnabled", "SetEnabled", false)
+        InventoryView.nativeSearchHidden, InventoryView.nativeSearchIcon = true, frame.SearchBoxIcon
+        if InventoryView.nativeSearchIcon then M.context:Alpha(InventoryView.nativeSearchIcon, 0) end
+    elseif not hidden and InventoryView.nativeSearchHidden and (not locked or P.BagLayout.Frame(edit)) then
+        P.BagLayout.RestoreProperty(M.context, edit, "SetEnabled")
+        InventoryView.nativeSearchHidden = nil
+    end
+    if not hidden and InventoryView.nativeSearchIcon and not locked then
+        P.BagLayout.RestoreProperty(M.context, InventoryView.nativeSearchIcon, "SetAlpha")
+        InventoryView.nativeSearchIcon = nil
+    end
+    if M.active and locked and (hidden ~= (InventoryView.nativeSearchHidden == true)
+        or not hidden and InventoryView.nativeSearchIcon) then
+        S.Queue("bags")
+    end
+    P.BagLayout.HideControl(M.context, edit, chromeShown or hidden and InventoryView.nativeSearchHidden)
+end
+
+function InventoryView.NativeSearchMoved()
+    if M.active and M.config.hideSearchBar then UpdateNativeSearch(false) end
+end
+
 -- The Suite footer line of Finance.lua follows the chrome.
 -- Finance.lua reads its currencies when its line changes visibility only.
-local function ShowChrome(shown)
-    if InventoryView.chrome then InventoryView.chrome:SetShown(shown) end
-    P.BagLayout.HideControl(M.context, BagItemSearchBox, shown)
+local function ShowChrome(shown, closing)
+    if InventoryView.chromeShown ~= shown and InventoryView.chrome then InventoryView.chrome:SetShown(shown) end
+    if M.config.hideSearchBar or InventoryView.nativeSearchHidden then
+        UpdateNativeSearch(shown)
+    else
+        P.BagLayout.HideControl(M.context, BagItemSearchBox, shown)
+    end
     P.BagLayout.HideControl(M.context, BagItemAutoSortButton, shown)
-    M:UpdatePresentation()
+    M:UpdatePresentation(closing)
     if InventoryView.chromeShown == shown then return end
     InventoryView.chromeShown = shown
     P.BagFinance.Refresh()
@@ -110,7 +148,7 @@ end
 TooltipDataProcessor.AddTooltipPostCall(Enum.TooltipDataType.Item, StackTooltip)
 
 Render = function(delta)
-    if not InventoryView.active or not InventoryView.frame:IsShown() or not P.BagLayout.CanRender() or InventoryView.layout ~= "suite" then return end
+    if not InventoryView.active or not InventoryView.frame:IsVisible() or not P.BagLayout.CanRender() or InventoryView.layout ~= "suite" then return end
     if delta then InventoryView.scroll = max(0, min(InventoryView.maxScroll or 0, InventoryView.scroll + delta)) end
     if SplitOwnerShown() then
         InventoryView.splitPending = true
@@ -144,7 +182,7 @@ end
 
 -- event is the client event that asked for this pass, if any.
 Flush = function(event)
-    if not InventoryView.active or not M.active or not InventoryView.frame:IsShown() then return end
+    if not InventoryView.active or not M.active or not InventoryView.frame:IsVisible() then return end
     local inCombat = NS.InCombat(event)
     local canLayout = not inCombat or P.BagLayout.CanRender(event)
     if NS.IsCombatLocked() and not canLayout then
@@ -157,7 +195,10 @@ Flush = function(event)
         return
     end
     local state = State()
-    if not state then return end
+    if not state then
+        if InventoryView.layout == "native" then M:UpdatePresentation() end
+        return
+    end
     if P.ReagentInventory and (M.config.combineReagentBag or ONE_BAG[M.config.inventoryView]
         or P.ReagentInventory.active) then
         P.ReagentInventory.Prepare()
@@ -171,6 +212,7 @@ Flush = function(event)
     end
     if SplitOwnerShown() then
         InventoryView.splitPending = true
+        if InventoryView.layout == "native" then M:UpdatePresentation() end
         return
     end
     if M.config.showFreeSlots then FreeSlots.Read(InventoryView.freeSlots, InventoryView.index, true) end
@@ -192,7 +234,7 @@ end
 -- The tail call keeps the pass one stack level shallower (bag refresh budget).
 local function DeferredFlush() return Flush() end
 Request = function()
-    if not InventoryView.active or not InventoryView.frame:IsShown() then return end
+    if not InventoryView.active or not InventoryView.frame:IsVisible() then return end
     InventoryView.flushJob = InventoryView.flushJob or M.context:Coalesce(0, DeferredFlush)
     InventoryView.flushJob:Request()
 end
@@ -200,7 +242,7 @@ InventoryView.Request = Request
 
 local RestoreLayout
 local function IndexedItem(bag, slot)
-    if not InventoryView.frame:IsShown() or not S.Finite(bag) or not S.Finite(slot) then return nil end
+    if not InventoryView.frame:IsVisible() or not S.Finite(bag) or not S.Finite(slot) then return nil end
     local index = InventoryView.index
     local button = index.buttons[bag * P.SlotCache.KEY + slot]
     return index.records[button]
@@ -278,6 +320,12 @@ end
 
 -- Blizzard re-acquires and re-anchors its item buttons; slot order is read again.
 local function NativeLayoutChanged()
+    if not M.active then return end
+    if not InventoryView.active or not InventoryView.frame:IsVisible() then
+        InventoryView.hiddenLayoutDirty = true
+        return
+    end
+    InventoryView.hiddenLayoutDirty = nil
     M.slotStyle = (M.slotStyle or 0) + 1
     InventoryView.positionsDirty = true
     -- Blizzard also moves hidden slots, which the next Suite pass may skip.
@@ -287,6 +335,18 @@ local function NativeLayoutChanged()
 end
 
 local function WindowShown()
+    if not InventoryView.active or not InventoryView.frame:IsVisible() then return end
+    RegisterEvents()
+    P.InventoryDetails.Invalidate()
+    if InventoryView.scroll > 0 and S.PublicText(BagItemSearchBox:GetText()) ~= InventoryView.closedSearch then
+        InventoryView.scroll = 0
+    end
+    InventoryView.closedSearch = nil
+    if InventoryView.hiddenLayoutDirty then NativeLayoutChanged() end
+    -- Blizzard has assigned the physical slots. Keep the panel's shell and
+    -- title while the coalesced pass lays them out.
+    local opening = not NS.InCombat() and not SplitOwnerShown() and S.ModuleState("bags") and "suite" or "native"
+    M:UpdatePresentation(false, opening)
     InventoryView.animate, InventoryView.measureConfig = true, nil
     Index.Invalidate(InventoryView.index)
     Index.Retry(InventoryView.index)
@@ -309,11 +369,34 @@ local function WindowHidden()
     P.BagMotion.StopNextHint()
     P.BagMotion.StopAll()
     P.EquippedBags.Close()
-    ShowChrome(false)
+    ShowChrome(false, true)
+    InventoryView.closedSearch = InventoryView.scroll > 0 and S.PublicText(BagItemSearchBox:GetText()) or nil
+    RegisterEvents()
 end
 
-local function RegisterEvents()
+-- Only opt-in pickup totals need an observer without the inventory window.
+local function ClosedEvent(_, event, first, second)
+    Recent.Event(M.config, event, first, second)
+end
+
+RegisterEvents = function()
     local events = InventoryView.events
+    local recent = Recent and Recent.Wanted(M.config) or false
+    InventoryView.recentCountsActive = recent
+    if not InventoryView.frame:IsVisible() then
+        events:UnregisterAllEvents()
+        events:SetScript("OnEvent", ClosedEvent)
+        if NS.InCombat() then return end
+        if recent then
+            events:RegisterEvent("BAG_UPDATE_DELAYED")
+            events:RegisterEvent("PLAYER_ENTERING_WORLD")
+            for _, event in ipairs(RECENT_EVENTS) do
+                if NS.Client.SupportsEvent(event) then events:RegisterEvent(event) end
+            end
+        end
+        return
+    end
+    events:SetScript("OnEvent", OnEvent)
     for i = 1, #EVENTS do
         local event = EVENTS[i]
         if (event ~= "BAG_UPDATE" or NS.Client.isForever) and NS.Client.SupportsEvent(event) then
@@ -335,39 +418,26 @@ local function RegisterEvents()
         events:UnregisterEvent(PET_EVENT)
     end
     if Recent then
-        local wanted = Recent.Wanted(M.config)
-        InventoryView.recentCountsActive = wanted
         for _, event in ipairs(RECENT_EVENTS) do
-            if wanted and NS.Client.SupportsEvent(event) then events:RegisterEvent(event) else events:UnregisterEvent(event) end
+            if recent and NS.Client.SupportsEvent(event) then events:RegisterEvent(event) else events:UnregisterEvent(event) end
         end
     end
 end
 
--- In a fight with every bag window closed (CombatIdle.lua) only the combat
--- edges and a scale change reach the view. Resume invalidates what the
--- missed events would have; WindowShown reads every slot and retries the
--- item data that was still loading.
-local PAUSE_KEEPS = { PLAYER_REGEN_DISABLED = true, PLAYER_REGEN_ENABLED = true, UI_SCALE_CHANGED = true,
-    DISPLAY_SIZE_CHANGED = true }
-
+-- CombatIdle pauses the optional closed-window observer for a fight.
+-- A protected handback registered by Release owns its own combat-end event.
 function InventoryView.Pause()
-    if not InventoryView.active then return end
-    local events = InventoryView.events
-    for i = 1, #EVENTS do
-        local event = EVENTS[i]
-        if not PAUSE_KEEPS[event] and NS.Client.SupportsEvent(event) then events:UnregisterEvent(event) end
-    end
-    for i = 1, #ITEM_EVENTS do events:UnregisterEvent(ITEM_EVENTS[i]) end
-    for _, event in ipairs(RECENT_EVENTS) do events:UnregisterEvent(event) end
-    events:UnregisterEvent(PET_EVENT)
+    if InventoryView.active then InventoryView.events:UnregisterAllEvents() end
 end
 
 function InventoryView.Resume()
     if not InventoryView.active then return end
     RegisterEvents()
-    if Recent then Recent.Event(M.config, "PLAYER_REGEN_ENABLED") end
-    Index.InvalidateBags(InventoryView.index)
-    P.InventoryDetails.Invalidate()
+    if InventoryView.recentCountsActive then Recent.Event(M.config, "PLAYER_REGEN_ENABLED") end
+    if InventoryView.frame:IsVisible() then
+        Index.InvalidateBags(InventoryView.index)
+        P.InventoryDetails.Invalidate()
+    end
 end
 
 function InventoryView.Refresh()
@@ -375,6 +445,9 @@ function InventoryView.Refresh()
     P.BagWindowMotion.Cancel()
     P.BagResize.Cancel()
     InventoryView.frame = M.frame
+    if M.config.hideSearchBar or InventoryView.nativeSearchHidden or InventoryView.nativeSearchIcon then
+        UpdateNativeSearch(InventoryView.chromeShown)
+    end
     -- Blizzard grid: Blizzard's own layout, with the Suite window style and
     -- item levels of Bags.lua.
     if M.config.inventoryView == VIEW.BLIZZARD_GRID then
@@ -387,6 +460,7 @@ function InventoryView.Refresh()
     InventoryView.context.physicalSlots = NS.BagsPhysicalOrder(M.config)
     if InventoryView.nativeMouseWheel == nil then InventoryView.nativeMouseWheel = InventoryView.frame:IsMouseWheelEnabled() end
     if not InventoryView.controlsReady then P.InventoryControls.Create() end
+    P.InventorySearch.RefreshBagVisibility(InventoryView, M.config.hideSearchBar)
     Grid.RefreshFonts()
     InventoryView.frame:EnableMouseWheel(true)
     if not InventoryView.events then
@@ -467,6 +541,7 @@ function InventoryView.Release()
     end
     if NS.IsCombatLocked() then
         InventoryView.restorePending = true
+        InventoryView.events:SetScript("OnEvent", OnEvent)
         InventoryView.events:RegisterEvent("PLAYER_REGEN_ENABLED")
         return
     end
@@ -475,6 +550,7 @@ end
 
 function InventoryView.Disable()
     InventoryView.Release()
+    InventoryView.nativeSearchHidden, InventoryView.nativeSearchIcon = nil, nil
     if Offline then Offline.Reset() end
     P.QueryEditor.Close()
 end
