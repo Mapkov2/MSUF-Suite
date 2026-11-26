@@ -1057,10 +1057,23 @@ do
         { questID = 45, title = secret("string") },
         { questID = secret("number") },
     }
+    local unfinishedReads, hiddenReads, ambiguousReads = 0, 0, 0
+    quests[#quests + 1] = { questID = 46, title = "Hidden complete", isHidden = true }
+    for id = 1000, 1019 do quests[#quests + 1] = { questID = id, title = "Still working" } end
     C_QuestLog = {
         GetNumQuestLogEntries = function() return #quests end,
-        GetInfo = function(index) return quests[index] end,
-        IsComplete = function(id) return questReady and id ~= 44 end,
+        GetQuestIDForLogIndex = function(index)
+            local quest = quests[index]
+            if not quest.isHeader then return quest.questID end
+        end,
+        GetInfo = function(index)
+            local id = quests[index].questID
+            if issecretvalue(id) then ambiguousReads = ambiguousReads + 1
+            elseif id == 46 then hiddenReads = hiddenReads + 1
+            elseif id == 44 or id >= 1000 then unfinishedReads = unfinishedReads + 1 end
+            return quests[index]
+        end,
+        IsComplete = function(id) return questReady and id ~= 44 and id < 1000 end,
     }
     HaveQuestRewardData = function(id) return id ~= 43 or loaded end
     GetQuestLogRewardXP = function(id)
@@ -1090,6 +1103,8 @@ do
     bar:Refresh()
     assert(liveEvents.UNIT_AURA and liveEvents.QUEST_LOG_UPDATE and liveEvents.PLAYER_FLAGS_CHANGED)
     Advance(1)
+    assert(unfinishedReads == 0 and hiddenReads == 1 and ambiguousReads == 1,
+        "quest reward refresh allocated known unfinished rows or skipped ambiguous/hidden eligibility")
     assert(bar.questXPStrip:IsShown() and bar.questXPStrip.width == 100 and questReads == 2,
         "known quest rewards did not paint, or a hidden/duplicate/unfinished reward was read")
     bar.host.OnEnter(bar.host)
@@ -1146,6 +1161,13 @@ do
     liveEvents.QUEST_TURNED_IN(bar, "QUEST_TURNED_IN", 42, 250)
     Advance(1)
     assert(not bar.questXPStrip:IsShown(), "a turned-in quest left its XP strip behind")
+    local scalar, previous = C_QuestLog.GetQuestIDForLogIndex, unfinishedReads
+    C_QuestLog.GetQuestIDForLogIndex = nil
+    liveEvents.QUEST_LOG_UPDATE(bar, "QUEST_LOG_UPDATE")
+    Advance(1)
+    assert(unfinishedReads == previous + 21 and not bar.questXPStrip:IsShown(),
+        "missing scalar API did not retain the full quest scan")
+    C_QuestLog.GetQuestIDForLogIndex = scalar
     local parent = Widget()
     local reads = auraReads + itemReads + questReads
     engine.DrawExperienceBarPreview(parent, bar.config, { xp = 50, rested = 15 })

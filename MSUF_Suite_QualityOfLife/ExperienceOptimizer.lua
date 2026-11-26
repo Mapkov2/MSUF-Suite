@@ -209,7 +209,18 @@ local function QueueItems(self)
     state.bonusJob:Request()
 end
 
-local function ReadQuest(state, info)
+local function ReadQuest(state, index, getID)
+    -- An unfinished quest contributes no turn-in XP, visible or hidden. The
+    -- scalar lookup saves the full info table for these common log rows.
+    local quickID = getID and getID(index)
+    local ready
+    if Finite(quickID) and quickID > 0 and not state.questSeen[quickID] then
+        ready = C_QuestLog.IsComplete(quickID)
+        if Public(ready) and ready == false then return true end
+    else
+        quickID = nil
+    end
+    local info = C_QuestLog.GetInfo(index)
     if not Public(info) or type(info) ~= "table" or not canaccesstable(info) then return false end
     local id, header, hidden = info.questID, info.isHeader, info.isHidden
     if not Public(header) or not Public(hidden) then return false end
@@ -217,7 +228,7 @@ local function ReadQuest(state, info)
     if not Finite(id) or id <= 0 then return false end
     if state.questSeen[id] then return true end
     state.questSeen[id] = true
-    local ready = C_QuestLog.IsComplete(id)
+    if id ~= quickID then ready = C_QuestLog.IsComplete(id) end
     if not Public(ready) or type(ready) ~= "boolean" then return false end
     if not ready then return true end
     local loaded = HaveQuestRewardData(id)
@@ -364,8 +375,9 @@ local function RefreshQuests(self)
     state.questXP, state.questCount, state.questIncomplete = 0, 0, false
     local entries = C_QuestLog.GetNumQuestLogEntries()
     if Finite(entries) then
+        local getID = not NS.InCombat() and C_QuestLog.GetQuestIDForLogIndex
         for index = 1, entries do
-            if not ReadQuest(state, C_QuestLog.GetInfo(index)) then state.questIncomplete = true end
+            if not ReadQuest(state, index, getID) then state.questIncomplete = true end
         end
     else
         state.questIncomplete = true
