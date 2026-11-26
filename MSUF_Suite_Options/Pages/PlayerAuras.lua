@@ -11,11 +11,19 @@ if not Bridge.HasPlayerAuraMenu(P.M) then
 end
 local AuraMenu = {}
 P.PlayerAurasPage = AuraMenu
-local MODULES = { playerAuras = true, playerAuraSkins = true }
+local MODULES = { playerAuras = true, playerAuraSkins = true, playerBuffGroups = true }
 local SECTIONS = {
     playerAuras = PAGE .. "_playerAuras_module",
     playerAuraSkins = PAGE .. "_playerAuraSkins_module",
+    playerBuffGroups = PAGE .. "_playerBuffGroups_module",
 }
+local function SettingSection(id, rule)
+    if id == "playerBuffGroups" and rule and rule.section and rule.section ~= "buff_group_layout" then
+        return PAGE .. "_" .. rule.section
+    end
+    return SECTIONS[id]
+end
+
 function AuraMenu.Relocated(id)
     return AuraMenu.registered and MODULES[id] == true
 end
@@ -41,13 +49,13 @@ function AuraMenu.AppendSearchRows(rows, ruleRow, checkpoint)
         sectionId = "aura_style_blizzardPlayer_blizzard_aura_frames",
         keywords = { "player buffs", "minimap auras", "Blizzard player auras", page.title },
     }
-    for _, id in ipairs({ "playerAuras", "playerAuraSkins" }) do
+    for _, id in ipairs({ "playerAuras", "playerAuraSkins", "playerBuffGroups" }) do
         for _, rule in ipairs(P.catalog[id].controls) do
             if checkpoint then checkpoint() end
             if not rule.hidden then
                 local row = ruleRow(page, P.catalog[id], rule)
                 if row then
-                    row.sectionId = SECTIONS[id]
+                    row.sectionId = SettingSection(id, rule)
                     row.controlId = row.settingKey and P.Meta(PAGE, id, rule.key, "setting", row.sectionId).controlId or nil
                     row.keywords[#row.keywords + 1] = page.title
                     rows[#rows + 1] = row
@@ -63,6 +71,24 @@ local function SkinRows(ctx, body, y, width)
     end
     return y
 end
+local function BuildBuffGroups(ctx, builder)
+    local id = "playerBuffGroups"
+    local function Visible(rule) return not rule.hidden end
+    local actions = { { "Move in Edit Mode", function() P.MoveOnScreen(id, "groups") end, key = "move" } }
+    P.ModuleCard(ctx, builder, PAGE, id, actions, {
+        title = "Player buff groups", open = false, rules = P.SectionRules(id, "buff_group_layout", Visible),
+    })
+    local seen = {}
+    for _, rule in ipairs(P.catalog[id].controls) do
+        local section = SettingSection(id, rule)
+        if section ~= SECTIONS[id] and not seen[section] then
+            seen[section] = true
+            P.RuleSection(ctx, builder, PAGE, id, section, P.Tr(rule.sectionTitle),
+                P.SectionRules(id, rule.section, Visible), { open = false })
+        end
+    end
+end
+
 local function Build(ctx, builder)
     P.M.TrackRefresh(ctx, P.ForgetAvailability)
     local rules = P.SectionRules("playerAuras", "player_auras", function(rule) return not rule.hidden end)
@@ -70,6 +96,7 @@ local function Build(ctx, builder)
         title = "Player aura layout", rules = rules, open = true,
     })
     P.AttachSectionReset(ctx, layout, "Player aura layout", function() return P.ResetRules("playerAuras", rules) end)
+    BuildBuffGroups(ctx, builder)
     local skins = P.ModuleCard(ctx, builder, PAGE, "playerAuraSkins", nil, {
         title = "Player aura skins", open = false,
         help = "Keep Blizzard's layout and apply the selected icon skins. Player aura layout also uses these skins.",
@@ -103,7 +130,7 @@ function AuraMenu.Resolve(page, target)
     for field, value in pairs(target) do copy[field] = value end
     copy.pageKey, copy.prepareKind, copy.prepareValue = PAGE, nil, nil
     if MODULES[id] then
-        copy.sectionId = SECTIONS[id]
+        copy.sectionId = SettingSection(id, key and P.catalog[id].rules[key])
         copy.controlId = key and P.Meta(PAGE, id, key, "setting", copy.sectionId).controlId or nil
     else
         copy.sectionId, copy.controlId = "aura_style_blizzardPlayer_blizzard_aura_frames", control
