@@ -99,6 +99,7 @@ local clock = 0
 debugprofilestop = function() return clock end
 local nextFrame = {}
 C_Timer = { After = function(_, callback) nextFrame[#nextFrame + 1] = callback end }
+dofile(root .. "/tools/tests/skin_registry_timer_fixture.lua")(C_Timer)
 local function RunNextFrame()
     local jobs = nextFrame
     nextFrame = {}
@@ -168,7 +169,13 @@ function menu:GetLayoutChildren()
 end
 function menu:UpdateScale() self:SetScale(self.normalScale) end
 function menu:AnchorToMenuContainer() end
-function menu:Layout() end
+local gridUnchanged = false
+function menu:CacheLayoutSettings() end
+function menu:UpdateHelpTicketButtonAnchor() Count("nativeCompanions") end
+function menu:Layout()
+    if not gridUnchanged then self:CacheLayoutSettings() end
+    self:UpdateHelpTicketButtonAnchor()
+end
 function menu:ResetMicroMenuPosition() self:SetParent(MicroMenuContainer) end
 function menu:OverrideMicroMenuPosition(parent) self:SetParent(parent) end
 MicroMenu = menu
@@ -259,11 +266,179 @@ local function StartCombat()
     locked = true
 end
 
+CharacterFrame, GameMenuFrame = Widget(), Widget()
+local nativeNormal = {}
+if os.getenv("SUITE_MICRO_NATIVE_SIGNALS") == "1" then
+    LoadMicroButtonTextures = Noop
+    MicroMenuBar_SetFullScreenFrame, MicroMenuBar_ClearFullScreenFrame = Noop, Noop
+    for _, button in ipairs(buttons) do
+        local region = Widget(nil, button)
+        region.shown = false
+        function region:HasScript(script) return script == "OnShow" or script == "OnHide" end
+        function region:SetShown(value)
+            if self.shown == value then return end
+            self.shown = value
+            local cb = self.scripts[value and "OnShow" or "OnHide"]
+            if cb then cb(self) end
+        end
+        button.PushedBackground = region
+        function button:SetNormal()
+            self.buttonState = "NORMAL"
+            self.textures.Highlight:SetAlpha(1)
+            region:SetShown(false)
+        end
+        function button:SetPushed()
+            region:SetShown(true)
+            self.buttonState = "PUSHED"
+            self.textures.Highlight:SetAlpha(0.5)
+        end
+        nativeNormal[button] = button.SetNormal
+    end
+end
 Skin.Apply(menu, "combat-end-contract")
 bar, mover = Owned.GetFrames()
 Check(menu.parent == bar and Owned.active and mover.shown, "the owned bar did not take the menu with its mover")
 Check(NS.OwnedMicroBar.GetRoot() == menu, "the owned bar does not hold the menu")
 Check(counts.portrait == 1, "the initial owned shell did not seed its portrait")
+
+if next(nativeNormal) then
+    RunNextFrame()
+    Reset()
+    for _, button in ipairs(buttons) do
+        Check(button.SetNormal == nativeNormal[button], "native state refresh was hooked")
+        for _ = 1, 125 do button:SetNormal() end
+    end
+    Check(#nextFrame == 0 and Total(stateApplies) == 0, "unchanged native updates scheduled a repaint")
+    local button = buttons[1]
+    button:SetPushed()
+    RunNextFrame()
+    Check(paintedStates[button] == "pressed", "the native push lock did not update the overlay")
+    Reset()
+    for _ = 1, 125 do button:SetPushed() end
+    Check(#nextFrame == 0 and Total(stateApplies) == 0, "unchanged pushed state scheduled a repaint")
+    button:SetNormal()
+    CharacterFrame.scripts.OnHide(CharacterFrame)
+    Check(paintedStates[button] == "normal", "panel close missed the native release")
+    RunNextFrame()
+    Reset()
+    LoadMicroButtonTextures(button, "NewTexture")
+    RunNextFrame()
+    Check(stateApplies[button] == 1, "a real atlas rebuild did not update its non-native art")
+    button.mouseOver = true
+    button.scripts.OnEnter(button)
+    Check(paintedStates[button] == "hover", "closed panels suppressed user hover feedback")
+    local availability
+    for _, frame in ipairs(createdFrames) do
+        if frame.events.STORE_STATUS_CHANGED then availability = frame end
+    end
+    Check(availability and not availability.events.QUEST_LOG_UPDATE, "quest events registered for availability")
+    local gated = { GuildMicroButton, StoreMicroButton, TalentMicroButton, LegacyMicroButton }
+    Reset()
+    for _, item in ipairs(gated) do
+        Check(not item.scripts.OnEnable and not item.scripts.OnDisable, "transient native enable/disable was hooked")
+        for _ = 1, 125 do item.enabled = true; item.enabled = false end
+    end
+    Check(#nextFrame == 0 and Total(stateApplies) == 0, "transient availability repainted buttons")
+    Fire(availability, "STORE_STATUS_CHANGED")
+    RunNextFrame()
+    for _, item in ipairs(gated) do
+        Check(paintedStates[item] == "disabled" and stateApplies[item] == 1, "settled disabled state was missed")
+    end
+    Reset()
+    for _, item in ipairs(gated) do item.enabled = true end
+    MicroMenuBar_ClearFullScreenFrame()
+    RunNextFrame()
+    for _, item in ipairs(gated) do
+        Check(paintedStates[item] ~= "disabled" and stateApplies[item] == 1, "fullscreen release left controls disabled")
+    end
+    Reset()
+    StartCombat()
+    GuildMicroButton.enabled = false
+    Fire(availability, "BN_DISCONNECTED")
+    Check(Total(stateApplies) == 0, "availability painted in combat")
+    EndCombat(false)
+    Check(paintedStates[GuildMicroButton] == "disabled", "combat end missed the actual guild state")
+    GuildMicroButton.enabled = true
+    GuildMicroButton.scripts.OnEnter(GuildMicroButton)
+    Check(paintedStates[GuildMicroButton] ~= "disabled", "real input did not sample an external state change")
+    Skin.Disable()
+    Check(not availability.events.STORE_STATUS_CHANGED, "disabled skin kept availability events")
+    print("Suite native Micro Menu signals: " .. checks .. " checks passed")
+    return
+end
+
+if forever then
+    -- Blizzard's grid returns before MarkClean on a cache hit. After a native
+    -- dirty notification the outer Layout can therefore run every frame.
+    gridUnchanged = true
+    Reset()
+    local ownedEntries = 0
+    local function CountOwnedEntry()
+        local source = debug.getinfo(2, "S").source
+        if source:find("OwnedMicroBar.lua", 1, true) then ownedEntries = ownedEntries + 1 end
+    end
+    debug.sethook(CountOwnedEntry, "c")
+    for i = 1, 120 do menu:Layout() end
+    debug.sethook()
+    Check(ownedEntries == 0 and counts.nativeCompanions == 120 and not counts.grid and menu.points == 0,
+        "a cached Forever native layout woke the owned micro bar")
+    gridUnchanged = false
+    menu:Layout()
+    Check(counts.grid == 1, "a genuinely recomputed native grid did not restore the owned layout")
+    settings.orientation = "vertical"
+    Owned.Relayout(menu)
+    gridUnchanged = true
+    Reset()
+    local previous = HelpOpenWebTicketButton.points
+    menu:Layout()
+    Check(not counts.grid and menu.points == 0 and HelpOpenWebTicketButton.points > previous,
+        "a cached native layout lost the different owned companion orientation or placed the grid")
+    settings.orientation = "horizontal"
+    Owned.Relayout(menu)
+    Reset()
+    previous = HelpOpenWebTicketButton.points
+    menu:Layout()
+    Check(not counts.grid and menu.points == 0 and HelpOpenWebTicketButton.points == previous,
+        "switching back to native orientation still re-anchored companions")
+    gridUnchanged = false
+end
+
+if forever then
+    local enums, originalPosition = MicroMenuPositionEnum, container.GetPosition
+    MicroMenuPositionEnum, FrameUtilQuadrantEnum = nil, enums
+    container.GetPosition = false
+    container:SetScale(.5)
+    function container:GetCenter() return 700, 600 end
+    UIParent:SetSize(1000, 800)
+    function FrameUtil.GetScreenQuadrant(frame)
+        local x, y = frame:GetCenter()
+        Check(x > UIParent:GetWidth() / 2 and y > UIParent:GetHeight() / 2
+            and x * frame:GetScale() < UIParent:GetWidth() / 2 and y * frame:GetScale() < UIParent:GetHeight() / 2,
+            "scaled container must cross both screen midpoints")
+        return enums.BottomLeft
+    end
+    buttons[1].GetCenter = function() return 10, 2 end
+    buttons[#buttons].GetCenter = function() return 80, 9 end
+    local anchor, offset
+    local oldPoint = HelpOpenWebTicketButton.SetPoint
+    function HelpOpenWebTicketButton:SetPoint(point, other, relativePoint, x, y)
+        oldPoint(self)
+        anchor, offset = other, y
+    end
+    for _, orientation in ipairs({ "horizontal", "vertical" }) do
+        settings.orientation = orientation
+        Owned.Relayout(menu)
+        Check(anchor == buttons[#buttons] and offset == 25, "help widget disagrees with the scaled native "..orientation.." quadrant")
+    end
+    FrameUtil.GetScreenQuadrant = function() return nil end
+    Owned.Relayout(menu)
+    Check(anchor == buttons[1] and offset == -25, "unavailable native quadrant lost the geometry fallback")
+    settings.orientation, MicroMenuPositionEnum, FrameUtilQuadrantEnum = "horizontal", enums, nil
+    FrameUtil.GetScreenQuadrant, container.GetPosition = nil, originalPosition
+    container:SetScale(1)
+    HelpOpenWebTicketButton.SetPoint = oldPoint
+    Owned.Relayout(menu)
+end
 
 -- Layout and reset paths share the same portrait invalidation as combat end.
 -- Measure twice: collection can shrink the Lua string table between runs.
@@ -371,9 +546,38 @@ if not portraitOnly then
     settings.iconStyle = "blizzard"
     Skin.RefreshActive()
     buttons[1]:SetNormal()
+    Check(#nextFrame == 0, "untinted native artwork scheduled a skin repaint")
+    ResetCounts()
+    Check(Skin.RefreshButtonStates() and not counts.protection, "a native reset revisited untouched button art")
+    settings.buttonBackground = true
+    Skin.RefreshActive()
+    buttons[1]:SetNormal()
+    Check(#nextFrame == 1, "native icons with a custom plate lost their state update")
     Check(buttons[1].textures.Highlight.alpha == 1, "a lifecycle call faded a Blizzard-style highlight")
     RunNextFrame()
+    settings.buttonBackground = false
     settings.iconStyle = "bold"
+    Skin.RefreshActive()
+
+    -- Already faded regions keep their restore owner without recalculating the
+    -- tolerance for exact zero on every native state callback.
+    local art, region = NS.MicroMenuStates, Widget()
+    region:SetAlpha(0.75)
+    art.FadeControlled(buttons[1], region)
+    local absCalls = 0
+    local function countAbs()
+        if debug.getinfo(2, "f").func == math.abs then absCalls = absCalls + 1 end
+    end
+    debug.sethook(countAbs, "c")
+    for _ = 1, 50 do art.FadeControlled(buttons[2], region) end
+    debug.sethook()
+    Check(absCalls == 0, "an exactly transparent region repeated tolerance comparisons")
+    art.RestoreButtonAlphas(buttons[1])
+    Check(region:GetAlpha() == 0, "previous button restored a reassigned region")
+    region:SetAlpha(0.4)
+    art.FadeControlled(buttons[2], region)
+    art.RestoreButtonAlphas(buttons[2])
+    Check(region:GetAlpha() == 0.4, "changed native alpha was not restored for its current button")
     Skin.RefreshActive()
 
     -- Repeated requests reuse the pending set and the single scheduled callback.
@@ -424,6 +628,9 @@ if not portraitOnly then
     Reset()
     RunNextFrame()
     Check(Total(stateApplies) == 0, "a full pass left a duplicate lifecycle repaint")
+    buttons[2]:SetNormal()
+    RunNextFrame()
+    Check(not stateApplies[buttons[1]], "a full pass left a duplicate lifecycle repaint")
     buttons[1]:SetNormal()
     Skin.Disable()
     Reset()
@@ -450,6 +657,19 @@ if not portraitOnly then
     EndCombat()
     RunNextFrame()
     Check(stateApplies[buttons[1]] == 1, "combat replay left a duplicate pending lifecycle repaint")
+    for _, closed in ipairs({CharacterFrame, GameMenuFrame}) do
+        Reset()
+        for _ = 1, 125 do
+            buttons[1]:SetPushed()
+            buttons[2]:SetNormal()
+        end
+        if closed.scripts.OnHide then closed.scripts.OnHide(closed) end
+        Check(stateApplies[buttons[1]] == 1 and stateApplies[buttons[2]] == 1,
+            "closing a native panel left micro button updates pending")
+        Reset()
+        RunNextFrame()
+        Check(Total(stateApplies) == 0, "closing a native panel repeated its micro button paints")
+    end
 end
 
 -- CanControl is checked once for a whole button, not per faded region.

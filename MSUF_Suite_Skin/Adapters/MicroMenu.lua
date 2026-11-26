@@ -93,6 +93,16 @@ local hookedButtons = setmetatable({}, { __mode = "k" })
 local listenerOwner = {}
 local listenerRegistered = false
 local containerHooked = false
+-- Blizzard enables all buttons before re-applying individual restrictions.
+-- These four can end every quest update disabled after several transient flips.
+local gatedNames = {
+    StoreMicroButton = true, GuildMicroButton = true,
+    TalentMicroButton = true, LegacyMicroButton = true,
+}
+local gatedButtons = Kit.WeakSet()
+local paintedEnabled = Kit.WeakSet()
+local availabilityFrame
+local availabilityActive = false
 local activeRoot
 local activeOwner
 local desiredActive = false
@@ -101,6 +111,7 @@ local desiredOwner
 local DEFER_KEY = "micro-menu:state"
 local visualSuspended = false
 local transitionInProgress = false
+local nativeButtonArt = false
 local resetRoot
 local resetExpiryPending = false
 
@@ -216,6 +227,7 @@ end
 
 local function ApplyButton(button, buttonName, settings, stateOnly)
     if not CanControl(button) then return false end
+    if gatedButtons[button] then paintedEnabled[button] = Read(button, "IsEnabled") end
     if UsesCleanStyle(settings) then
         return ApplyCleanButton(button, buttonName, settings, stateOnly)
     end
@@ -248,10 +260,12 @@ end
 local staleButtons = setmetatable({}, { __mode = "k" })
 local pendingButtons = setmetatable({}, { __mode = "k" })
 local visualRefreshPending = false
+local visualTimer
 -- A MicroButton was shown or hidden while combat kept OnContainerLayout quiet.
 local layoutChangedInCombat = false
 
 local function ForgetCombatChanges()
+    if visualTimer then visualTimer:Cancel(); visualTimer, visualRefreshPending = nil, false end
     for button in pairs(staleButtons) do staleButtons[button] = nil end
     for button in pairs(pendingButtons) do pendingButtons[button] = nil end
     layoutChangedInCombat = false
@@ -269,6 +283,7 @@ end
 -- button; OnEnter/OnLeave run the button's own scripts first), so the
 -- repaint and the bar's mouseover reveal are each their own error boundary.
 local function OnButtonInteraction(button)
+    if nativeButtonArt or not MicroMenuSkin.active then return end
     if NS.IsCombatLocked() then
         staleButtons[button] = true
     elseif not SkinQuiet() then
@@ -288,23 +303,96 @@ end
 -- 2026-10-25 raid trace: repeated native lifecycle calls repainted each
 -- button three times in one burst. Read its final state once at the flush;
 -- input scripts still repaint immediately after Blizzard's own feedback.
+-- Read the settled native state after the outer panel, shop, fullscreen or
+-- account update. Other addons can also change these buttons; their actual
+-- enabled state is sampled on the next interaction or native lifecycle signal.
+local function CollectAvailability(changed)
+    if not availabilityActive then return end
+    for button in pairs(gatedButtons) do
+        if activeButtons[button] and paintedEnabled[button] ~= Read(button, "IsEnabled") then
+            changed[button] = true
+        end
+    end
+end
+
 local function FlushButtonVisuals()
+    visualTimer = nil
     visualRefreshPending = false
+    CollectAvailability(pendingButtons)
     for button in pairs(pendingButtons) do
         pendingButtons[button] = nil
         OnButtonInteraction(button)
     end
 end
 
+-- These native OnHide scripts update the entire Micro Menu before their
+-- post-hooks. Consume the combined burst here, including repeated calls for
+-- a button. Independent native updates retain their next-frame coalescing.
+local function FinishPanelClose()
+    if not visualTimer then return end
+    visualTimer:Cancel()
+    FlushButtonVisuals()
+end
+
+local closeHooks = Kit.WeakSet()
+local function HookPanelClose(frame)
+    if frame and not closeHooks[frame] and HasMethod(frame, "HookScript") then
+        frame:HookScript("OnHide", FinishPanelClose)
+        closeHooks[frame] = true
+    end
+end
+
+local function QueueVisualFlush()
+    if visualRefreshPending then return end
+    visualRefreshPending = true
+    if C_Timer.NewTimer then
+        visualTimer = C_Timer.NewTimer(0, FlushButtonVisuals)
+    else
+        C_Timer.After(0, FlushButtonVisuals)
+    end
+end
+
+-- Only real changes to button prerequisites are registered. QUEST_LOG_UPDATE
+-- is deliberately absent: it runs Blizzard's whole Micro Menu update without
+-- changing these buttons' availability. Defer past all native event handlers.
+local availabilityEvents = {
+    "PLAYER_ENTERING_WORLD", "PLAYER_LEVEL_UP", "PLAYER_LEVEL_CHANGED",
+    "PLAYER_TALENT_UPDATE", "PLAYER_SPECIALIZATION_CHANGED", "NEUTRAL_FACTION_SELECT_RESULT",
+    "ACHIEVEMENT_EARNED", "MAJOR_FACTION_RENOWN_LEVEL_CHANGED",
+    "PLAYER_GUILD_UPDATE", "INITIAL_CLUBS_LOADED", "BN_CONNECTED", "BN_DISCONNECTED",
+    "CHAT_DISABLED_CHANGED", "CHAT_DISABLED_CHANGE_FAILED", "STORE_STATUS_CHANGED",
+    "TRIAL_STATUS_UPDATE",
+}
+
+local function AvailabilityChanged()
+    if availabilityActive and not HooksQuiet() then QueueVisualFlush() end
+end
+
+local function SetAvailabilityActive(active)
+    if active == availabilityActive then return end
+    availabilityActive = active
+    if active and not availabilityFrame then
+        availabilityFrame = CreateFrame("Frame")
+        availabilityFrame:SetScript("OnEvent", AvailabilityChanged)
+        Kit.HookGlobal("MicroMenuBar_SetFullScreenFrame", AvailabilityChanged)
+        Kit.HookGlobal("MicroMenuBar_ClearFullScreenFrame", AvailabilityChanged)
+    end
+    for _, event in ipairs(availabilityEvents) do
+        if NS.Client.SupportsEvent(event) then
+            if active then availabilityFrame:RegisterEvent(event)
+            else availabilityFrame:UnregisterEvent(event) end
+        end
+    end
+end
+
 local function OnButtonVisualLifecycle(button)
+    if nativeButtonArt or not MicroMenuSkin.active or not activeButtons[button] then return end
     if NS.IsCombatLocked() then
         staleButtons[button] = true
     elseif not SkinQuiet() then
         Dispatch(FadeCleanHighlight, button)
         pendingButtons[button] = true
-        if visualRefreshPending then return end
-        visualRefreshPending = true
-        C_Timer.After(0, FlushButtonVisuals)
+        QueueVisualFlush()
     end
 end
 
@@ -324,6 +412,7 @@ end
 function MicroMenuSkin.RefreshButtonStates()
     if HooksQuiet() then return false end
     for button in pairs(staleButtons) do staleButtons[button] = nil end
+    if nativeButtonArt then return true end
     for button in pairs(activeButtons) do
         Dispatch(RefreshButtonState, button)
     end
@@ -381,7 +470,36 @@ local function EnsureContainerHook()
     return true
 end
 
--- Returns false when a required native method is missing on this client.
+-- Blizzard shows/hides this region explicitly when the panel selection
+-- changes. Repeated SetNormal on every QUEST_LOG_UPDATE leaves it hidden.
+-- The pushed region shows before Blizzard finishes assigning its atlas.
+local function SelectionChanged(region)
+    OnButtonVisualLifecycle(Read(region, "GetParent"))
+end
+
+local textureLoaderHooked
+local function HookNativeSelection(button, buttonName)
+    local pushed = Field(button, "PushedBackground")
+    if not HasMethod(pushed, "HookScript") or Read(pushed, "HasScript", "OnShow") ~= true
+        or Read(pushed, "HasScript", "OnHide") ~= true then return false end
+    if not textureLoaderHooked then
+        textureLoaderHooked = Kit.HookGlobal("LoadMicroButtonTextures", OnButtonVisualLifecycle)
+        if not textureLoaderHooked then return false end
+    end
+    pushed:HookScript("OnShow", SelectionChanged)
+    pushed:HookScript("OnHide", SelectionChanged)
+    if gatedNames[buttonName] then
+        gatedButtons[button] = true
+    else
+        button:HookScript("OnEnable", OnButtonVisualLifecycle)
+        button:HookScript("OnDisable", OnButtonVisualLifecycle)
+    end
+    button:HookScript("OnShow", OnButtonVisualLifecycle)
+    return true
+end
+
+-- Alternative micro button templates without the native state region use
+-- their method hooks. Both supported Blizzard templates expose the region.
 local function EnsureButtonHooks(button, buttonName)
     if hookedButtons[button] then return true end
     for index = 1, #BUTTON_STATE_METHODS do
@@ -392,10 +510,12 @@ local function EnsureButtonHooks(button, buttonName)
         or (tabard and not HasMethod(button, "UpdateTabard")) then
         return false
     end
-    for index = 1, #BUTTON_STATE_METHODS do
-        hooksecurefunc(button, BUTTON_STATE_METHODS[index], OnButtonVisualLifecycle)
+    if not HookNativeSelection(button, buttonName) then
+        for index = 1, #BUTTON_STATE_METHODS do
+            hooksecurefunc(button, BUTTON_STATE_METHODS[index], OnButtonVisualLifecycle)
+        end
+        if tabard then hooksecurefunc(button, "UpdateTabard", OnButtonVisualLifecycle) end
     end
-    if tabard then hooksecurefunc(button, "UpdateTabard", OnButtonVisualLifecycle) end
     button:HookScript("OnEnter", OnButtonEnter)
     button:HookScript("OnLeave", OnButtonLeave)
     button:HookScript("OnMouseDown", OnButtonInteraction)
@@ -407,6 +527,8 @@ end
 
 local function EnsureVisualHooks(buttons)
     local success = EnsureContainerHook()
+    HookPanelClose(CharacterFrame)
+    HookPanelClose(GameMenuFrame)
     local found = false
     for button, buttonName in pairs(buttons) do
         found = true
@@ -547,6 +669,10 @@ local function ApplyResolved(root, owner, settings)
     if not RestoreAbsentButtons(currentButtons) then partial = true end
 
     activeButtons = currentButtons
+    -- With full native artwork there is nothing on the buttons to repaint.
+    -- Bar layout and mouseover visibility have independent owners.
+    nativeButtonArt = settings.iconStyle == "blizzard" and not TintRequested(settings)
+        and settings.buttonBackground ~= true and BorderValue(settings.buttonBorder) == 0
     activeRoot = root
     activeOwner = owner
     shownButtons = ShownButtonMask()
@@ -554,6 +680,7 @@ local function ApplyResolved(root, owner, settings)
     desiredActive = true
     desiredRoot = root
     desiredOwner = owner
+    SetAvailabilityActive(not nativeButtonArt and not overridden and next(gatedButtons) ~= nil)
     EnsureListener()
     return true, partial and "partial" or "applied"
 end
@@ -582,6 +709,7 @@ ApplyNow = function(requestedRoot, owner)
 end
 
 local function DisableResolved()
+    SetAvailabilityActive(false)
     local partial = not States.RestoreArt()
     for button in pairs(activeButtons) do
         if not NS.MicroMenuVisual.Restore(button) then partial = true end
@@ -654,6 +782,7 @@ function MicroMenuSkin.RefreshAfterCombat()
         if not RefreshLayout() then return false end
         layoutChangedInCombat = false
     end
+    CollectAvailability(staleButtons)
     for button in pairs(staleButtons) do
         staleButtons[button] = nil
         Dispatch(RefreshButtonState, button)

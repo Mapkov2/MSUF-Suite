@@ -177,6 +177,7 @@ local function ConfigureNativeStateMask(state, binding)
 end
 
 local function EnsureNativeStateMasks(state)
+    if state.masksPrepared then return true end
     state.nativeMasks = state.nativeMasks or {}
     local button = state.button
     local success = true
@@ -203,6 +204,7 @@ local function EnsureNativeStateMasks(state)
             success = false
         end
     end
+    state.masksPrepared = success
     return success
 end
 

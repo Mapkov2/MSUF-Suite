@@ -10,10 +10,10 @@ LUA = os.environ.get("MSUF_LUA51", r"C:\Users\Marco\AppData\Local\Temp\msuf-lua5
 CONTRACT = ROOT / "tools/tests/suite_skin_micro_bar_combat_end_contract.lua"
 CASES = [
     ("eager-lifecycle", "MicroMenu.lua",
-     "        C_Timer.After(0, FlushButtonVisuals)", "        FlushButtonVisuals()",
+     "visualTimer = C_Timer.NewTimer(0, FlushButtonVisuals)", "FlushButtonVisuals()",
      "lifecycle burst painted before its flush", False),
     ("duplicate-flush", "MicroMenu.lua",
-     "        if visualRefreshPending then return end", "        -- Missing coalescing guard.",
+     "    if visualRefreshPending then return end", "        -- Missing coalescing guard.",
      "lifecycle burst scheduled more than one flush", False),
     ("delayed-hover", "MicroMenu.lua",
      "local function OnButtonEnter(button)\n    OnButtonInteraction(button)",
@@ -32,9 +32,8 @@ CASES = [
      "    -- Pending lifecycle work incorrectly survives a full pass.",
      "a full pass left a duplicate lifecycle repaint", False),
     ("lost-combat-burst", "MicroMenu.lua",
-     "        OnButtonInteraction(button)\n    end\nend\n\nlocal function OnButtonVisualLifecycle",
-     "        if not NS.IsCombatLocked() then OnButtonInteraction(button) end\n"
-     "    end\nend\n\nlocal function OnButtonVisualLifecycle",
+     "        pendingButtons[button] = nil\n        OnButtonInteraction(button)",
+     "        pendingButtons[button] = nil\n        if not NS.IsCombatLocked() then OnButtonInteraction(button) end",
      "a lifecycle burst meeting combat lost its stale button", False),
     ("eager-portrait", "OwnedMicroBar.lua",
      "    if portraitEnabled and portraitDirty then", "    if portraitEnabled then",
@@ -79,11 +78,12 @@ CASES = [
 ]
 
 
-def run(overrides=None, portrait_only=False, forever=False):
+def run(overrides=None, portrait_only=False, forever=False, native=False):
     environment = dict(os.environ)
     environment.pop("SUITE_MICRO_BASELINE", None)
     environment.pop("SUITE_MICRO_PORTRAIT_ONLY", None)
     environment["SUITE_MICRO_FOREVER"] = "1" if forever else "0"
+    environment["SUITE_MICRO_NATIVE_SIGNALS"] = "1" if native else "0"
     if overrides:
         environment["SUITE_MICRO_BASELINE"] = str(overrides)
     if portrait_only:
@@ -93,8 +93,9 @@ def run(overrides=None, portrait_only=False, forever=False):
 
 
 for forever in (False, True):
-    baseline = run(forever=forever)
-    assert baseline.returncode == 0, baseline.stdout + baseline.stderr
+    for native in (False, True):
+        baseline = run(forever=forever, native=native)
+        assert baseline.returncode == 0, baseline.stdout + baseline.stderr
 with tempfile.TemporaryDirectory(prefix="suite-micro-lifecycle-") as temporary:
     for name, file, before, after, expected, portrait_only in CASES:
         original = (ROOT / "MSUF_Suite_Skin/Adapters" / file).read_text(encoding="utf-8")
@@ -106,4 +107,24 @@ with tempfile.TemporaryDirectory(prefix="suite-micro-lifecycle-") as temporary:
         result = run(scratch, portrait_only)
         output = result.stdout + result.stderr
         assert result.returncode != 0 and expected in output, name + ": " + output
-print("Suite skin Micro Bar lifecycle: %d red-without-fix cases passed" % len(CASES))
+    native_cases = [
+        ("listen-to-transient-states", "if gatedNames[buttonName] then", "if false then",
+         "quest events registered for availability"),
+        ("skip-final-states", "    CollectAvailability(pendingButtons)\n", "",
+         "settled disabled state was missed"),
+        ("skip-combat-enable", "    CollectAvailability(staleButtons)\n", "",
+         "combat end missed the actual guild state"),
+        ("keep-availability-listeners", "    SetAvailabilityActive(false)\n", "",
+         "disabled skin kept availability events"),
+    ]
+    source = ROOT / "MSUF_Suite_Skin/Adapters/MicroMenu.lua"
+    for name, before, after, expected in native_cases:
+        content = source.read_text(encoding="utf-8")
+        assert content.count(before) == 1, name
+        scratch = Path(temporary) / name
+        target = scratch / source.relative_to(ROOT)
+        target.parent.mkdir(parents=True)
+        target.write_text(content.replace(before, after), encoding="utf-8")
+        result = run(scratch, forever=True, native=True)
+        assert result.returncode != 0 and expected in result.stderr, name + ": " + result.stderr
+print("Suite skin Micro Bar lifecycle: %d red-without-fix cases passed" % (len(CASES) + len(native_cases)))

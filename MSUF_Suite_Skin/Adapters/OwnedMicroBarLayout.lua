@@ -222,6 +222,17 @@ local function ContainerPosition(container)
 end
 Layout.ContainerPosition = ContainerPosition
 
+local function HelpQuadrant(position, container, bar, settings)
+    local quadrants = NS.Client.isForever and FrameUtilQuadrantEnum
+    if quadrants and position ~= nil then
+        -- Forever's native result includes the container scale.
+        local left = position == quadrants.BottomLeft or position == quadrants.TopLeft
+        local bottom = position == quadrants.BottomLeft or position == quadrants.BottomRight
+        if left or bottom or position == quadrants.TopRight then return left, bottom end
+    end
+    return Quadrant(_G.MicroMenuPositionEnum and bar or container, settings)
+end
+
 -- MicroMenuMixin:Layout re-anchors the queue eye and the framerate text around
 -- Blizzard's Edit Mode container using MicroMenu's orientation. Their own
 -- UpdatePosition APIs take the orientation, so pass the owned one. Queue and
@@ -231,6 +242,7 @@ Layout.ContainerPosition = ContainerPosition
 function Layout.AnchorCompanions(root, settings, horizontal, bar)
     local container = _G.MicroMenuContainer
     local position = ContainerPosition(container)
+    if not Public(position) then position = nil end
     if position ~= nil then
         -- Retail's MicroMenu anchors the queue eye itself; Forever has no such method.
         if type(root.UpdateQueueStatusAnchors) == "function" then
@@ -240,8 +252,7 @@ function Layout.AnchorCompanions(root, settings, horizontal, bar)
         local defaultPosition = EditModeSystemMixin.IsInDefaultPosition(container)
         Call(_G.FramerateFrame, "UpdatePosition", position, horizontal, defaultPosition)
     end
-    -- Forever lacks MicroMenuPositionEnum (Retail only).
-    local left, bottom = Quadrant(_G.MicroMenuPositionEnum and bar or container, settings)
+    local left, bottom = HelpQuadrant(position, container, bar, settings)
     AnchorHelpButton(root, horizontal, left, bottom)
 end
 

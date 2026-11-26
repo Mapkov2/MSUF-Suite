@@ -13,8 +13,8 @@ local _, NS = ...
 -- reads isHorizontal first). The owned bar therefore never assigns them: it
 -- anchors MicroMenu's layout children itself with GridLayoutUtil and its own
 -- parameters, sizes MicroMenu to their extents the way ResizeLayoutMixin does,
--- and re-applies that after every native MicroMenu:Layout (post-hook) while
--- the bar owns the menu.
+-- and restores it after Blizzard places the native grid while the bar owns
+-- the menu.
 --
 -- Nor does it run Blizzard code that writes MicroMenu or Edit Mode fields:
 -- SetOverrideScale (overrideScale) and ResetMicroMenuPosition (stride,
@@ -86,6 +86,7 @@ local hookedRoots = setmetatable({}, { __mode = "k" })
 local hookedGlobals = {}
 local desired = false
 local ScheduleReapply
+local SyncCompanionHook
 
 local eventFrame = CreateFrame("Frame")
 
@@ -199,6 +200,7 @@ end
 -- Grid, shell and companions for the current settings (out of combat). The
 -- help button's quadrant depends on where the sized shell ended up.
 local function LayoutOwned(root, settings)
+    if hookedRoots[root] and hookedRoots[root].CacheLayoutSettings then SyncCompanionHook(root, settings) end
     local horizontal = LayoutButtons(root, settings)
     ApplyShell(root, settings, horizontal, Clamp(settings.scale, 0.50, 1.50))
     AnchorCompanions(root, settings, horizontal, bar)
@@ -442,9 +444,40 @@ local function OnNativeScale(root)
     root:SetScale(OwnedScale(settings))
 end
 
--- Blizzard runs MicroMenu:Layout on show and after MarkDirty. When its cached
--- grid no longer matches the children it re-anchors them from its own fields;
--- put the owned grid back right after, in the same frame.
+local function HookRootMethod(root, method, callback)
+    local hooked = hookedRoots[root]
+    if not hooked then
+        hooked = {}
+        hookedRoots[root] = hooked
+    end
+    if not hooked[method] and Kit.HookFunction(root, method, callback) then
+        hooked[method] = true
+    end
+end
+
+local overrideCompanions = false
+local function CorrectNativeCompanions(root)
+    if not desired or OwnedMicroBar.suspended or root ~= activeRoot
+        or not ParentIs(root, bar) then return end
+    if NS.IsCombatLocked() then ScheduleReapply() return end
+    local settings = Settings()
+    if IsOwnedMode(settings) then AnchorCompanions(root, settings, settings.orientation ~= "vertical", bar) end
+end
+
+local function OnNativeCompanionsHook(root)
+    if overrideCompanions then Dispatch(CorrectNativeCompanions, root) end
+end
+
+-- Forever positions its FPS and help widgets against the same native container
+-- as the owned bar. Native placement already matches unless the two grids have
+-- different orientations. Only a profile using that override needs this hook.
+SyncCompanionHook = function(root, settings)
+    local horizontal = Field(root, "isHorizontal")
+    overrideCompanions = not Public(horizontal) or (horizontal == true) ~= (settings.orientation ~= "vertical")
+    if overrideCompanions then HookRootMethod(root, "UpdateHelpTicketButtonAnchor", OnNativeCompanionsHook) end
+end
+
+-- Put the owned grid back in the same frame as the native placement.
 local function OnNativeLayout(root)
     if not desired or not OwnedMicroBar.active or OwnedMicroBar.suspended
         or root ~= activeRoot or not ParentIs(root, bar) then
@@ -495,17 +528,6 @@ local function OnNativeOverrideHook()
     Dispatch(OnNativeOverride)
 end
 
-local function HookRootMethod(root, method, callback)
-    local hooked = hookedRoots[root]
-    if not hooked then
-        hooked = {}
-        hookedRoots[root] = hooked
-    end
-    if not hooked[method] and Kit.HookFunction(root, method, callback) then
-        hooked[method] = true
-    end
-end
-
 local function HookGlobal(name, callback)
     if not hookedGlobals[name] and Kit.HookGlobal(name, callback) then
         hookedGlobals[name] = true
@@ -515,7 +537,13 @@ end
 local function EnsureHooks(root)
     HookRootMethod(root, "ResetMicroMenuPosition", OnNativeResetHook)
     HookRootMethod(root, "OverrideMicroMenuPosition", OnNativeOverrideHook)
-    HookRootMethod(root, "Layout", OnNativeLayoutHook)
+    if NS.Client.isForever and HasMethod(root, "CacheLayoutSettings") and HasMethod(root, "UpdateHelpTicketButtonAnchor") then
+        -- GridLayoutFrameMixin calls this only after replacing the anchors and
+        -- size. Its outer Layout can run every frame on a dirty cache hit.
+        HookRootMethod(root, "CacheLayoutSettings", OnNativeLayoutHook)
+    else
+        HookRootMethod(root, "Layout", OnNativeLayoutHook)
+    end
     HookRootMethod(root, "UpdateScale", OnNativeScaleHook)
     HookGlobal("MicroMenuBar_SetFullScreenFrame", OnNativeOverrideHook)
     HookGlobal("MicroMenuBar_ClearFullScreenFrame", OnNativeOverrideHook)
@@ -693,6 +721,7 @@ end
 
 function OwnedMicroBar.Disable(root)
     desired = false
+    overrideCompanions = false
     root = root or activeRoot
     if NS.IsCombatLocked() then return false, "combat" end
     local success = true

@@ -136,24 +136,22 @@ local function FadeControlled(button, region)
     local current = Read(region, "GetAlpha")
     if type(current) ~= "number" then return false end
     local state = alphaStates[region]
+    -- Most regions are already transparent. Blizzard also rewrites an owned
+    -- highlight to exactly its original alpha on repeated SetNormal calls.
+    if current == 0 or math.abs(current) <= 0.00001 then
+        if state then state.button = button end
+        return true
+    end
     if not state then
-        -- Native alpha 0 leaves nothing to restore; keep no record for it
-        -- instead of building one on every state hook.
-        if Near(current, 0) then return true end
         state = { button = button, original = current }
     else
         state.button = button
-        if not Near(current, state.applied) and not Near(current, state.original) then
+        if current ~= state.original and not Near(current, state.original) then
             state.original = current
         end
     end
-    if not Near(current, 0) then region:SetAlpha(0) end
-    state.applied = 0
-    if Near(state.original, 0) then
-        alphaStates[region] = nil
-    else
-        alphaStates[region] = state
-    end
+    region:SetAlpha(0)
+    alphaStates[region] = state
     return true
 end
 
@@ -165,7 +163,7 @@ end
 local function RestoreAlpha(region, state)
     if not CanControl(state.button) then return false end
     local current = Read(region, "GetAlpha")
-    if Near(current, state.applied) and not Near(current, state.original) then
+    if Near(current, 0) and not Near(current, state.original) then
         region:SetAlpha(state.original)
     end
     alphaStates[region] = nil
