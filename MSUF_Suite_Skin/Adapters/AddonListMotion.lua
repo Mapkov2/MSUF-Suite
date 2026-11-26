@@ -381,7 +381,7 @@ function AddonListMotion.Attach(root, owner)
     return true
 end
 
-function AddonListMotion.Track(scrollBox, owner, provider)
+function AddonListMotion.Track(scrollBox, owner, provider, layoutPending)
     if Safety.HasMethod(scrollBox, "GetView") and Safety.Read(scrollBox, "GetView") == nil then return false end
     local state = AddonListMotion.scrollStates[scrollBox]
     if not state then
@@ -390,13 +390,12 @@ function AddonListMotion.Track(scrollBox, owner, provider)
             or not Safety.HasMethod(scrollBox, "ForEachFrame") then return false end
         state = CreateState(scrollBox, scrollBox)
         state.model, state.contextRoot, state.generic, state.driven = model, contextRoot, true, true
-        state.owners[owner], state.active = true, true
-        Register(state)
-        OnLayout(state)
     end
     state.owners[owner], state.active = true, true
     Register(state)
-    if not state.hadSnapshot then OnLayout(state) end
+    -- The result dispatcher calls LayoutFor synchronously for driven lists.
+    -- Standalone adoption and independently registered lists need their own baseline.
+    if not state.hadSnapshot and not (layoutPending and state.driven) then OnLayout(state) end
     return true
 end
 

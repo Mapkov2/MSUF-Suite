@@ -1049,6 +1049,9 @@ Check(profiler.ToggleFrame == profilerToggle, "skin hooked the warm profiler tog
 Check(NS.AddonSkins.roots[profiler.ProfilerFrame] and NS.AddonSkins.roots[profiler.PinContainer],
     "lazy profiler construction missed its main or pin window")
 Check(sourceReads == profilerReads, "known profiler construction scanned the global UI")
+Check(paintModes[profiler.PinContainer].contentOnlyMotion == true
+    and not paintModes[profiler.ProfilerFrame].contentOnlyMotion,
+    "profiler telemetry HUD adopted menu-tree resizing or profiler window lost discovery")
 Check(paintModes[profiler.ProfilerFrame].registerDynamicRows == false,
     "profiling list acquired recurring row-initialization callbacks")
 Check(profiler.PinContainer.regions[1].alpha == 0 and profiler.PinContainer.Header.BG.alpha == 0,

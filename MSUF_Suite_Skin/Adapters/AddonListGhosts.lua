@@ -108,10 +108,22 @@ local function HideRegion(target, saved)
     saved.shown = false
 end
 
+-- GetRect returns local UI units on native FontStrings and Textures on both
+-- clients. Older region-shaped providers may expose only individual getters.
+local function RegionBounds(source)
+    if source.GetRect then
+        local left, bottom, width, height = Safety.Call(source, "GetRect")
+        if not (Safety.Public(left) and Safety.Public(bottom) and Safety.Public(width) and Safety.Public(height)) then return end
+        if type(left) == "number" and type(bottom) == "number" and type(width) == "number" and type(height) == "number" then
+            return left, bottom + height, width, height
+        end
+    end
+    return Safety.Read(source, "GetLeft"), Safety.Read(source, "GetTop"), Safety.Read(source, "GetWidth"), Safety.Read(source, "GetHeight")
+end
+
 local function Anchor(target, source, top, saved)
-    local left, sourceTop = Safety.Read(source, "GetLeft"), Safety.Read(source, "GetTop")
+    local left, sourceTop, width, height = RegionBounds(source)
     local rowLeft = saved.rowLeft
-    local width, height = Safety.Read(source, "GetWidth"), Safety.Read(source, "GetHeight")
     if type(left) ~= "number" or type(sourceTop) ~= "number" or type(rowLeft) ~= "number"
         or type(width) ~= "number" or type(height) ~= "number" then HideRegion(target, saved) return false end
     left, sourceTop = left - rowLeft, sourceTop - top
@@ -169,7 +181,8 @@ end
 
 local function CopyTexture(target, source, top, shown, saved)
     if not shown or not source then return HideRegion(target, saved) end
-    local atlas, texture = Safety.Read(source, "GetAtlas"), Safety.Read(source, "GetTexture")
+    local atlas = Safety.Read(source, "GetAtlas")
+    local texture = not atlas and Safety.Read(source, "GetTexture")
     if not atlas and not texture then return HideRegion(target, saved) end
     if not Anchor(target, source, top, saved) then return end
     if atlas ~= saved.atlas or not atlas and texture ~= saved.texture then
@@ -250,7 +263,9 @@ CaptureChildren = function(frame, depth)
         or Safety.Read(frame, "IsVisible") ~= true then return end
     captureCopy.budget = captureCopy.budget - 1
     CaptureRegions(Safety.Call(frame, "GetRegions"))
-    CaptureFrames(depth + 1, Safety.Call(frame, "GetChildren"))
+    if depth < 2 and captureCopy.budget > 0 then
+        CaptureFrames(depth + 1, Safety.Call(frame, "GetChildren"))
+    end
 end
 
 local function CaptureGeneric(state, record, copy)

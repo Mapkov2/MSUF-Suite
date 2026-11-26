@@ -8,6 +8,9 @@ local mode = { role = "shell", allowImplicitProtected = false, maxDepth = 6, max
 local restedMode = { role = "shell", allowImplicitProtected = true, maxDepth = 6, maxNodes = 480 }
 local profilerMode = { role = "shell", allowImplicitProtected = false, maxDepth = 6, maxNodes = 480,
     registerDynamicRows = false }
+-- Pinned rows in the telemetry HUD contain text. PinAddon and CreateFontString
+-- already style new pool rows/columns; its one-second resize is not a menu change.
+local profilerPinsMode
 local embeddedMode = { rootSurface = false, preserveRootArt = true, maxDepth = 4, maxNodes = 180 }
 local softerModes = setmetatable({}, { __mode = "k" })
 local events = CreateFrame("Frame")
@@ -106,6 +109,13 @@ local function Paint(state)
     end
     local appearance = state.id == "spoken" and NS.SpokenSkin.Mode(state.frame, mode)
         or state.id == "restedXP" and restedMode or state.id == "addonProfiler" and profilerMode or mode
+    if state.id == "addonProfiler" and state.frame == Safety.Field(rawget(_G, "NumyAddonProfiler"), "PinContainer") then
+        if not profilerPinsMode then
+            profilerPinsMode = NS.CopyValue(profilerMode)
+            profilerPinsMode.contentOnlyMotion = true
+        end
+        appearance = profilerPinsMode
+    end
     Visuals.Close(state.frame, state.owner, state.id == "restedXP")
     state.applied = NS.GenericWindows.ApplyFrame(state.frame, state.owner, Skins.WindowMode(state.id, appearance)) == true
     if state.applied then
