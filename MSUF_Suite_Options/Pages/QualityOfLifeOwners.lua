@@ -3,7 +3,7 @@ local Owners, active, destinations = {}, {}, {}
 P.QoLOwners = Owners
 -- UI ownership only: catalog identities, saved values and runtimes stay in Suite.
 local PAGES = {
-    suite_bags = { title = "Inventory organisation", modules = "inventoryProtection lootVendorRules" },
+    suite_bags = { title = "Inventory organisation", modules = "inventoryProtection lootVendorRules cheapestItem" },
     suite_chat = { title = "Chat tools", modules = "guildChatPrivacy" },
     suite_minimap = { title = "Minimap", modules = "mapLandingShortcuts" },
     suite_actionbars = { title = "Action bars", modules = "autoUprank" },
