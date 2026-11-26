@@ -8,6 +8,14 @@ local CommunitiesSkin = {
     states = setmetatable({}, { __mode = "k" }),
     columnDisplayHooks = setmetatable({}, { __mode = "k" }),
 }
+-- These native top-level panes either contain fixed controls only or bind
+-- all of their ScrollBoxes through RegisterRowCallback during SkinStatic.
+-- Unknown panes and descendants still use ordinary menu discovery.
+CommunitiesSkin.deferredMotionPanes = {
+    "CommunitiesList", "MemberList", "ApplicantList", "GuildBenefitsFrame",
+    "InvitationFrame", "TicketFrame", "GuildNameAlertFrame", "GuildNameChangeFrame",
+    "CommunityNameChangeFrame", "GuildPostingChangeFrame", "CommunityPostingChangeFrame",
+}
 NS.CommunitiesSkin = CommunitiesSkin
 
 local Safety = NS.Safety
@@ -16,6 +24,27 @@ local Kit = NS.AdapterKit
 local Path = Kit.Path
 local Fade = Kit.Fade
 local FadeNineSlice = Kit.FadeNineSlice
+
+local listPanes = { CommunitiesList = true, MemberList = true, ApplicantList = true }
+
+local function BoundMotionList(state, pane)
+    if Safety.IsForbidden(pane) then return false end
+    local list = Field(pane, "ScrollBox")
+    if not Safety.Public(list) or type(list) ~= "table" or not state.scrollBoxes[list] then return false end
+    local result = NS.ResultMotion.states[list]
+    return result and result.registered == true
+end
+
+function CommunitiesSkin.CanDeferMotionPane(state, key, pane)
+    if listPanes[key] then return BoundMotionList(state, pane) end
+    if key == "GuildBenefitsFrame" then
+        if Safety.IsForbidden(pane) then return false end
+        local perks, rewards = Field(pane, "Perks"), Field(pane, "Rewards")
+        return Safety.Public(perks) and Safety.Public(rewards)
+            and BoundMotionList(state, perks) and BoundMotionList(state, rewards)
+    end
+    return true
+end
 
 local COLUMN_HEADER_LIMIT = 16
 
@@ -124,7 +153,10 @@ local function GetState(frame, owner)
 end
 
 local function FadeButtonNormalTexture(state, button)
-    Fade(state, (Safety.Call(button, "GetNormalTexture")))
+    local texture = Safety.Read(button, "GetNormalTexture")
+    if not texture then return end
+    if NS.Cosmetics.GetOwner(texture) == state.owner and Safety.Read(texture, "GetAlpha") == 0 then return end
+    Fade(state, texture)
 end
 
 local function SkinDialogSurface(state, dialog, borderKey)
@@ -152,12 +184,13 @@ local function SkinPanelButton(state, button)
     return ApplyControl(state, button, PANEL_BUTTON_SPEC)
 end
 
-local function SkinFixedPanelButtons(state)
+local function SkinFixedPanelButtons(state, pane)
     -- CommunitiesChatFrame.xml gives this one control an exact global name
     -- rather than a parentKey; all remaining controls use the paths above.
-    SkinPanelButton(state, _G.JumpToUnreadButton)
+    if not pane or pane == "Chat" then SkinPanelButton(state, _G.JumpToUnreadButton) end
     for index = 1, #communityPanelButtonPaths do
-        SkinPanelButton(state, Kit.PathOf(state.frame, communityPanelButtonPaths[index]))
+        local path = communityPanelButtonPaths[index]
+        if not pane or pane == path[1] then SkinPanelButton(state, Kit.PathOf(state.frame, path)) end
     end
 end
 
@@ -389,6 +422,12 @@ local function SkinGuildDetails(state)
     RegisterScrollBox(state, Field(news, "ScrollBox"), "news")
 end
 
+local function SkinControlFrame(state, controls)
+    SkinPanelButton(state, Field(controls, "CommunitiesSettingsButton"))
+    SkinPanelButton(state, Field(controls, "GuildControlButton"))
+    SkinPanelButton(state, Field(controls, "GuildRecruitmentButton"))
+end
+
 local function SkinBottomButtons(state)
     -- These controls are direct children of CommunitiesFrame (or of its
     -- direct CommunitiesControlFrame child), not GuildDetailsFrame. Blizzard
@@ -397,10 +436,7 @@ local function SkinBottomButtons(state)
     SkinPanelButton(state, Field(state.frame, "GuildLogButton"))
     SkinPanelButton(state, Field(state.frame, "InviteButton"))
 
-    local controls = Field(state.frame, "CommunitiesControlFrame")
-    SkinPanelButton(state, Field(controls, "CommunitiesSettingsButton"))
-    SkinPanelButton(state, Field(controls, "GuildControlButton"))
-    SkinPanelButton(state, Field(controls, "GuildRecruitmentButton"))
+    SkinControlFrame(state, Field(state.frame, "CommunitiesControlFrame"))
 end
 
 -- GuildRoster.xml anchors the member dialog's CloseButton at TOPRIGHT +3,-4,
@@ -507,17 +543,98 @@ local function SkinStatic(state)
     NS.Checkmarks.TrackControlTree(frame, state.owner, CONTROL_TREE_OPTIONS)
 end
 
-function CommunitiesSkin:OnDisplayChanged()
-    local state = self.activeState
-    if not state or not state.active or NS.IsCombatLocked() then return end
-    SkinStatic(state)
+-- SetDisplayMode shows the parentKeys in its mode list before this callback.
+-- XML-created dialogs and other pages retain their skin until the owner releases it.
+local modePanes = {
+    CommunitiesList = SkinLeftNavigation, MemberList = SkinMemberList, ApplicantList = SkinApplicantList,
+    GuildFinderFrame = SkinFinderPane, CommunityFinderFrame = SkinFinderPane,
+    InvitationFrame = SkinInvitationPane, ClubFinderInvitationFrame = SkinInvitationPane, TicketFrame = SkinInvitationPane,
+    GuildBenefitsFrame = SkinGuildBenefits, GuildDetailsFrame = SkinGuildDetails,
+    CommunitiesControlFrame = SkinControlFrame, InviteButton = SkinPanelButton, GuildLogButton = SkinPanelButton,
+}
+local fixedButtonPanes = { Chat = true, InvitationFrame = true, ClubFinderInvitationFrame = true, TicketFrame = true }
+local function RefreshDisplay(state, mode)
+    if not Safety.Public(mode) or type(mode) ~= "table" then
+        SkinStatic(state)
+    else
+        local options = { maxDepth = CONTROL_TREE_OPTIONS.maxDepth - 1, maxNodes = CONTROL_TREE_OPTIONS.maxNodes - 1 }
+        for index = 1, #mode do
+            local key = mode[index]
+            if Safety.Public(key) and type(key) == "string" then
+                local pane = Field(state.frame, key)
+                if Safety.Public(pane) and Kit.IsShown(pane) then
+                    local skin = modePanes[key]
+                    if skin then skin(state, pane) end
+                    if fixedButtonPanes[key] then SkinFixedPanelButtons(state, key) end
+                    if options.maxNodes > 0 then
+                        local _, visited = NS.Checkmarks.TrackControlTree(pane, state.owner, options)
+                        options.maxNodes = options.maxNodes - visited
+                    end
+                end
+            end
+        end
+        FadeInsetFrame(state, Field(state.frame, "Inset"))
+        SkinTabs(state)
+    end
     RefreshCommunitySelection(state)
+end
+
+local SELECTION_PENDING, DISPLAY_PENDING = 1, 2
+
+local function FlushDisplay(state)
+    if not state.pending or not state.active or CommunitiesSkin.activeState ~= state then return end
+    if Kit.IsHidden(state.frame) then
+        state.hidden = state.visibilityHooked
+        return
+    end
+    if NS.IsCombatLocked() then
+        if not state.waitingForCombat then
+            state.waitingForCombat = true
+            NS.CombatGate.RunOrDefer(state.resume, state.resume)
+        end
+        return
+    end
+    if not Safety.CanDecorate(state.frame, true) then return end
+    local pending, mode = state.pending, state.mode
+    state.pending, state.mode = nil, nil
+    if pending == DISPLAY_PENDING then
+        -- RefreshDisplay already updates the selection.
+        RefreshDisplay(state, mode)
+    else
+        RefreshCommunitySelection(state)
+    end
+end
+
+local function WindowShown(frame)
+    local state = CommunitiesSkin.states[frame]
+    if state and state.active then
+        state.hidden = nil
+        if state.pending then FlushDisplay(state) end
+    end
+end
+
+local function WindowHidden(frame)
+    local state = CommunitiesSkin.states[frame]
+    if not state or not state.active then return end
+    state.hidden = true
+    if state.waitingForCombat then
+        NS.CombatGate.Cancel(state.resume)
+        state.waitingForCombat = nil
+    end
+end
+
+function CommunitiesSkin:OnDisplayChanged(mode)
+    local state = self.activeState
+    if not state or not state.active then return end
+    state.pending, state.mode = DISPLAY_PENDING, mode
+    if not state.hidden and not state.waitingForCombat then FlushDisplay(state) end
 end
 
 function CommunitiesSkin:OnClubSelected()
     local state = self.activeState
-    if not state or not state.active or NS.IsCombatLocked() then return end
-    RefreshCommunitySelection(state)
+    if not state or not state.active then return end
+    state.pending = state.pending or SELECTION_PENDING
+    if not state.hidden and not state.waitingForCombat then FlushDisplay(state) end
 end
 
 local function RegisterFrameCallback(state, event, method)
@@ -528,6 +645,17 @@ local function RegisterFrameCallback(state, event, method)
 end
 
 local function RegisterCallbacks(state)
+    if not state.resume then
+        state.resume = function()
+            state.waitingForCombat = nil
+            FlushDisplay(state)
+        end
+        -- Created by Apply outside combat. A closed window subsequently records
+        -- only its latest display and selection dirtiness until native OnShow.
+        state.visibilityHooked = Safety.Invoke(state.frame, "HookScript", "OnShow", WindowShown)
+        if state.visibilityHooked then Safety.Invoke(state.frame, "HookScript", "OnHide", WindowHidden) end
+    end
+    state.hidden = state.visibilityHooked and Kit.IsHidden(state.frame)
     local events = CommunitiesFrameMixin.Event
     RegisterFrameCallback(state, events.DisplayModeChanged, CommunitiesSkin.OnDisplayChanged)
     RegisterFrameCallback(state, events.ClubSelected, CommunitiesSkin.OnClubSelected)
@@ -546,6 +674,8 @@ end
 
 local function RestoreState(state)
     state.active = false
+    if state.waitingForCombat then NS.CombatGate.Cancel(state.resume) end
+    state.pending, state.mode, state.waitingForCombat = nil, nil, nil
     RestoreMemberClose(state)
     UnregisterCallbacks(state)
     NS.ControlSkin.DisableOwner(state.owner)
