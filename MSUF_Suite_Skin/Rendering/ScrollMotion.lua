@@ -23,6 +23,12 @@ local nativeRoots = {
     -- Scrolling can run Blizzard's row initializers. Their display indices
     -- feed the native Train and Summon actions; never write these controllers.
     ClassTrainerFrame = true, CollectionsJournal = true,
+    -- The PvP scoreboard and results build rows and cells through a TableBuilder
+    -- (ScrollUtil.RegisterTableBuilder) while scrolling. With a skin-written
+    -- canInterpolateScroll the wheel ran that build from the native interpolator
+    -- under the skin's taint: BG scoreboards raised "Attempted to release object
+    -- 'nil'" from TableBuilder:RemoveRow.
+    PVPMatchScoreboard = true, PVPMatchResults = true,
 }
 
 function NativeList.IsTarget(target)
