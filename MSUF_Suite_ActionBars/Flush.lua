@@ -422,7 +422,7 @@ end
 -- shown until then.
 function AB.Regrid(bar)
     gridBars[bar] = true
-    Schedule()
+    if not NS.IsCombatLocked() then Schedule() end
 end
 
 -- StopDispatcher: every mark and every parked unit is dropped.

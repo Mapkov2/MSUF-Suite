@@ -141,7 +141,22 @@ end
 local suiteBarOf = {}
 local function AfterBlizzardPlanHook(blizzardBar)
     local bar = suiteBarOf[blizzardBar]
-    if bar and M.active and not bar.header:IsVisible() then Dispatch(AB.Regrid, bar) end
+    if not bar or not M.active or bar.header:IsVisible() then return end
+    -- Restricted Hide marks statehidden. A native SetShown(false) under a
+    -- hidden parent is silent and leaves that marker alone. Only a child
+    -- Blizzard actually hid against the suite plan needs a secure repair.
+    for i = 1, #bar.buttons do
+        local button = bar.buttons[i].button
+        local shown = button:IsShown()
+        if not S.Public(shown) then return Dispatch(AB.Regrid, bar) end
+        if not shown then
+            local hidden = button:GetAttribute("statehidden")
+            if not S.Public(hidden) or not hidden then
+                Dispatch(AB.Regrid, bar)
+                return
+            end
+        end
+    end
 end
 local function ReassertHook() Dispatch(Reassert) end
 

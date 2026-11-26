@@ -167,6 +167,14 @@ local function Behavior(path, native)
     assert(w.counters.paint == 2, "slot/bar work waited for cap")
     w.ab.Regrid(w.bar) Fire(w, true)
     assert(w.counters.grid == 1, "protected grid waited for cap")
+    w.combat = true
+    w.ab.Regrid(w.bar)
+    assert(Pending(w, true) == 0 and w.ab.Dirty.grid[w.bar], "combat queued a useless grid-only flush")
+    w.combat = false
+    w.ab.Dirty.Schedule() -- RegenEnabled resumes parked protected work.
+    Fire(w, true)
+    assert(w.counters.grid == 2, "combat-end flush lost the parked grid")
+
     Fire(w, false)
     assert(w.counters.cooldown == 6 and w.counters.nativeFeedback == (native and 2 or 0), "trailing paint changed")
 
