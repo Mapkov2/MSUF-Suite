@@ -640,10 +640,21 @@ local function ApplyNow(state)
     if not root or not state.active then return false, "missing" end
     if Safety.IsForbidden(root) then return false, "forbidden" end
     InstallHooks()
-    if NS.AdapterKit.DeferHidden(root, state, ApplyNow, state) then return true, "hidden" end
+    if NS.AdapterKit.DeferHidden(root, state, ApplyNow, state) then
+        -- The native root exists at login. Its shell and header have no
+        -- dependency on the model, equipment, or currently selected tab.
+        if not NS.IsCombatLocked() and Safety.CanCreateRegions(root) then
+            if NS.AdapterKit.WindowShellFits(root) == true then Chrome.Window(state, root, true) end
+        end
+        return true, "hidden"
+    end
     if NS.IsCombatLocked() then panel:RunOrDefer(state, "apply", ApplyNow) end
     if not Safety.CanCreateRegions(root, not NS.IsCombatLocked()) then return false, "protected" end
 
+    if state.preparedWindow == root and NS.AdapterKit.WindowShellFits(root) ~= true then
+        if not NS.IsCombatLocked() then NS.AdapterKit.WaitForWindowSize(root, state, ApplyNow, state) end
+        return false, "geometry"
+    end
     Chrome.Window(state, root)
     Chrome.FadeNineSlice(state, root)
     Fade(state, Field(root, "Background"))

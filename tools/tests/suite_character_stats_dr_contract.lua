@@ -498,6 +498,7 @@ NS.GearAnnotations.IsWide = function() return false end
 -- The dossier collects a burst of item events into one next-frame refresh.
 local timers = {}
 C_Timer = { After = function(_, callback) timers[#timers + 1] = callback end }
+dofile(root .. "/tools/tests/skin_registry_timer_fixture.lua")(C_Timer)
 local reads = 0
 -- Keep real pending-load bookkeeping while instrumenting item reads.
 NS.EquipmentInfo = Fresh("EquipmentInfo.lua").EquipmentInfo

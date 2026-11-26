@@ -16,6 +16,7 @@ C_Timer={After=function(delay, callback)
     assert(delay==0 and not wake, "unexpected dossier wake-up")
     wake=callback
 end}
+dofile(root .. "/tools/tests/skin_registry_timer_fixture.lua")(C_Timer)
 H.SetCombat(true)
 H.Details.Apply(H.root,"character","details")
 local view=H.Details.views[H.root]

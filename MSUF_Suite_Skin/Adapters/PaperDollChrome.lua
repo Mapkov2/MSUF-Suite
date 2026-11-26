@@ -61,18 +61,33 @@ local function Band(root, layer, height, y)
     return region
 end
 
-function Chrome.Window(state, root)
-    if not Chrome.Attach(state, root, WINDOW_SPEC, true) then return end
+function Chrome.Window(state, root, prepare)
+    if not Kit.Ensure(state, root, WINDOW_SPEC, prepare) then return end
+    state.preparedWindow = prepare and root or nil
     if not Safety.HasMethod(root, "GetFrameLevel") then return end
     local header = headers[root]
+    if header and header.owner == state then
+        if header.prepared and not prepare then
+            header.prepared = nil
+            header.fill:Show()
+            header.rule:Show()
+        end
+        return
+    end
     if not header then
         header = { fill = Band(root, "BACKGROUND", 25, -2), rule = Band(root, "ARTWORK", 1, -27) }
         headers[root] = header
     end
     header.owner, state.headerRoot = state, root
     PaintHeader(header)
-    header.fill:Show()
-    header.rule:Show()
+    header.prepared = prepare
+    if prepare then
+        header.fill:Hide()
+        header.rule:Hide()
+    else
+        header.fill:Show()
+        header.rule:Show()
+    end
     if not watchingTheme then
         watchingTheme = true
         NS.Registry.AddListener(headers, OnTheme)
@@ -300,6 +315,7 @@ end
 
 -- Cancels deferred work, hides this owner's surfaces and forgets the owner.
 function Chrome:Release(state)
+    state.preparedWindow = nil
     local header = state.headerRoot and headers[state.headerRoot]
     if header and header.owner == state then
         header.fill:Hide()
