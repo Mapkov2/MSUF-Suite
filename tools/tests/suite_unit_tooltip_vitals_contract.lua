@@ -80,12 +80,17 @@ local function Frame(parent)
     function frame:CreateFontString() self.text = Frame(self); return self.text end
     function frame:SetScript(name, script) self.scripts[name] = script end
     function frame:HookScript(name, script) self:SetScript(name, script) end
-    function frame:RegisterEvent(event) self.events[event] = true end
-    function frame:RegisterUnitEvent(event, unit) self.events[event] = unit end
-    function frame:UnregisterAllEvents()
-        assert(next(self.events), "tooltip cleared an event frame without any registrations")
-        self.events = {}
+    function frame:RegisterEvent(event)
+        assert(not self.events[event], "duplicate general tooltip event registration")
+        self.events[event] = true
     end
+    function frame:RegisterUnitEvent(event, unit) self.events[event] = unit end
+    function frame:UnregisterEvent(event)
+        assert(self.events[event], "tooltip tried to remove an unregistered event")
+        self.events[event] = nil
+        self.removed = (self.removed or 0) + 1
+    end
+    function frame:UnregisterAllEvents() error("tooltip swept all client events") end
     frames[#frames + 1] = frame
     return frame
 end
@@ -371,6 +376,14 @@ local panel = Frame()
 observer(panel, "player")
 local panelHealth, panelEvents = frames[#frames - 6], frames[#frames]
 assert(panelHealth.shown and panelHealth.value == health and panelEvents.events.UNIT_HEALTH == "player")
+local removed = panelEvents.removed or 0
+observer(panel, "focus")
+assert(panelEvents.events.UNIT_HEALTH == "focus" and panelEvents.events.UNIT_MAXPOWER == "focus"
+    and (panelEvents.removed or 0) == removed, "retargeting removed live event families")
+power = false
+vitals.Refresh()
+assert(panelEvents.events.UNIT_HEALTH == "focus" and panelEvents.events.PLAYER_REGEN_ENABLED
+    and not panelEvents.events.UNIT_POWER_UPDATE and panelEvents.removed == removed + 3)
 mode, power = "native", false
 assert(not vitals.Refresh() and not observer and not next(panelEvents.events) and not panelHealth.shown)
 assert(vitals.PaintPreview(preview, true, true, false, true, true) == 0 and not preview.health.shown)

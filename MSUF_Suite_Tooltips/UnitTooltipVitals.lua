@@ -229,13 +229,47 @@ local function FadeNative(view, fade)
     return true
 end
 
+local HEALTH_EVENTS = { "UNIT_HEALTH", "UNIT_MAXHEALTH" }
+local POWER_EVENTS = { "UNIT_POWER_UPDATE", "UNIT_MAXPOWER", "UNIT_DISPLAYPOWER" }
+
+local function UnitEvents(frame, events, unit)
+    if unit then
+        for i = 1, #events do frame:RegisterUnitEvent(events[i], unit) end
+    else
+        for i = 1, #events do frame:UnregisterEvent(events[i]) end
+    end
+end
+
+local function SetWatch(view, unit)
+    local health = unit and config.mode == "show" or nil
+    local power = unit and config.power or nil
+    local frame = view.event
+    if health ~= view.watchHealth then
+        if health then
+            frame:RegisterEvent("PLAYER_REGEN_DISABLED")
+            frame:RegisterEvent("PLAYER_REGEN_ENABLED")
+        else
+            frame:UnregisterEvent("PLAYER_REGEN_DISABLED")
+            frame:UnregisterEvent("PLAYER_REGEN_ENABLED")
+        end
+    end
+    -- RegisterUnitEvent replaces the unit filter on this event and frame.
+    if health ~= view.watchHealth or health and unit ~= view.unit then
+        UnitEvents(frame, HEALTH_EVENTS, health and unit)
+    end
+    if power ~= view.watchPower or power and unit ~= view.unit then
+        UnitEvents(frame, POWER_EVENTS, power and unit)
+    end
+    view.unit, view.watchHealth, view.watchPower = unit, health, power
+end
+
 local function Stop(view)
     if not view then return end
     view.mirror, view.mirrorPending, view.mirrorDirty = nil, nil, nil
     view.mirrorPercent, view.mirrorText = nil, nil
     if view.faded then FadeNative(view, false) end
-    if view.unit then view.event:UnregisterAllEvents() end
-    view.unit, view.pending, view.unitShown, view.healthOn, view.powerOn = nil, nil, nil, nil, nil
+    if view.unit then SetWatch(view, nil) end
+    view.pending, view.unitShown, view.healthOn, view.powerOn = nil, nil, nil, nil
     HideBar(view.healthShape)
     HideBar(view.powerShape)
 end
@@ -345,22 +379,7 @@ local function Watch(view, unit)
         Stop(view)
         return
     end
-    if view.unit ~= unit or view.watchHealth ~= config.mode or view.watchPower ~= config.power then
-        local frame = view.event
-        if view.unit then frame:UnregisterAllEvents() end
-        if config.mode == "show" then
-            frame:RegisterUnitEvent("UNIT_HEALTH", unit)
-            frame:RegisterUnitEvent("UNIT_MAXHEALTH", unit)
-            frame:RegisterEvent("PLAYER_REGEN_DISABLED")
-            frame:RegisterEvent("PLAYER_REGEN_ENABLED")
-        end
-        if config.power then
-            frame:RegisterUnitEvent("UNIT_POWER_UPDATE", unit)
-            frame:RegisterUnitEvent("UNIT_MAXPOWER", unit)
-            frame:RegisterUnitEvent("UNIT_DISPLAYPOWER", unit)
-        end
-        view.unit, view.watchHealth, view.watchPower = unit, config.mode, config.power
-    end
+    SetWatch(view, unit)
     Update(view)
 end
 
