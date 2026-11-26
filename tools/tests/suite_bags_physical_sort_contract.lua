@@ -291,6 +291,7 @@ local function Menu()
     end
     function node:CreateTitle(label) self.title = label end
     function node:SetEnabled(enabled) self.enabled = enabled end
+    function node:SetScrollMode() end
     return node
 end
 
@@ -326,6 +327,38 @@ do
     W.P.PhysicalSort.AddMenu(W.P.InventoryView.cleanup, menu)
     assert(not menu["Sort bag slots"].enabled and menu.title == MERCHANT_MESSAGE,
         "the disabled custom sort menu must explain the merchant restriction")
+end
+
+do
+    local W = World()
+    W.sizes[0] = 4
+    W.Put(0, 1, 101)
+    W.Put(0, 2, 102)
+    W.Put(0, 3, 104)
+    Open(W)
+    C_Item.GetItemNameByID = function(id) return id == 101 and "Bark" or id == 102 and "Antler" or "Dust" end
+    local menu
+    W.S.ContextMenu = function(owner, generator)
+        menu = Menu()
+        generator(owner, menu)
+    end
+    W.P.InventoryActions.SortMenu(W.P.InventoryView.cleanup)
+    menu["Reserve bag slots for items"].action()
+    local first = assert(menu.Backpack["Slot 1 · Bark"])
+    local second = assert(menu.Backpack["Slot 2 · Antler"])
+    first.toggle(first.key)
+    second.toggle(second.key)
+    assert(first.selected(first.key) and second.selected(second.key))
+    W.Put(0, 1, 102)
+    W.Put(0, 2, 101)
+    Update(W)
+    local idle = Subscribers(W)
+    assert(W.P.PhysicalSort.Start())
+    for _ = 1, 8 do Update(W) end
+    Has(W, 0, 1, 101)
+    Has(W, 0, 2, 102)
+    Has(W, 0, 3, 104)
+    assert(not W.cursor and Subscribers(W) == idle and #W.errors == 0)
 end
 
 print("Suite physical bag sorting contract passed")

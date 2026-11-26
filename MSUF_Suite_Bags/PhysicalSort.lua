@@ -89,13 +89,14 @@ local function Metadata(index, bag, slot, link, config)
         subclassID = Finite(subclass) and subclass or nil, expansion = Finite(expansion) and expansion or nil }
 end
 
-local function AddSlot(group, bag, slot, family, cleanup)
+local function AddSlot(group, bag, slot, family, cleanup, reservation)
     local info = C_Container.GetContainerItemInfo(bag, slot)
     if not Public(info) or info and (not ValidInfo(info) or not Public(info.isLocked) or info.isLocked ~= false) then
         group.skipped = true
         return
     end
-    local position = { bag = bag, slot = slot, family = family }
+    local position = { bag = bag, slot = slot, family = family, reservation = reservation }
+    if reservation then group.hasReservations = true end
     if info then
         local data = Metadata(P.InventoryView.index, bag, slot, info.hyperlink, M.config)
         if not data then
@@ -144,7 +145,11 @@ local function AddBag(groups, byFamily, bag, size, ignored, reverse, cleanup)
     if reverse then first, last, increment = size, 1, -1 end
     local base = bag * P.SlotCache.KEY
     for slot = first, last, increment do
-        if not ignored or ignored[base + slot] ~= true then AddSlot(group, bag, slot, family, cleanup) end
+        local rule = ignored and ignored[base + slot]
+        if rule ~= true then
+            local reservation = Finite(rule) and rule > 0 and rule or nil
+            AddSlot(group, bag, slot, family, cleanup, reservation)
+        end
     end
     return true
 end
@@ -155,6 +160,15 @@ local function Reverse()
     local rightToLeft = C_Container.GetSortBagsRightToLeft()
     if not Public(rightToLeft) or type(rightToLeft) ~= "boolean" then return end
     return rightToLeft
+end
+
+local function OrderGroup(group, order, cleanup)
+    local items = group.items
+    table.sort(items, order)
+    if cleanup then
+        group.firstHole, group.lastOccupied = 1, #group.slots
+        for rank = 1, #items do items[rank].rank = rank end
+    end
 end
 
 local function Plan(cleanup)
@@ -176,15 +190,10 @@ local function Plan(cleanup)
     local order = P.InventoryModel.SortOrder(cleanup and NS.BagsSort.TYPE or M.config.sortMode)
     for i = 1, #groups do
         local group = groups[i]
-        local items = group.items
-        table.sort(items, order)
-        if cleanup then
-            group.firstHole, group.lastOccupied = 1, #group.slots
-            for rank = 1, #items do items[rank].rank = rank end
-            skipped = skipped or group.skipped
-        end
+        if not group.hasReservations then OrderGroup(group, order, cleanup) end
+        if cleanup then skipped = skipped or group.skipped end
     end
-    return { groups = groups, groupIndex = 1, profile = NS.DB, cleanup = cleanup, skipped = skipped }
+    return { groups = groups, order = order, groupIndex = 1, profile = NS.DB, cleanup = cleanup, skipped = skipped }
 end
 
 local function Exchange(source, target)
@@ -227,9 +236,51 @@ local function Compact(group)
     end
 end
 
+-- A reserved item is moved through the same verified pickup and settle
+-- path as any other stack, before its destination leaves the sortable set.
+local function MatchReservation(group, id)
+    for index = 1, #group.items do
+        local token = group.items[index]
+        if token.id == id and token.position.reservation ~= id then return token.position end
+    end
+end
+
+local function Reserve(active, group)
+    local slots = group.slots
+    for index = (group.reservationIndex or 0) + 1, #slots do
+        local target = slots[index]
+        local id = target.reservation
+        if id and (not target.token or target.token.id ~= id) then
+            local source = MatchReservation(group, id)
+            if source then
+                group.reservationIndex = index
+                return source, target
+            end
+            active.missingReservations = true
+        end
+    end
+    local items, count = group.items, 0
+    for index = #items, 1, -1 do items[index] = nil end
+    for index = 1, #slots do
+        local slot = slots[index]
+        if not slot.reservation then
+            count = count + 1
+            slots[count] = slot
+            if slot.token then items[#items + 1] = slot.token end
+        end
+    end
+    for index = #slots, count + 1, -1 do slots[index] = nil end
+    group.hasReservations = nil
+    OrderGroup(group, active.order, active.cleanup)
+end
+
 local function NextMove(active)
     local group = active.groups[active.groupIndex]
     while group do
+        if group.hasReservations then
+            local source, target = Reserve(active, group)
+            if source then return source, target end
+        end
         if active.cleanup then
             local source, target = Compact(group)
             if source then return source, target end
@@ -343,6 +394,7 @@ local function SortStep(active)
     if not source then
         local message = active.cleanup and "Physical bag sorting stopped."
             or "Physical bag sorting skipped stacks that cannot be swapped safely."
+        if active.missingReservations then S.Print(S.Text("Some reserved items could not be placed.")) end
         Sort.Stop(active.skipped and S.Text(message) or nil)
         return
     end
@@ -495,7 +547,7 @@ local function SlotsMenu(_, root)
     local function Toggle(key)
         if job or NS.InCombat() then return end
         slots = slots or IgnoredSlots(true)
-        if slots then slots[key] = slots[key] ~= true and true or nil end
+        if slots and not Finite(slots[key]) then slots[key] = slots[key] ~= true and true or nil end
     end
     root:CreateTitle(S.Text("Exclude slots from custom sort"))
     for bag = Enum.BagIndex.Backpack, NUM_TOTAL_BAG_FRAMES do
@@ -507,10 +559,63 @@ local function SlotsMenu(_, root)
                 local branch = root:CreateButton(name)
                 local base = bag * P.SlotCache.KEY
                 for slot = 1, count do
-                    local label = string.format(S.Text("Slot %d"), slot)
-                    branch:CreateCheckbox(label, Selected, Toggle, base + slot)
+                    local key = base + slot
+                    if not slots or not Finite(slots[key]) then
+                        local label = string.format(S.Text("Slot %d"), slot)
+                        branch:CreateCheckbox(label, Selected, Toggle, key)
+                    end
                 end
             end
+        end
+    end
+end
+
+local function ReservationItem(bag, slot)
+    local info = C_Container.GetContainerItemInfo(bag, slot)
+    if Public(info) and type(info) == "table" and Finite(info.itemID) and info.itemID > 0 then return info.itemID end
+end
+
+local function ReserveSlot(data)
+    if job or NS.InCombat() then return end
+    local slots = IgnoredSlots(true)
+    if not slots or slots[data.key] == true then return end
+    if Finite(slots[data.key]) then
+        slots[data.key] = nil
+        return
+    end
+    local id = ReservationItem(data.bag, data.slot)
+    if id and id == data.id then slots[data.key] = id end
+end
+
+local function Reserved(data)
+    local slots = IgnoredSlots(false)
+    return slots ~= nil and Finite(slots[data.key])
+end
+
+local function BagReservations(branch, bag, count, slots)
+    local base = bag * P.SlotCache.KEY
+    for slot = 1, count do
+        local key = base + slot
+        local reserved = slots and slots[key]
+        local id = ReservationItem(bag, slot)
+        if reserved ~= true and (id or Finite(reserved)) then
+            local saved = Finite(reserved) and reserved or id
+            local item = S.PublicText(C_Item.GetItemNameByID(saved)) or tostring(saved)
+            branch:CreateCheckbox(S.Text("Slot %d · %s"):format(slot, item), Reserved, ReserveSlot,
+                { key = key, bag = bag, slot = slot, id = id })
+        end
+    end
+end
+
+local function ReservationMenu(_, root)
+    root:SetScrollMode(320)
+    root:CreateTitle(S.Text("Reserve positions for the Suite bag sort"))
+    local slots = IgnoredSlots(false)
+    for bag = Enum.BagIndex.Backpack, NUM_TOTAL_BAG_FRAMES do
+        local count = Size(bag)
+        if count > 0 then
+            local name = bag == Enum.BagIndex.Backpack and BAG_NAME_BACKPACK or C_Container.GetBagName(bag)
+            if S.PublicText(name) then BagReservations(root:CreateButton(name), bag, count, slots) end
         end
     end
 end
@@ -523,4 +628,8 @@ function Sort.AddMenu(owner, root)
         S.ContextMenu(owner, SlotsMenu)
     end)
     exclude:SetEnabled(not job)
+    local reservations = root:CreateButton(S.Text("Reserve bag slots for items"), function()
+        S.ContextMenu(owner, ReservationMenu)
+    end)
+    reservations:SetEnabled(not job and not NS.InCombat())
 end
