@@ -122,36 +122,59 @@ return nil,true
 local USED_POST = [[control:Hide()]]
 
 ------------------------------------------------------------------ look
-local function FontSize(button)
-    local width = button:GetWidth()
-    if not Finite(width) then return 12 end
-    return math.max(8, math.min(18, math.floor(width * .32 + .5)))
+local function StyleFrame(button, style, size, edge)
+    local config = AB.M.config
+    local art = style.round or config.borderArt == AB.ENUM.BORDER_ART.BLIZZARD
+    S.PlaceEdges(button.edges, button, art and 0 or edge, style.br, style.bg, style.bb, 1)
+    if art and not style.skin and config.borderSize > 0 then
+        if not button.frameArt then button.frameArt = S.CreateTexture(button, nil, "OVERLAY", nil, 5) end
+        local extent = (size + config.borderExpansion * 2) * config.borderScale / 100
+        AB.StyleButtonFrameArt(button.frameArt, button, extent, style, 1)
+        button.frameArt:Show()
+    elseif button.frameArt then
+        button.frameArt:Hide()
+    end
 end
 
--- The look of the Suite buttons (Style.lua) at this entry's size; once per
--- style generation and size.
-local function Style(button)
-    local style = AB.style or AB.BuildStyle()
-    local size = FontSize(button)
-    if button.styleGen == AB.styleGen and button.fontSize == size then return end
-    button.styleGen, button.fontSize = AB.styleGen, size
-    local edge = math.max(style.border or 1, 1)
-    button.slot:SetColorTexture(style.sr, style.sg, style.sb, math.max(style.slotAlpha, .6))
-    S.PlaceEdges(button.edges, button, edge, style.br, style.bg, style.bb, 1)
-    local icon = button.icon
+local function StyleIcon(button, style, size)
+    local skin, icon = style.skin, button.icon
+    -- SharedMedia backdrops belong to bars. Keep the flyout's fallback edge.
+    local edge = style.border
+    if not skin and style.mediaBorder then edge = 1 end
     icon:ClearAllPoints()
     icon:SetPoint("TOPLEFT", button, "TOPLEFT", edge, -edge)
     icon:SetPoint("BOTTOMRIGHT", button, "BOTTOMRIGHT", -edge, edge)
-    local zoom = style.zoom or .06
+    local zoom = style.zoom
     icon:SetTexCoord(zoom, 1 - zoom, zoom, 1 - zoom)
+    button.slot:SetColorTexture(style.sr, style.sg, style.sb, style.slotAlpha)
+    StyleFrame(button, style, size, edge)
+    if style.round or button.shapeRecord then
+        if not button.shapeRecord then button.shapeRecord = { button = button, slotTexture = button.slot } end
+        AB.StyleButtonShape(button.shapeRecord, style)
+    end
+    if skin or button.skinned then
+        button.skinned = NS.HostBridge.PaintIconSkin(button, skin, size, size) or nil
+    end
+end
+
+-- The secure layout sets an entry's actual width on open. Reuse its art
+-- until the width or the compiled action-bar look changes.
+local function Style(button)
+    local style = AB.style or AB.BuildStyle()
+    local width = button:GetWidth()
+    local size = Finite(width) and width or button.styledWidth or 36
+    if button.styleGen == AB.styleGen and button.styledWidth == size then return end
+    StyleIcon(button, style, size)
     button.hover:SetColorTexture(style.ir, style.ig, style.ib, .25)
     button.press:SetColorTexture(style.ir, style.ig, style.ib, .45)
     local text = style.texts and style.texts.count
-    S.SetStyledFont(button.count, text and text.font or style.font or STANDARD_TEXT_FONT, size,
+    local fontSize = math.max(8, math.min(18, math.floor(size * .32 + .5)))
+    S.SetStyledFont(button.count, text and text.font or style.font or STANDARD_TEXT_FONT, fontSize,
         text and text.flags or style.flags, style.rendering, style.shadow, style.shadowOpacity, style.shadowDistance)
     button.count:SetTextColor(style.cr, style.cg, style.cb)
     button.cooldown:SetSwipeColor(style.wr, style.wg, style.wb, style.swipeAlpha)
     button.cooldown:SetHideCountdownNumbers(not AB.M.config.cooldownNumbers)
+    button.styleGen, button.styledWidth = AB.styleGen, size
 end
 
 -- Cooldown of a spell (secret-safe duration object) or an item.
@@ -346,8 +369,8 @@ local function NewEntry(box, index)
     button:SetAttribute("useOnKeyDown", false)
     button:SetSize(36, 36)
     button.slot = Region(button, "BACKGROUND")
-    button.slot:SetAllPoints(button)
     button.icon = Region(button, "ARTWORK")
+    button.slot:SetAllPoints(button.icon)
     button.edges = { Region(button, "OVERLAY", 1), Region(button, "OVERLAY", 1), Region(button, "OVERLAY", 1),
         Region(button, "OVERLAY", 1) }
     button.hover, button.press = Region(button, "HIGHLIGHT"), Region(button, "ARTWORK", 2)
@@ -446,6 +469,14 @@ function Frames.Marker(rec, shown)
             Data.PositionArrow(arrow, rec.button, direction)
         end
     end
+end
+
+-- The opener owns the currently open id. A skin edit only paints the
+-- visible entries, without refreshing their actions, counts or watches.
+function Frames.RefreshStyle()
+    local box = opener and boxes[opener:GetAttribute("openid")]
+    if not box or not box:IsShown() then return end
+    for index = 1, box.count do S.Dispatch(Style, box.entries[index]) end
 end
 
 function Frames.RefreshAppearance()

@@ -43,6 +43,9 @@ function Frame:SetSize(w, h) self.width, self.height = w, h end
 function Frame:SetWidth(w) self.width = w end
 function Frame:SetHeight(h) self.height = h end
 function Frame:GetWidth() return self.width end
+function Frame:GetHighlightTexture() return self.lastSetHighlightTexture[1] end
+function Frame:GetPushedTexture() return self.lastSetPushedTexture[1] end
+function Frame:CreateMaskTexture() return Sink() end
 function Frame:GetHeight() return self.height end
 function Frame:SetFrameLevel(level) self.level = level end
 function Frame:GetFrameLevel() return self.level or 1 end
@@ -97,7 +100,7 @@ function Frame:Clear()
     self:Hide()
 end
 for _, name in ipairs({ "RegisterForClicks", "EnableMouse", "SetFrameStrata", "SetClampedToScreen", "SetHighlightTexture",
-    "SetPushedTexture", "SetSwipeColor", "SetHideCountdownNumbers", "SetCooldown", "SetCooldownFromDurationObject",
+    "SetPushedTexture", "SetSwipeColor", "SetSwipeTexture", "SetHideCountdownNumbers", "SetCooldown", "SetCooldownFromDurationObject",
     "SetOwner", "SetItemByID", "SetSpellByID", "SetToyByItemID", "SetText", "SetAlpha", "SetIgnoreParentAlpha",
     "RegisterForDrag", "AddLine" }) do
     Frame[name] = function(self, ...) self["last" .. name] = { ... } end
@@ -372,12 +375,14 @@ local function Load(forever)
         region.parent = parent
         return region
     end
-    S.PlaceEdges, S.SetStyledFont = function() end, function() end
+    S.PlaceEdges = function(edges, _, width) edges.width = width end
+    S.SetStyledFont = function() end
     S.Dispatch = function(fn, ...) return fn(...) end
     local AB = {
         ENUM = { TOOLTIP = { ALWAYS = 1, OUT_OF_COMBAT = 2, NEVER = 3 }, BAR = { INDEPENDENT = 10 },
-            VISIBILITY = { NEVER = 6 } },
-        Diagnostics = {}, records = {}, bars = {}, owned = {}, M = { active = true, config = { cooldownNumbers = true } }, styleGen = 1,
+            VISIBILITY = { NEVER = 6 }, BORDER_ART = { BLIZZARD = 2 }, PROC_GLOW = { PIXEL = 2 } },
+        Diagnostics = {}, records = {}, bars = {}, owned = {}, styleGen = 1,
+        M = { active = true, config = { cooldownNumbers = true, borderSize = 1, borderExpansion = 0, borderScale = 100 } },
         BUTTONS = 12,
     }
     AB.grid = NewFrame("Frame")
@@ -410,6 +415,18 @@ local function Load(forever)
         MenuColor = function(token) return World.palette[token] end,
         MenuMaterial = function() return false end,
         MenuButton = function() return nil end,
+        PaintIconSkin = function(button, look, width, height)
+            button.skinPaints = (button.skinPaints or 0) + 1
+            button.skinLook, button.skinWidth, button.skinHeight = look, width, height
+            return look ~= nil
+        end,
+        ApplyIconShape = function(button, shape, anchor, cooldowns, icon, slot, hover, press)
+            assert(anchor == button.icon and cooldowns[1] == button.cooldown and icon == anchor
+                and slot == button.slot and hover == button.hover and press == button.press,
+                "flyout shape was not applied to its icon, fills and cooldown")
+            button.appliedShape = shape
+            return shape
+        end,
     }
     World.palette = { accent = { .24, .54, .72 }, panel = { .01, .02, .03 }, borderSoft = { .2, .3, .4 } }
     function AB.Available() return true end
@@ -432,7 +449,7 @@ local function Load(forever)
         end
     end
     local P = { NS = Suite, Suite = S, ActionBars = AB }
-    for _, file in ipairs({ "FlyoutSources", "FlyoutFrames", "Flyouts", "FlyoutAPI", "FlyoutEdit" }) do
+    for _, file in ipairs({ "Decorations", "FlyoutSources", "FlyoutFrames", "Flyouts", "FlyoutAPI", "FlyoutEdit" }) do
         assert(loadfile(root .. "/MSUF_Suite_ActionBars/" .. file .. ".lua"))("MSUF_Suite_ActionBars", P)
     end
     return Suite, S, AB
@@ -969,6 +986,68 @@ local function AppearanceCases(AB, API)
     assert(#Listening() == 0, "the appearance left a listener after close")
 end
 
+local function IconSkinCases(AB, API)
+    local style, config = AB.style, AB.M.config
+    local rectangle, circle = { signature = "frame" }, { signature = "circle" }
+    style.skin, style.border = rectangle, 0
+    local id = assert(API.Create("Skinned"))
+    assert(API.SetOwned(id, false))
+    assert(API.AddEntry(id, { kind = "item", id = 4540 }))
+    assert(API.Place(id, 1))
+    local box = AB.Diagnostics.Flyouts.Box(id)
+    local button = box.entries[1]
+    assert(not button.skinPaints, "a closed flyout painted a skin")
+    EnterCombat()
+    Click("MSUFSuiteFlyouts", tostring(id))
+    assert(button.skinLook == rectangle and button.skinWidth == 40 and button.skinHeight == 40,
+        "the first open in combat did not use the action-bar icon skin")
+    assert(button.edges.width == 0 and button.icon.lastSetPoint[4] == 0,
+        "the fallback edge still covered a skinned icon")
+    LeaveCombat()
+
+    style.skin, style.shape, style.round = circle, "CIRCLE", true
+    AB.styleGen = AB.styleGen + 1
+    AB.FlyoutFrames.RefreshStyle()
+    assert(button.skinLook == circle and button.appliedShape == "CIRCLE",
+        "an open flyout did not pick up a shaped skin")
+    -- Both widths round to the same count font size.
+    config.flyoutButtonScale = 102
+    AB.FlyoutFrames.RefreshAppearance()
+    assert(button.skinWidth == 41, "a resize left the previous skin geometry")
+    local paints = button.skinPaints
+    Click("MSUFSuiteFlyouts", tostring(id))
+    Click("MSUFSuiteFlyouts", tostring(id))
+    assert(button.skinPaints == paints, "an unchanged reopen repainted its skin")
+    style.skin, style.shape, style.round, style.border = nil, "RECTANGLE", false, 2
+    AB.styleGen = AB.styleGen + 1
+    AB.FlyoutFrames.RefreshStyle()
+    assert(button.skinPaints == paints + 1 and not button.skinLook and button.appliedShape == "RECTANGLE",
+        "removing an icon skin left its overlay or mask on an open flyout")
+    assert(button.edges.width == 2 and button.icon.lastSetPoint[4] == -2,
+        "removing an icon skin did not restore the configured border")
+
+    style.shape, style.round, style.legacyCircle = "CIRCLE", true, true
+    AB.styleGen = AB.styleGen + 1
+    AB.FlyoutFrames.RefreshStyle()
+    assert(button.edges.width == 0 and button.icon.lastAddMaskTexture and button.frameArt.lastShow,
+        "the Suite circle fallback lost its mask or frame art")
+    style.shape, style.round, style.legacyCircle = "RECTANGLE", false, false
+    AB.styleGen = AB.styleGen + 1
+    AB.FlyoutFrames.RefreshStyle()
+    assert(button.icon.lastRemoveMaskTexture and button.frameArt.lastHide and button.edges.width == 2,
+        "the fallback mask or frame art stayed on a restored square")
+    style.mediaBorder, style.border = "SharedMediaBorder", 0
+    AB.styleGen = AB.styleGen + 1
+    AB.FlyoutFrames.RefreshStyle()
+    assert(button.edges.width == 1, "a SharedMedia border removed the flyout's fallback edge")
+    Click("MSUFSuiteFlyouts", tostring(id))
+    style.mediaBorder = nil
+    style.skin, style.border = rectangle, 0
+    AB.styleGen = AB.styleGen + 1
+    AB.FlyoutFrames.RefreshStyle()
+    assert(button.skinPaints == paints + 1 and #Listening() == 0, "closed flyout painted or started listening")
+end
+
 local function MacroIndexCase(Suite, S, AB)
     local API = S.ActionBarFlyouts
     local id = assert(API.Create("Launcher"))
@@ -1036,6 +1115,10 @@ for _, forever in ipairs({ false, true }) do
     AB.Flyouts.Start()
     AB.BuildStyle()
     AppearanceCases(AB, S.ActionBarFlyouts)
+    Suite, S, AB = Load(forever)
+    AB.Flyouts.Start()
+    AB.BuildStyle()
+    IconSkinCases(AB, S.ActionBarFlyouts)
     Suite, S, AB = Load(forever)
     AB.Flyouts.Start()
     AB.BuildStyle()

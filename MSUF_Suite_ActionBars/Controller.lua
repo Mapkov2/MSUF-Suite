@@ -478,7 +478,11 @@ function M:Refresh()
     ApplyLayout()
     ApplyStyle()
     if work.flyoutMarkerAppearance then AB.Flyouts.RefreshMarkerAppearance() end
-    if work.flyoutAppearance then AB.FlyoutFrames.RefreshAppearance() end
+    if work.flyoutAppearance then
+        AB.FlyoutFrames.RefreshAppearance()
+    elseif work.style then
+        AB.FlyoutFrames.RefreshStyle()
+    end
     if work.extras or work.style or rebuild or AB.specialPending then
         AB.specialEpoch = (AB.specialEpoch or 0) + 1
         AB.SyncSpecialButtons()

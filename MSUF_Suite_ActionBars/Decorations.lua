@@ -219,14 +219,15 @@ local function ShapeMask(texture, rec, circle)
     end
 end
 local SWIPES = { "cooldown", "chargeCooldown", "lossOfControlCooldown" }
-local function PlaceArt(texture, button, extent, ring)
+local function PlaceArt(texture, button, extent, ring, aspectRatio)
     texture:ClearAllPoints()
     texture:SetPoint("CENTER", button, "CENTER", 0, 0)
-    texture:SetSize(extent, extent * button:GetHeight() / button:GetWidth())
+    local height = aspectRatio and extent * aspectRatio or extent * button:GetHeight() / button:GetWidth()
+    texture:SetSize(extent, height)
     Art(texture, ring)
 end
 -- An older host: the Suite's own circle mask over the button's textures.
-local function LegacyCircle(rec, circle)
+local function LegacyCircle(rec, circle, checkButton)
     local button = rec.button
     if circle and not rec.shapeMask then
         rec.shapeMask = button:CreateMaskTexture()
@@ -238,31 +239,45 @@ local function LegacyCircle(rec, circle)
         ShapeMask(rec.slotTexture, rec, circle)
         ShapeMask(button:GetHighlightTexture(), rec, circle)
         ShapeMask(button:GetPushedTexture(), rec, circle)
-        ShapeMask(button:GetCheckedTexture(), rec, circle)
+        if checkButton then ShapeMask(button:GetCheckedTexture(), rec, circle) end
         rec.circleMasked = circle
     end
 end
 -- MSUF's shape over every texture that shows the icon area (Blizzard's flash
 -- and highlights too) and over the swipes; set in the style pass only, so it
 -- looks the same in and out of combat.
-local function HostShape(rec, style)
+local function HostShape(rec, style, checkButton)
     local button = rec.button
     if not rec.cooldowns then
         local list = {}
         for i = 1, #SWIPES do list[#list + 1] = button[SWIPES[i]] end
         rec.cooldowns = list
     end
+    local checked = checkButton and button:GetCheckedTexture() or nil
     NS.HostBridge.ApplyIconShape(button, style.shape, button.icon, rec.cooldowns, button.icon, rec.slotTexture,
-        button:GetHighlightTexture(), button:GetPushedTexture(), button:GetCheckedTexture(), button.Flash,
+        button:GetHighlightTexture(), button:GetPushedTexture(), checked, button.Flash,
         button.NewActionTexture, button.SpellHighlightTexture)
     rec.hostShaped = style.round or nil
 end
+-- Action buttons and their flyout entries share the same masks and swipes.
+function AB.StyleButtonShape(rec, style, checkButton)
+    local button, circle = rec.button, style.legacyCircle
+    if circle or rec.circleMasked then LegacyCircle(rec, circle, checkButton) end
+    if not circle and (style.round or rec.hostShaped) then HostShape(rec, style, checkButton) end
+    if not style.round or circle then
+        for i = 1, #SWIPES do
+            local cooldown = button[SWIPES[i]]
+            if cooldown then cooldown:SetSwipeTexture(circle and CIRCLE or WHITE) end
+        end
+    end
+end
+
 -- Takes the Suite's shape, frame art and hover ring off a button before
 -- Masque skins it (Masque.lua); the next full style pass puts them back.
 local FLAT = { shape = "RECTANGLE", round = false }
 function AB.ClearDecoration(rec)
-    if rec.circleMasked then LegacyCircle(rec, false) end
-    if rec.hostShaped then HostShape(rec, FLAT) end
+    if rec.circleMasked then LegacyCircle(rec, false, true) end
+    if rec.hostShaped then HostShape(rec, FLAT, true) end
     rec.decorFancy = false
     if rec.borderArt then rec.borderArt:Hide() end
     AB.UpdateDecorState(rec)
@@ -312,9 +327,14 @@ function AB.SetQuality(rec, info)
     end
 end
 
+function AB.StyleButtonFrameArt(texture, button, extent, style, aspectRatio)
+    PlaceArt(texture, button, extent, style.round and style.ring, aspectRatio)
+    texture:SetVertexColor(style.br, style.bg, style.bb, 1)
+end
+
 function AB.StyleDecoration(rec, size)
     local c, button, style = M.config, rec.button, AB.style
-    local circle, round = style.legacyCircle, style.round
+    local round = style.round
     local ringArt = style.ring or RING
     if rec.hoverRing then rec.hoverRing:SetTexture(ringArt) end
     -- A shaped button's pixel proc glow ring is made here, hidden, so a first
@@ -330,14 +350,7 @@ function AB.StyleDecoration(rec, size)
         rec.parkedGlowRing, rec.glowRing = rec.glowRing, nil
     end
     if rec.glowRing then rec.glowRing:SetTexture(ringArt) end
-    if circle or rec.circleMasked then LegacyCircle(rec, circle) end
-    if not circle and (round or rec.hostShaped) then HostShape(rec, style) end
-    if not round or circle then
-        for i = 1, #SWIPES do
-            local cooldown = button[SWIPES[i]]
-            if cooldown then cooldown:SetSwipeTexture(circle and CIRCLE or WHITE) end
-        end
-    end
+    AB.StyleButtonShape(rec, style, true)
     -- An icon skin replaces Blizzard's frame art on square buttons and the
     -- ring of shaped ones (their state art stays: it shows pressed and checked).
     local skin = style.skin
@@ -356,9 +369,8 @@ function AB.StyleDecoration(rec, size)
             rec.stateArt = S.CreateTexture(host, nil, "OVERLAY", nil, 6)
         end
         local extent = (size + c.borderExpansion * 2) * c.borderScale / 100
-        PlaceArt(rec.borderArt, button, extent, round and style.ring)
+        AB.StyleButtonFrameArt(rec.borderArt, button, extent, style)
         PlaceArt(rec.stateArt, button, extent, round and style.ring)
-        rec.borderArt:SetVertexColor(AB.style.br, AB.style.bg, AB.style.bb, 1)
         rec.stateArt:SetVertexColor(AB.style.ir, AB.style.ig, AB.style.ib, 1)
         rec.stateArt:SetBlendMode("ADD")
         rec.borderArt:SetShown(c.borderSize > 0 and not skin)
