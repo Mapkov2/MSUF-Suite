@@ -1,5 +1,27 @@
 # MSUF Suite Changelog
 
+## 0.5 Alpha - 2026-11-26
+
+Changes since 0.46 Alpha. Requires Midnight Simple Unit Frames. Supports WoW Retail 12.1.5 and 12.1.7 and WoW Forever 1.60.1.
+
+### Nameplates and combat
+
+- Set separate width limits for friendly and enemy names. Added NPC filters, foreign totem markers, PvP markers and more controls for tracked auras and the personal resource display.
+- Edit Cooldown Manager bars and spells directly on screen. Preview Blizzard layout imports and undo a paste. Forever gets a Shaman starter setup and totem timing.
+- Added customizable player buff groups, proc alerts, party castbars and shared HUD dimming. Buff Reminders cover more Forever spells and can cast missing group buffs directly outside combat.
+
+### Bags, objectives and interface
+
+- Reserve item slots during bag sorting, hide the search bar and configure cheapest-item settings from Bags.
+- Rearrange quest groups and focus on a single quest in combat. Added a sortable fight summary, Forever profession hints and trainer reminders.
+- Added addon conflict notices and an extension API for tooltip lines, data text sources and profile packs. Tooltip details can be reordered and item comparison windows now avoid overlapping each other.
+
+### Skinning and performance
+
+- Keep native scrolling for the battleground scoreboard and match results. Improved quest reward transitions and flyout icon styling.
+- Reduced repeated work in bags, window focus, the spellbook, Communities, the micro bar, data texts and other background updates.
+- Updated translation packs.
+
 ## 0.46 Alpha - 2026-11-25
 
 Changes since 0.45 Alpha. Supports WoW Retail 12.1.5 and 12.1.7 and WoW Forever 1.60.1. Requires Midnight Simple Unit Frames.
