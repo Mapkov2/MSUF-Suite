@@ -40,13 +40,16 @@ R.STATE = {
     -- flask, rune, oil and food picked (false for none), whether the map
     -- potion or sleeping bag was in the bags, the last food picked, whether
     -- the player stood on a potion map and whether item or spell data the
-    -- compile asked for had not arrived yet (pending).
-    stock = { "flask", "rune", "oil", "food", "potion", "sleepingBag", "lastFood", "onPotionMap", "pending" },
+    -- compile asked for had not arrived yet (pending). Forever also keeps
+    -- its selected item picks and the current Sacrifice or summon action.
+    stock = { "flask", "rune", "oil", "food", "potion", "sleepingBag", "lastFood", "onPotionMap", "pending", "forever", "sacrifice" },
     -- The group (Group). settings: the group options of the last roster
     -- read; buffers: the two roster buffers; units and unitList: the member
     -- set and the member events' unit filter ("player" first); classes: the
-    -- classes in the group; listChanged: the member events need the new
-    -- list; presence: the group buff per member; soulstonePresence,
+    -- classes in the group; manaUnits: Forever members who benefit from
+    -- Intellect and Spirit; listChanged: the member events need the new
+    -- list; presence and extraPresence: the main buff and Divine Spirit
+    -- per member; soulstonePresence,
     -- beaconLightPresence and beaconFaithPresence: the player's own aura per
     -- member, with soulstoneKnown, beaconLightKnown and beaconFaithKnown;
     -- allies: an ally class reminder reads the members' auras (last roster
@@ -54,7 +57,7 @@ R.STATE = {
     -- reminder, by catalog key; dirty, rosterDirty and pass (a context job):
     -- the coalesced member pass. range: readable range results by ally token,
     -- present only while the range filter is listening.
-    group = { "settings", "buffers", "units", "unitList", "classes", "listChanged", "presence",
+    group = { "settings", "buffers", "units", "unitList", "classes", "listChanged", "presence", "extraPresence", "extraBuff", "manaUnits",
         "soulstonePresence", "beaconLightPresence", "beaconFaithPresence", "soulstoneKnown",
         "beaconLightKnown", "beaconFaithKnown", "allies", "allyStates", "dirty", "rosterDirty", "pass", "range", "buff" },
     -- The notice lines below the buttons (Special, Group): one field per

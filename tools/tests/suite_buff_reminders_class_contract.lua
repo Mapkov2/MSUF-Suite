@@ -122,9 +122,9 @@ C_UnitAuras = {
     -- The ally reminders ask for the player's own aura on a member by name;
     -- memberAuras[unit] is the spell ID of that aura.
     GetAuraDataBySpellName = function(unit, name, filter)
-        if unit == "player" and filter == "HELPFUL" then
+        if unit == "player" then
             for id, data in pairs(playerAuras) do
-                if C_Spell.GetSpellName(id) == name then return data end
+                if C_Spell.GetSpellName(id) == name and (filter == "HELPFUL" or data.isMine ~= false) then return data end
             end
             return nil
         end
@@ -221,7 +221,7 @@ do
         eq(foreverRules[def.key].hidden, def.forever == nil or nil, def.key .. " Forever visibility")
         if def.forever then shown = shown + 1 end
     end
-    eq(shown, 8, "Forever class preset count")
+    eq(shown, 13, "Forever class preset count")
     eq(rules.classThorns.default, false, "Thorns has no Retail default")
     eq(foreverRules.classThorns.default, true, "Forever Thorns must default on")
     eq(foreverRules.classThorns.enableKey, nil, "Thorns still depends on the class master")
@@ -609,6 +609,36 @@ do
     assert(present == true and line == 19746, "another aura line did not satisfy the reminder")
     assert(R.RememberClassAura(entries[1], line) and entries[1].id == 19746
         and entries[1].spellName == "Concentration Aura", "the click did not follow the aura in use")
+    Reset({ "PRIEST", 258 })
+end
+
+do
+    Reset({ "HUNTER", nil })
+    NS.Client.isForever, NS.Client.modernEquipment = true, false
+    SPELL_NAMES[20043], SPELL_NAMES[20190] = "Aspect of the Wild", "Aspect of the Wild"
+    Set(20190, 20906)
+    local entries = R.BuildEntries(Owner({ classReminders = true }))
+    eq(Ids(entries), "20190,20906", "Forever Hunter learned aspects and Trueshot ranks")
+    playerAuras[20190] = { spellId = 20190, isMine = false }
+    eq(R.AuraPresent(entries[1]), false, "another Hunter's Aspect of the Wild satisfied the player's own aspect")
+    playerAuras[20190].isMine = true
+    eq(R.AuraPresent(entries[1]), true, "the player's own highest Aspect of the Wild did not satisfy the reminder")
+    Reset({ "WARLOCK", nil })
+    NS.Client.isForever, NS.Client.modernEquipment = true, false
+    Set(11735)
+    eq(Ids(R.BuildEntries(Owner({ classReminders = true }))), "11735", "Forever Demon Armor rank")
+    Reset({ "EVOKER", 1473 })
+    Set(408233, 412710)
+    eq(Ids(R.BuildEntries(Owner({ classReminders = true }))), "", "new Evoker allies must be opt-in")
+    local config = { classReminders = true, classBestowWeyrnstone = true, classTimelessness = true }
+    entries = R.BuildEntries(Owner(config))
+    eq(Ids(entries), "408233,412710", "Augmentation ally spells")
+    assert(entries[1].group and entries[1].ally and entries[1].aura == 410318, "Weyrnstone needs the recipient's aura")
+    specID = 1467
+    eq(#R.BuildEntries(Owner(config)), 0, "Augmentation ally spells leaked into Devastation")
+    specID = 1473
+    NS.Client.isForever, NS.Client.modernEquipment = true, false
+    eq(#R.BuildEntries(Owner(config)), 0, "Retail ally spells leaked into Forever")
     Reset({ "PRIEST", 258 })
 end
 

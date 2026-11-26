@@ -56,14 +56,20 @@ local ITEM_CLASS_WEAPON, ITEM_CLASS_ARMOR, SHIELD_LOCATION = 2, 4, "INVTYPE_SHIE
 local function SlotItem(slot)
     local itemID = GetInventoryItemID("player", slot)
     if not Public(itemID) or type(itemID) ~= "number" then return end
-    local _, _, _, location, _, classID = C_Item.GetItemInfoInstant(itemID)
-    if Public(location) and Public(classID) then return classID, location end
+    local _, _, _, location, _, classID, subclass = C_Item.GetItemInfoInstant(itemID)
+    if Public(location) and Public(classID) then return classID, location, subclass end
 end
 
 -- A shield, held item or ranged weapon is not a weapon enchant target.
 local function WeaponEquipped(slot)
     local classID, location = SlotItem(slot)
     return classID == ITEM_CLASS_WEAPON and OIL_WEAPON_LOCATIONS[location] == true
+end
+
+local function WeaponSubclass(slot)
+    local class, location, subclass = SlotItem(slot)
+    if class == ITEM_CLASS_WEAPON and OIL_WEAPON_LOCATIONS[location] and Public(subclass)
+        and type(subclass) == "number" and subclass ~= 20 then return subclass, location end
 end
 
 local function ShieldEquipped(slot)
@@ -128,6 +134,8 @@ end
 
 -- The next record of the building list, reset to a new entry of this kind.
 -- A reused record forgets the runtime state of its previous entry.
+local seenImbues = {}
+
 local function Append(kind, id)
     local list, records = building.list, building.records
     local count = #list + 1
@@ -141,10 +149,11 @@ local function Append(kind, id)
     entry.restock = false
     entry.category = buildingCategory
     entry.group, entry.notice, entry.missingCount = nil, nil, nil
-    entry.ranked, entry.spellName = nil, nil
+    entry.ranked, entry.spellName, entry.ownAura = nil, nil, nil
     entry.remember, entry.memory, entry.rememberedAura, entry.missingOnly = nil, nil, nil, nil
     entry.ally, entry.allyMissing, entry.dismissed = nil, nil, nil
-    entry.requiredStacks = nil
+    entry.requiredStacks, entry.tracking, entry.unit, entry.enchantLayer = nil, nil, nil, nil
+    entry.blockingAuras, entry.suppressAura, entry.groupTarget, entry.boundUnit, entry.manaOnly = nil, nil, nil, nil, nil
     entry.bit, entry.present, entry.expiresAt, entry.totalDuration = nil, nil, nil, nil
     entry.auraInstanceID, entry.instanceIDs, entry.actionID, entry.count = nil, nil, nil, nil
     list[count] = entry
@@ -164,19 +173,20 @@ local function AddSpell(spellID, auraID, aliases)
 end
 
 -- An item the player uses; its aura (or one of the aliases) satisfies it.
-local function AddItem(itemID, auraID, restock, aliases)
-    if not itemID or Full() or not ClaimAura(auraID, aliases) then return end
+local function AddItem(itemID, auraID, restock, aliases, sharedAliases)
+    if not itemID or Full() or not ClaimAura(auraID, not sharedAliases and aliases) then return end
     local entry = Append("item", itemID)
     entry.aura, entry.aliases, entry.restock = auraID, aliases, restock == true
     return entry
 end
 
 -- A temporary enchant on one weapon slot (16 main hand, 17 off hand).
-local function AddWeapon(itemID, slot, restock)
-    if not itemID or Full() or seenSlots[slot] then return end
-    seenSlots[slot] = true
+local function AddWeapon(itemID, slot, restock, layer)
+    local slots = layer == "imbue" and seenImbues or seenSlots
+    if not itemID or Full() or slots[slot] then return end
+    slots[slot] = true
     local entry = Append("weapon", itemID)
-    entry.slot, entry.restock = slot, restock == true
+    entry.slot, entry.restock, entry.enchantLayer = slot, restock == true, layer
     return entry
 end
 
@@ -203,6 +213,7 @@ end
 
 function R.SameEntries(left, right)
     if not left or #left ~= #right then return false end
+    local forever = NS.Client.isForever
     for index = 1, #right do
         local a, b = left[index], right[index]
         if a.kind ~= b.kind or a.id ~= b.id or a.aura ~= b.aura
@@ -211,6 +222,11 @@ function R.SameEntries(left, right)
             or a.category ~= b.category or a.ranked ~= b.ranked or a.spellName ~= b.spellName
             or a.ally ~= b.ally or a.remember ~= b.remember or a.memory ~= b.memory or a.missingOnly ~= b.missingOnly
             or a.requiredStacks ~= b.requiredStacks then
+            return false
+        end
+        if forever and (a.ownAura ~= b.ownAura or a.tracking ~= b.tracking or a.unit ~= b.unit
+            or a.enchantLayer ~= b.enchantLayer or a.blockingAuras ~= b.blockingAuras or a.suppressAura ~= b.suppressAura
+            or a.groupTarget ~= b.groupTarget or a.manaOnly ~= b.manaOnly) then
             return false
         end
         if a.candidates or b.candidates then
@@ -310,7 +326,7 @@ local function AddClassSpell(def, plan, specID, preview)
     if plan.remember then cast, memory = RememberedCast(plan, preview) else cast = ClassCast(plan, specID) end
     local entry = cast and AddSpell(cast, plan.auras[1], plan.auras)
     if entry and plan.ranked then
-        entry.ranked, entry.spellName = true, R.RankName(cast)
+        entry.ranked, entry.spellName, entry.ownAura = true, R.RankName(cast), plan.own
     end
     if entry then
         entry.remember, entry.memory, entry.missingOnly = plan.remember and plan, memory, plan.missingOnly
@@ -321,11 +337,12 @@ end
 local function AddImbues(plan, specID)
     for _, rule in ipairs(plan.imbues) do
         local spell = rule.spells and FirstKnown(rule.spells) or rule.spell
+        local slots = rule.layer == "imbue" and seenImbues or seenSlots
         if spell and SpecFits(rule.specs, specID) and Known(spell) and SlotHolds(rule.slot, rule.equip)
-            and not Full() and not seenSlots[rule.slot] and (rule.spells or ClaimAura(spell)) then
-            seenSlots[rule.slot] = true
+            and not Full() and not slots[rule.slot] and (rule.spells or ClaimAura(spell)) then
+            slots[rule.slot] = true
             local entry = Append("spell", spell)
-            entry.slot = rule.slot
+            entry.slot, entry.enchantLayer = rule.slot, rule.layer
             if plan.ranked then entry.spellName = R.RankName(spell) end
         end
     end
@@ -407,8 +424,9 @@ local function AddConfigured(c)
     buildingCategory = "consumable"
     for index = 1, #items do AddItem(items[index], auras[index]) end
     local mainID, offID = ID(c.mainHandItem), ID(c.offHandItem)
-    if mainID then AddWeapon(mainID, 16) end
-    if offID then AddWeapon(offID, 17) end
+    local forever = NS.Client.isForever
+    if mainID then AddWeapon(mainID, 16, false, forever and R.ForeverItemLayer(mainID) or nil) end
+    if offID then AddWeapon(offID, 17, false, forever and R.ForeverItemLayer(offID) or nil) end
     return mainID, offID
 end
 
@@ -620,7 +638,7 @@ local function AddForeverConsumables(self, c)
             self.stock.sleepingBag = HasSleepingBag()
             if self.stock.sleepingBag then
                 local entry = AddItem(R.SLEEPING_BAG, R.WELL_RESTED)
-                if entry then entry.requiredStacks = R.WELL_RESTED_STACKS end
+                if entry then entry.requiredStacks, entry.suppressAura = R.WELL_RESTED_STACKS, R.SleepingBagResting end
             end
         end
     end
@@ -719,7 +737,23 @@ function R.StockChanged(self)
     undecided = false
     if picks.food ~= nil and FoodPick(self.config) ~= picks.food then return true end
     if undecided then picks.pending = true end
+    if picks.forever and R.ForeverStockChanged(self, WeaponSubclass) then return true end
     return PotionStockChanged(self)
+end
+
+local function AddRaidBuff(c, buff)
+    if not buff then return end
+    local cast, groupCast = R.RaidBuffCast(buff)
+    local entry = cast and AddSpell(cast, buff.auras[1], buff.auras)
+    if entry then
+        entry.group = c.groupBuff == true
+        entry.ranked = NS.Client.isForever == true
+        if entry.ranked then
+            entry.spellName = R.RankName(cast)
+            entry.groupTarget = entry.group and not (groupCast or buff.selfCast)
+            entry.manaOnly = buff.manaOnly
+        end
+    end
 end
 
 -- Returns the new list, built into the buffer the active list does not use.
@@ -732,6 +766,7 @@ function R.BuildEntries(self, previewBuffer)
     for index = #list, 1, -1 do list[index] = nil end
     Clear(seenAuras)
     Clear(seenSlots)
+    if NS.Client.isForever then Clear(seenImbues) end
     seenFood, undecided = false, false
     local c = self.config
     local class = PlayerClass()
@@ -741,20 +776,13 @@ function R.BuildEntries(self, previewBuffer)
     for i = 1, #STOCK do stock[STOCK[i].key] = nil end
     stock.food, stock.potion, stock.sleepingBag = nil, nil, nil
     if c.classBuff or c.groupBuff then
-        local buff = R.ClassBuff(class)
-        if buff and Known(buff.cast) then
-            local entry = AddSpell(buff.cast, buff.auras[1], buff.auras)
-            if entry then
-                entry.group = c.groupBuff == true
-                entry.ranked = NS.Client.isForever == true
-                if entry.ranked then entry.spellName = R.RankName(buff.cast) end
-            end
-        end
+        AddRaidBuff(c, R.ClassBuff(class))
+        if NS.Client.isForever then AddRaidBuff(c, R.ExtraClassBuff(class)) end
     end
     if c.otherClassBuffs then
         for _, other in ipairs(R.BUFF_CLASSES) do
             local buff = R.ClassBuff(other)
-            if buff and other ~= class and self.group.classes[other] then
+            if buff and other ~= class and self.group.classes[other] and (not buff.manaOnly or R.ManaClass(class)) then
                 local entry = AddSpell(buff.cast, buff.auras[1], buff.auras)
                 if entry then
                     entry.notice = true
@@ -766,9 +794,13 @@ function R.BuildEntries(self, previewBuffer)
     if class and (c.classReminders == true or NS.Client.isForever) then AddClassReminders(c, class, previewBuffer) end
     buildingCategory = "personal"
     if NS.Client.modernEquipment and c.autoRoguePoisons and class == "ROGUE" then AddRoguePoisons() end
+    if NS.Client.isForever then R.AddForeverSpells(self, class, AddSpell) end
     local mainID, offID = AddConfigured(c)
     if NS.Client.modernEquipment then AddStocked(self, c, mainID, offID) end
-    if NS.Client.isForever then AddForeverConsumables(self, c) end
+    if NS.Client.isForever then
+        AddForeverConsumables(self, c)
+        R.AddForeverStock(self, class, AddItem, AddWeapon, WeaponSubclass)
+    end
     AddMapPotion(self, c)
     stock.pending = undecided
     return list

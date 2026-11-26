@@ -9,7 +9,7 @@ local ENTRY_KEYS = {
     "foreverSleepingBag", "foreverWellFed",
     "spellIDs", "items", "mainHandItem", "offHandItem", "autoFlask", "autoFood",
     "autoRune", "autoWeapon", "restockNotice", "flaskChoice", "foodChoice",
-    "runeChoice", "oilChoice", "mapPotion", "mapPotionItem", "mapPotionMaps", "classReminders",
+    "runeChoice", "oilChoice", "mapPotion", "mapPotionItem", "mapPotionMaps", "classReminders", "classDemonicSacrifice",
 }
 
 local function SelectionChanged(state, config)
@@ -25,6 +25,7 @@ local function SelectionChanged(state, config)
             settings[def.key], changed = config[def.key], true
         end
     end
+    if NS.Client.isForever and R.ForeverOptionsChanged(settings, config) then changed = true end
     return changed
 end
 
@@ -41,7 +42,7 @@ end
 
 -- The first spell of a class reminder's plan: the icon its sample shows.
 local function SampleSpell(plan)
-    if plan.kind == "imbue" then return plan.imbues[1].spell end
+    if plan.kind == "imbue" then return plan.imbues[1].spell or plan.imbues[1].spells[1] end
     return plan.casts[1]
 end
 

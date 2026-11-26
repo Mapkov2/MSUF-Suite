@@ -45,7 +45,7 @@ local INSTANCE_EVENTS = { PLAYER_ENTERING_WORLD = true, ZONE_CHANGED_NEW_AREA = 
 local ENVIRONMENT_EVENT = { CHALLENGE_MODE_START = true, CHALLENGE_MODE_RESET = true,
     CHALLENGE_MODE_COMPLETED = true, PLAYER_UPDATE_RESTING = true }
 local EVENT_MODES = {
-    UNIT_AURA = "aura",
+    UNIT_AURA = "aura", MINIMAP_UPDATE_TRACKING = "tracking",
     UNIT_INVENTORY_CHANGED = "weapon", WEAPON_ENCHANT_CHANGED = "weapon",
     WEAPON_SLOT_CHANGED = "weapon", PLAYER_EQUIPMENT_CHANGED = "weapon",
     PLAYER_ENTERING_WORLD = "all", ZONE_CHANGED_NEW_AREA = "all", PLAYER_REGEN_ENABLED = "all",
@@ -252,7 +252,7 @@ local function IndexEntries(self, entries)
             hasWeapon = true
         elseif entry.kind == "food" then
             hasFood = true
-        else
+        elseif entry.tracking ~= "treasure" then
             hasAura = true
             if entry.poison then
                 local state = poisonStates[entry.poison]
@@ -276,8 +276,9 @@ local function BindButton(button, entry)
     button:SetAttribute("spell1", click and action == "spell" and (entry.spellName or entry.id) or nil)
     button:SetAttribute("item1", click and action == "item" and ("item:" .. entry.id) or nil)
     button:SetAttribute("target-slot", entry.slot)
-    -- An ally reminder buffs the player's target; every other one the player.
-    button:SetAttribute("unit", entry.ally and "target" or "player")
+    -- An ally reminder uses the target. Forever raid buffs can retarget
+    -- to a missing member after the group pass and Sacrifice uses the pet.
+    button:SetAttribute("unit", entry.unit or (entry.ally and "target" or "player"))
     R.PaintEntry(button, entry)
     entry.actionID = entry.id
 end
@@ -440,7 +441,9 @@ local function Evaluate(self, mode, updateInfo, foodDirty, now, threshold)
     for index, entry in ipairs(list.entries) do
         if entry.group then
             local before = entry.missingCount
-            entry.present = R.GroupPresent(self, entry)
+            local target
+            entry.present, target = R.GroupPresent(self, entry)
+            if entry.groupTarget then R.BindGroupTarget(self.view.buttons[index], entry, target) end
             if before ~= entry.missingCount then
                 self.view.buttons[index].count:SetText(entry.missingCount > 0 and tostring(entry.missingCount) or "")
             end
@@ -448,8 +451,8 @@ local function Evaluate(self, mode, updateInfo, foodDirty, now, threshold)
         elseif entry.poison then
             RefreshPoisonEntry(self, index, entry)
         elseif entry.slot then
-            if weaponDirty then entry.present, entry.expiresAt = EnchantPresent(entry.slot) end
-        elseif auraDirty then
+            if weaponDirty then entry.present, entry.expiresAt = EnchantPresent(entry.slot, entry.enchantLayer) end
+        elseif (auraDirty and (fullRefresh or entry.tracking ~= "treasure")) or (mode == "tracking" and entry.tracking) then
             RefreshAuraEntry(self, index, entry, fullRefresh, updateInfo, foodDirty)
         end
         -- A category follows its own content choices within the module-wide
@@ -593,12 +596,7 @@ local function RegisterEvents(self)
     if not suspended then
         for i = 1, #EVENTS do R.Listen(self, EVENTS[i], OnEvent) end
     end
-    if NS.Client.isForever then
-        if self.config.foreverSleepingBag then R.Listen(self, "PLAYER_LEVEL_UP", OnEvent)
-        else self.context:RemoveEvent("PLAYER_LEVEL_UP") end
-        if self.config.foreverWellFed and not suspended then R.Listen(self, "ITEM_DATA_LOAD_RESULT", OnEvent)
-        else self.context:RemoveEvent("ITEM_DATA_LOAD_RESULT") end
-    end
+    if NS.Client.isForever then R.SyncForeverItemEvents(self, OnEvent) end
     SyncRosterEvent(self)
     if suspended then return end
     SyncSubzoneEvents(self)
@@ -642,7 +640,8 @@ end
 local function CompileAfterCombat(self)
     local owed, stock = Owed(self), self.stock
     if owed.compile or stock.pending or R.OnPotionMap(self) ~= stock.onPotionMap
-        or owed.roster and R.RosterChanged(self) or owed.bags and StockChanged(self) then
+        or owed.roster and R.RosterChanged(self) or owed.bags and StockChanged(self)
+        or stock.sacrifice ~= nil and R.SacrificeChanged(self) then
         self:Compile()
         return
     end
@@ -683,10 +682,7 @@ OnEvent = function(self, event, unit, updateInfo)
     if NS.IsCombatLocked() then return end
     if event == "ITEM_DATA_LOAD_RESULT" then return R.FoodItemLoaded(self, unit, updateInfo) end
     if event == "PET_BAR_UPDATE" or event == "PET_UI_UPDATE" or event == "UNIT_PET" then
-        if event ~= "UNIT_PET" or unit == "player" then
-            R.ReadPet(self)
-            self:Update("visual")
-        end
+        if event ~= "UNIT_PET" or unit == "player" then return R.PetChanged(self) end
         return
     end
     if event == "GROUP_ROSTER_UPDATE" then
@@ -721,6 +717,7 @@ OnEvent = function(self, event, unit, updateInfo)
         CompileAfterCombat(self)
     elseif COMPILE_EVENTS[event] or (bagUpdate and StockChanged(self)) then
         self:Compile()
+        if event == "SPELLS_CHANGED" and NS.Client.isForever then R.SyncSpecialEvents(self, OnEvent) end
     end
     self:Update(EVENT_MODES[event] or "visual", bagUpdate, updateInfo, foodDirty)
 end

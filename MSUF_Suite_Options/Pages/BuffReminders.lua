@@ -4,6 +4,7 @@ local PAGE, ID = "suite_buffReminders", "buffReminders"
 local ADDON = "MSUF_Suite_BuffReminders"
 -- The recommended consumables use Retail's items and equipment rules.
 P.Requires.modernEquipment = function() return P.Suite.Client.modernEquipment == true end
+P.Requires.foreverEquipment = function() return P.Suite.Client.isForever == true end
 
 local HELP = {
     demons = "Tick every demon you want out; demons your character has not learned yet can be ticked too. A summoned demon you left unticked gets a notice, as long as one of your ticked demons can be summoned. Another look of a demon counts as that demon once you have summoned it in that look.",
@@ -28,7 +29,8 @@ local SECTIONS = {
     { "tracking", "What to remind" },
     { "classReminders", "Class reminders" },
     { "demons", "Warlock demon choice" },
-    { "recommended", "Recommended consumables (Mainline)" },
+    { "recommended", "Recommended consumables (Mainline)", "modernEquipment" },
+    { "foreverConsumables", "Consumables (Forever)", "foreverEquipment" },
     { "visibility", "When to show" },
     { "readycheck", "Ready check" },
     { "classVisibility", "Class and group reminders" },
@@ -38,10 +40,9 @@ local SECTIONS = {
     { "position", "Anchors" },
 }
 
--- Forever's standalone class reminders show only to their own class.
-local FOREVER_CLASS_GATES = { classMageArmor = "MAGE", classInnerFire = "PRIEST", classThorns = "DRUID" }
+-- Forever-only class reminders show to their own class.
 P.Gates[ID] = function(rule)
-    local expected = FOREVER_CLASS_GATES[rule.key]
+    local expected = rule.foreverClass
     if expected then
         local _, class = UnitClass("player")
         return P.Suite.Client.isForever == true and P.Suite.Public(class) and class == expected
@@ -122,7 +123,8 @@ end
 local function Build(ctx)
     local b, ui = P.MenuWorkspace.Builder(ctx, { page = PAGE, module = ID, title = "Buff Reminders", height = 202,
         tabs = {
-            { id = "reminders", label = "What to remind", sections = "buffReminders_module composer tracking classReminders demons recommended readycheck" },
+            { id = "reminders", label = "What to remind",
+                sections = "buffReminders_module composer tracking classReminders demons recommended foreverConsumables readycheck" },
             { id = "visibility", label = "When to show", sections = "visibility classVisibility personalVisibility consumableVisibility" },
             { id = "appearance", label = "Appearance", sections = "appearance position" },
         } })
@@ -135,7 +137,7 @@ local function Build(ctx)
     })
     P.ReminderEditor.Build(ctx, b)
     for _, section in ipairs(SECTIONS) do
-        if section[1] ~= "recommended" or P.Requires.modernEquipment() then
+        if not section[3] or P.Requires[section[3]]() then
             if section[1]:match("Visibility$") then
                 P.ReminderVisibility.Build(ctx, b, section[1], section[2])
             else

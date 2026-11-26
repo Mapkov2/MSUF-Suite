@@ -47,7 +47,9 @@ local function Check(forever)
             if buff then buffs[unit][buff.auras[1]] = { auraInstanceID = 100 + index, spellId = buff.auras[1] } end
         end
     end
-    buffs.raid3[1459] = nil
+    local missingUnit, total = forever and "raid5" or "raid3", forever and 4 or 6
+    local coverage = (total - 1) .. "/" .. total
+    buffs[missingUnit][1459] = nil
     UnitClass = function(unit) return roster[unit], roster[unit] end
     IsInRaid = function() return true end
     GetNumGroupMembers = function() return 6 end
@@ -104,37 +106,37 @@ local function Check(forever)
     assert(module.raid.rows[1].id == (forever and 1243 or 21562)
         and module.raid.rows[1].ranked == forever, "client-specific aura IDs or rank readers were mixed")
     local row, button = module.raid.rows[2], module.raid.buttons[2]
-    assert(row.id == 1459 and row.covered == 5 and row.total == 6 and row.unknown == 0)
-    assert(button.shown and button.count.text == "5/6", "live coverage was not rendered")
+    assert(row.id == 1459 and row.covered == total - 1 and row.total == total and row.unknown == 0)
+    assert(button.shown and button.count.text == coverage, "live coverage was not rendered")
     assert(not next(button.attributes), "overview acquired a spell-casting action")
     button:OnEnter()
-    assert(GameTooltip.spell == 1459 and GameTooltip.lines[1] == "Buffed: 5/6", "coverage tooltip missing")
+    assert(GameTooltip.spell == 1459 and GameTooltip.lines[1] == "Buffed: " .. coverage, "coverage tooltip missing")
     button:OnLeave()
 
     local before = reads
     local unrelated = { addedAuras = { { spellId = 999999, name = "Spell 999999", auraInstanceID = 999 } } }
-    Event("UNIT_AURA", "raid3", unrelated)
+    Event("UNIT_AURA", missingUnit, unrelated)
     Flush()
     assert(reads == before, "unrelated member aura caused native reads")
-    buffs.raid3[1459] = { spellId = 1459, auraInstanceID = 102 }
+    buffs[missingUnit][1459] = { spellId = 1459, auraInstanceID = 102 }
     local added = { addedAuras = { { spellId = 1459, name = "Spell 1459", auraInstanceID = 102 } } }
-    Event("UNIT_AURA", "raid3", added)
-    Event("UNIT_AURA", "raid3", added)
+    Event("UNIT_AURA", missingUnit, added)
+    Event("UNIT_AURA", missingUnit, added)
     assert(#queue == 1, "aura burst queued multiple passes")
     Flush()
-    assert(reads == before + 1 and lastUnit == "raid3" and button.count.text == "6/6",
+    assert(reads == before + 1 and lastUnit == missingUnit and button.count.text == total .. "/" .. total,
         "one changed buff should read one member once")
-    buffs.raid3[1459] = nil
-    Event("UNIT_AURA", "raid3", { removedAuraInstanceIDs = { 102 } })
+    buffs[missingUnit][1459] = nil
+    Event("UNIT_AURA", missingUnit, { removedAuraInstanceIDs = { 102 } })
     Flush()
-    assert(button.count.text == "5/6", "removal left stale coverage")
-    invisible.raid3 = true
+    assert(button.count.text == coverage, "removal left stale coverage")
+    invisible[missingUnit] = true
     before = reads
-    Event("UNIT_FLAGS", "raid3")
+    Event("UNIT_FLAGS", missingUnit)
     Flush()
-    assert(reads == before and button.count.text == "5/6 ?" and row.unknown == 1,
+    assert(reads == before and button.count.text == coverage .. " ?" and row.unknown == 1,
         "unreadable player became confirmed missing")
-    invisible.raid3 = nil
+    invisible[missingUnit] = nil
     restricted = true
     before = reads
     Event("UNIT_AURA", "raid4", { isFullUpdate = true })
@@ -180,7 +182,7 @@ local function Check(forever)
     GetNumGroupMembers = function() return 4 end
     Event("GROUP_ROSTER_UPDATE")
     Flush()
-    assert(#module.raid.rows == 4 and module.raid.rows[2].total == 4, "roster/provider removal stayed stale")
+    assert(#module.raid.rows == 4 and module.raid.rows[2].total == (forever and 3 or 4), "roster/provider removal stayed stale")
     roster.raid5, roster.raid6 = "SHAMAN", "EVOKER"
     GetNumGroupMembers = function() return 6 end
     Event("GROUP_ROSTER_UPDATE")
@@ -207,7 +209,8 @@ local function Check(forever)
     GetNumGroupMembers = function() return 40 end
     Event("GROUP_ROSTER_UPDATE")
     Flush()
-    assert(module.raid.rows[2].total == 40, "forty-player roster counted the player twice")
+    assert(module.raid.rows[1].total == 40, "forty-player roster counted the player twice")
+    assert(module.raid.rows[2].total == (forever and 27 or 40), "Intellect did not count just its recipients")
     before = reads
     for _ = 1, 100 do Event("UNIT_AURA", "raid40", unrelated) end
     assert(#queue == 1, "forty-player burst scheduled repeated work")
@@ -215,6 +218,20 @@ local function Check(forever)
     assert(reads == before, "forty-player unrelated burst performed native aura reads")
     for i = 7, 40 do roster["raid" .. i] = nil end
     GetNumGroupMembers = function() return 6 end
+
+    if forever then
+        roster.raid6 = nil
+        Event("GROUP_ROSTER_UPDATE")
+        Flush()
+        assert(row.total == total, "an unknown class was counted as a mana user")
+        roster.raid6 = "HUNTER"
+        Event("UNIT_CONNECTION", "raid6")
+        Flush()
+        assert(row.total == total + 1, "a newly readable mana user never entered coverage")
+        roster.raid6 = "EVOKER"
+        Event("GROUP_ROSTER_UPDATE")
+        Flush()
+    end
 
     -- Menu samples are independent of live aura counts, even for a solo player.
     IsInRaid, GetNumSubgroupMembers = function() return false end, function() return 0 end
@@ -255,7 +272,7 @@ local function Check(forever)
     assert(reads == before, "hidden first-show state applied a delta or read native auras")
     IsMounted = function() return false end
     Event("PLAYER_MOUNT_DISPLAY_CHANGED")
-    assert(module.raid.rows[2].total == 6 and module.raid.buttons[2].shown,
+    assert(module.raid.rows[2].total == total and module.raid.buttons[2].shown,
         "first visible state did not take a complete snapshot")
     if not forever then
         c.raidBuffOverview, c.readyCheckRaidBuffNames = false, true

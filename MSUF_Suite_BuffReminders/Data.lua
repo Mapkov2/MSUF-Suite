@@ -47,14 +47,33 @@ local CLASS_BUFF = {
             381750, 381751, 381752, 381753, 381754, 381756, 381757, 381758 }
     },
 }
+-- Forever SpellName, SpellLevels and SpellEffect (1.60.1.71139).
+-- Single-target ranks first, highest to lowest. The group version is also
+-- recognized and can be used when it is the only known spell in the family.
 local FOREVER_CLASS_BUFF = {
-    DRUID = { cast = 1126, auras = { 1126, 21849 } },
-    MAGE = { cast = 1459, auras = { 1459, 23028 } },
-    PRIEST = { cast = 1243, auras = { 1243, 21562 } },
-    WARRIOR = { cast = 6673, auras = { 6673 } },
+    DRUID = { cast = 1126, casts = { 9885, 9884, 8907, 5234, 6756, 5232, 1126 },
+        groupCasts = { 21850, 21849 }, auras = { 1126, 21849 } },
+    MAGE = { cast = 1459, casts = { 10157, 10156, 1461, 1460, 1459 }, groupCasts = { 23028 }, auras = { 1459, 23028 }, manaOnly = true },
+    PRIEST = { cast = 1243, casts = { 10938, 10937, 2791, 1245, 1244, 1243 },
+        groupCasts = { 21564, 21562 }, auras = { 1243, 21562 } },
+    WARRIOR = { cast = 6673, casts = { 25289, 11551, 11550, 11549, 6192, 5242, 6673 },
+        selfCast = true, auras = { 6673 } },
 }
+R.DIVINE_SPIRIT = { cast = 14752, casts = { 27841, 14819, 14818, 14752 },
+    groupCasts = { 27681 }, auras = { 14752, 27681 }, manaOnly = true }
+local MANA_CLASSES = { DRUID = true, HUNTER = true, MAGE = true, PALADIN = true, PRIEST = true, SHAMAN = true, WARLOCK = true }
+
+function R.ManaClass(class)
+    return MANA_CLASSES[class] == true
+end
 function R.ClassBuff(class)
     return (P.NS.Client.isForever and FOREVER_CLASS_BUFF or CLASS_BUFF)[class]
+end
+
+-- A priest's second family is talent-gated. A roster class token alone
+-- cannot establish that a different priest can provide it.
+function R.ExtraClassBuff(class)
+    if P.NS.Client.isForever and class == "PRIEST" then return R.DIVINE_SPIRIT end
 end
 -- A class reminder's behaviour on this client (the catalog's
 -- NS.BuffReminderClassReminders); nil where the reminder does not exist.

@@ -5,6 +5,18 @@ local Public = S.Public
 local ORDER = { "PRIEST", "MAGE", "WARRIOR", "DRUID", "SHAMAN", "EVOKER" }
 local SAMPLES = { 18, 20, 17, 20, 16, 19 }
 
+local function AddRow(raid, index, buff)
+    local row = raid.pool[buff]
+    if not row then
+        row = { id = buff.cast, aliases = buff.auras, members = {}, presence = {},
+            ranked = NS.Client.isForever == true, manaOnly = buff.manaOnly }
+        raid.pool[buff] = row
+    end
+    local changed = raid.rows[index] ~= row
+    raid.rows[index] = row
+    return changed
+end
+
 -- A separate row leaves all twelve personal reminder slots available. Its
 -- records survive roster changes; only member events invalidate aura reads.
 function R.BuildRaidOverview(self, sample)
@@ -18,15 +30,15 @@ function R.BuildRaidOverview(self, sample)
             local buff = R.ClassBuff(class)
             if buff and (sample or #self.group.unitList > 1 and self.group.classes[class]) then
                 count = count + 1
-                local row = pool[class]
-                if not row then
-                    row = { id = buff.cast, aliases = buff.auras, members = {}, presence = {},
-                        ranked = NS.Client.isForever == true }
-                    pool[class] = row
-                end
-                if rows[count] ~= row then changed = true end
-                rows[count] = row
+                if AddRow(raid, count, buff) then changed = true end
             end
+        end
+    end
+    if self.config.raidBuffOverview and NS.Client.isForever then
+        local extra = R.ExtraClassBuff(R.PlayerClass())
+        if extra and (sample or #self.group.unitList > 1) and R.RaidBuffCast(extra) then
+            count = count + 1
+            if AddRow(raid, count, extra) then changed = true end
         end
     end
     if count ~= #rows then changed = true end
@@ -41,13 +53,15 @@ function R.MarkRaidOverview(self, unit, event, info)
     if not Public(unit) or not self.group.units[unit] then return false end
     local changed = false
     for _, row in ipairs(self.raid.rows or {}) do
-        local member = row.members[unit]
-        if not member then
-            member = { aliases = row.aliases, ranked = row.ranked }
-            row.members[unit] = member
-        end
-        if event ~= "UNIT_AURA" or R.AuraChangeAffects(member, info) then
-            member.dirty, changed = true, true
+        if not row.manaOnly or self.group.manaUnits[unit] then
+            local member = row.members[unit]
+            if not member then
+                member = { aliases = row.aliases, ranked = row.ranked }
+                row.members[unit] = member
+            end
+            if event ~= "UNIT_AURA" or R.AuraChangeAffects(member, info) then
+                member.dirty, changed = true, true
+            end
         end
     end
     return changed
@@ -79,10 +93,16 @@ function R.RefreshRaidOverview(self, unit)
     if unit and self.list.needsFullRefresh then return end
     for _, row in ipairs(self.raid.rows or {}) do
         if not unit then
-            row.covered, row.unknown, row.total = 0, 0, #self.group.unitList
+            row.covered, row.unknown, row.total = 0, 0, 0
+            local manaUnits = row.manaOnly and self.group.manaUnits
             R.Clear(row.presence)
-            for _, member in ipairs(self.group.unitList) do ReadMember(row, member) end
-        else
+            for _, member in ipairs(self.group.unitList) do
+                if not manaUnits or manaUnits[member] then
+                    row.total = row.total + 1
+                    ReadMember(row, member)
+                end
+            end
+        elseif not row.manaOnly or self.group.manaUnits[unit] then
             local member = row.members[unit]
             if member and member.dirty then
                 if member.present == true then

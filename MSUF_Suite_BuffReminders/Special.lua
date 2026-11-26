@@ -5,7 +5,7 @@ local Public = S.Public
 local function NextSelfBuff(self)
     for _, entry in ipairs(self.list.entries or {}) do
         if entry.kind == "spell" and entry.present == false and not entry.dismissed
-            and not entry.ally and not entry.group and not entry.slot and not entry.notice then
+            and not entry.ally and not entry.group and not entry.slot and not entry.notice and not entry.unit then
             return entry.spellName or entry.id
         end
     end
@@ -98,7 +98,14 @@ end
 function R.SyncSpecialEvents(self, callback)
     local c = self.config
     local suspended = self.listen.suspended
-    local wanted = not suspended and (c.petPassiveWarning or c.demonChoiceWarning)
+    local wanted = not suspended and (c.petPassiveWarning or c.demonChoiceWarning or R.WantsSacrifice(self))
+    if NS.Client.isForever then
+        if not suspended and R.WantsForeverTracking(self) then
+            R.Listen(self, "MINIMAP_UPDATE_TRACKING", callback)
+        else
+            self.context:RemoveEvent("MINIMAP_UPDATE_TRACKING")
+        end
+    end
     for _, event in ipairs(EVENTS) do
         if wanted then
             R.Listen(self, event, callback)
@@ -180,6 +187,15 @@ function R.ReadPet(self)
             return
         end
     end
+end
+
+function R.PetChanged(self)
+    if self.stock.sacrifice ~= nil and R.SacrificeChanged(self) then
+        self:Compile()
+    else
+        R.ReadPet(self)
+    end
+    self:Update("visual")
 end
 
 function R.ReadHealthstone(self)

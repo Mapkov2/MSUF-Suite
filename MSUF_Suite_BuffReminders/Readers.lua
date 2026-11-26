@@ -58,6 +58,19 @@ function R.Known(spellID)
     return Public(inBook) and inBook == true
 end
 
+function R.RaidBuffCast(buff)
+    if buff.casts then
+        for _, spellID in ipairs(buff.casts) do
+            if R.Known(spellID) then return spellID end
+        end
+        for _, spellID in ipairs(buff.groupCasts or EMPTY) do
+            if R.Known(spellID) then return spellID, true end
+        end
+    elseif R.Known(buff.cast) then
+        return buff.cast
+    end
+end
+
 function R.PlayerClass()
     local _, class = UnitClass("player")
     if Public(class) and type(class) == "string" then return class end
@@ -132,10 +145,35 @@ local function ReleaseSnapshot(ids, key)
     return true
 end
 
+local function BlockingAura(aliases)
+    local unknown
+    for _, spellID in ipairs(aliases) do
+        local known, aura = R.RankAura("player", spellID, R.HELPFUL)
+        if not (known and Public(aura)) then unknown = true
+        elseif aura then
+            local instanceID = aura.auraInstanceID
+            return true, Public(instanceID) and type(instanceID) == "number" and instanceID or nil
+        end
+    end
+    if not unknown then return false end
+end
+
 -- One targeted lookup per aura ID. nil when a lookup was restricted (secret),
 -- else whether the player has one of the entry's auras, with its timing.
 function R.AuraPresent(entry)
+    if entry.tracking == "treasure" then return R.TrackingPresent(entry.tracking) end
     if R.AurasRestricted() then return nil end
+    if entry.blockingAuras then
+        local blocking, instanceID = BlockingAura(entry.blockingAuras)
+        if blocking ~= false then return blocking, instanceID end
+    elseif entry.suppressAura then
+        local suppress = C_UnitAuras.GetPlayerAuraBySpellID(entry.suppressAura)
+        if not Public(suppress) then return nil end
+        if suppress then
+            local instanceID = suppress.auraInstanceID
+            return true, Public(instanceID) and type(instanceID) == "number" and instanceID or nil
+        end
+    end
     local ids = entry.aliases
     local count = ids and #ids or 1
     local unknown = false
@@ -143,7 +181,7 @@ function R.AuraPresent(entry)
         local id = ids and ids[index] or entry.aura
         local ok, data = true, nil
         if entry.ranked then
-            ok, data = R.RankAura("player", id, R.HELPFUL)
+            ok, data = R.RankAura("player", id, entry.ownAura and R.OWN_HELPFUL or R.HELPFUL)
         else
             data = C_UnitAuras.GetPlayerAuraBySpellID(id)
         end
@@ -162,10 +200,16 @@ function R.AuraPresent(entry)
         end
     end
     if unknown then return nil end
+    if entry.tracking then return R.TrackingPresent(entry.tracking) end
     return false
 end
 
 local function MatchesAuraID(entry, spellID, name)
+    if entry.suppressAura == spellID then return true end
+    if entry.blockingAuras then
+        if not Public(name) or type(name) ~= "string" then return true end
+        for _, id in ipairs(entry.blockingAuras) do if name == R.RankName(id) then return true end end
+    end
     if entry.ranked then
         if not Public(name) or type(name) ~= "string" then return true end
         for _, id in ipairs(entry.aliases) do if name == R.RankName(id) then return true end end
@@ -211,7 +255,7 @@ function R.AuraChangeAffects(entry, info)
             if not Public(spellID) or type(spellID) ~= "number" or MatchesAuraID(entry, spellID, aura.name) then return true end
         end
     end
-    if entry.present == false and not entry.auraInstanceID then return false end
+    if (entry.present == false or entry.tracking) and not entry.auraInstanceID then return false end
     local instanceID = entry.auraInstanceID
     if not instanceID then return true end
     local removed = IDList(info.removedAuraInstanceIDs)
@@ -425,7 +469,29 @@ function R.FoodPresent(self)
     return present, expiresAt, totalDuration
 end
 
-function R.EnchantPresent(slot)
+local function ForeverEnchant(slot, layer)
+    local kinds, slots = Enum.ItemEnchantType, Enum.WeaponSlot
+    if not (kinds and slots and C_Item.GetWeaponEnchantInfo) then return nil end
+    local wanted = layer == "imbue" and kinds.Imbue or kinds.Temporary
+    local enchants = C_Item.GetWeaponEnchantInfo(slot == 16 and slots.MainHand or slots.OffHand)
+    if not Public(enchants) or type(enchants) ~= "table" then return nil end
+    local unknown
+    for _, enchant in ipairs(enchants) do
+        if not Public(enchant) or type(enchant) ~= "table" or not Public(enchant.enchantType) then
+            unknown = true
+        elseif enchant.enchantType == wanted then
+            local active, remaining = enchant.hasEnchant, enchant.timeLeft
+            if not Public(active) then return nil end
+            if active == true and Public(remaining) and type(remaining) == "number"
+                and remaining > 0 and remaining < math.huge then return true, GetTime() + remaining / 1000 end
+            return active == true
+        end
+    end
+    if not unknown then return false end
+end
+
+function R.EnchantPresent(slot, layer)
+    if layer then return ForeverEnchant(slot, layer) end
     local data = C_PaperDollInfo.GetTemporaryEnchantmentInfo(slot)
     if not Public(data) then return nil end
     if data == nil then return false end

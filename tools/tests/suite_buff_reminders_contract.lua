@@ -207,7 +207,7 @@ local NS = { IsCombatLocked=function() return combat end,
 -- Data, readers, entry selection and the controller load in TOC order into
 -- one private table (Bootstrap only fills it from _G.MSUFSuite).
 local Support = dofile(root .. "/tools/tests/suite_test_support.lua")
-local BR_FILES = { "Bootstrap.lua", "Data.lua", "State.lua", "Readers.lua", "Group.lua", "Entries.lua", "Preparation.lua", "Alerts.lua", "Visuals.lua", "RaidOverview.lua", "Preview.lua", "Special.lua", "Cursor.lua", "Anchors.lua", "Controller.lua" }
+local BR_FILES = { "Bootstrap.lua", "Data.lua", "State.lua", "Readers.lua", "Forever.lua", "Group.lua", "Entries.lua", "Preparation.lua", "Alerts.lua", "Visuals.lua", "RaidOverview.lua", "Preview.lua", "Special.lua", "Cursor.lua", "Anchors.lua", "Controller.lua" }
 local tocFiles = Support.TocFiles(root, "MSUF_Suite_BuffReminders")
 assert(#tocFiles == #BR_FILES, "the BuffReminders TOC must list " .. #BR_FILES .. " files")
 for i = 1, #BR_FILES do
@@ -1771,6 +1771,13 @@ do
     auras[restAura] = rested
     Fire("UNIT_AURA", "player", { addedAuras = { rested } })
     assert(module.view.mask == 3, "two stacks must still remind")
+    local resting = { spellId = 1331671, auraInstanceID = 1703 }
+    auras[1331671] = resting
+    Fire("UNIT_AURA", "player", { addedAuras = { resting } })
+    assert(module.view.mask == 2, "an active sleeping bag kept advertising a second use")
+    auras[1331671] = nil
+    Fire("UNIT_AURA", "player", { removedAuraInstanceIDs = { 1703 } })
+    assert(module.view.mask == 3, "getting up below three stacks failed to restore the reminder")
     rested.applications = 3
     Fire("UNIT_AURA", "player", { updatedAuraInstanceIDs = { 1701 } })
     assert(module.view.mask == 2, "changing the same aura to three stacks must clear the reminder")
@@ -1805,5 +1812,181 @@ do
     inventory, module.stock.lastFood = nil, oldLastFood
     C_Timer.After = oldAfter
 end
+
+-- These cases also run when other tests load this harness, so preserve the
+-- native fixtures those tests build on.
+local foreverGlobals = { "UnitClass", "UnitExists", "UnitIsConnected", "UnitIsVisible", "UnitIsDeadOrGhost", "IsInRaid",
+    "GetNumSubgroupMembers", "UnitIsUnit", "UnitCreatureFamily", "GetInstanceInfo", "GetInventoryItemID", "C_Minimap", "bit" }
+local savedGlobals = {}
+for _, key in ipairs(foreverGlobals) do savedGlobals[key] = _G[key] end
+local savedAuraByName = C_UnitAuras.GetAuraDataBySpellName
+local savedItemInfo, savedUsable, savedWeaponEnchant = C_Item.GetItemInfoInstant, C_Item.IsUsableItem, C_Item.GetWeaponEnchantInfo
+local savedEnchantEnum, savedSlotEnum = Enum.ItemEnchantType, Enum.WeaponSlot
+local savedKnownSpell, savedAuras, savedInventory, savedConfig = knownSpell, auras, inventory, module.config
+local savedForever, savedModern = NS.Client.isForever, NS.Client.modernEquipment
+
+-- A rank learned without rank one and the talent's separate buff family.
+do
+    NS.Client.isForever = true
+    local roster = { player = "PRIEST", party1 = "MAGE", party2 = "ROGUE" }
+    UnitClass = function(unit) return roster[unit], roster[unit] end
+    UnitExists, UnitIsConnected, UnitIsVisible = function() return true end, function() return true end, function() return true end
+    UnitIsDeadOrGhost, IsInRaid = function() return false end, function() return false end
+    GetNumSubgroupMembers = function() return 2 end
+    UnitIsUnit = function(a, b) return a == b end
+    knownSpell = function(id) return id == 10938 or id == 27841 end
+    local owner = Owner({ config = { classBuff = true, groupBuff = true, spellIDs = "", items = "", mainHandItem = "", offHandItem = "" } })
+    local entries = BR.BuildEntries(owner)
+    local fortitude, spirit = entries[1], entries[2]
+    assert(fortitude and fortitude.id == 10938, "learned high-rank Fortitude retired the reminder")
+    assert(spirit and spirit.id == 27841 and spirit.group, "learned Divine Spirit did not get its own group reminder")
+    local prayerName = BR.RankName(27681)
+    C_UnitAuras.GetAuraDataBySpellName = function(unit, name)
+        if unit ~= "party2" and name == prayerName then return { spellId = 27681 } end
+    end
+    BR.RefreshGroup(owner)
+    assert(not BR.GroupPresent(owner, fortitude) and fortitude.missingCount == 3, "Spirit counted as Fortitude")
+    assert(BR.GroupPresent(owner, spirit), "Prayer of Spirit did not satisfy the mana users while skipping a Rogue")
+    C_UnitAuras.GetAuraDataBySpellName = function(unit, name)
+        if unit == "player" and name == prayerName then return { spellId = 27681 } end
+    end
+    BR.RefreshGroup(owner)
+    local present, target = BR.GroupPresent(owner, spirit)
+    assert(present == false and spirit.missingCount == 1 and target == "party1", "a group reminder would recast a single-target buff on the already-buffed player")
+    local oldConfig = module.config
+    for key, value in pairs({ size = 38, spacing = 5, columns = 6, borderColor = "e8b855", point = 1,
+        x = 0, y = 0, remindBeforeMinutes = 0 }) do owner.config[key] = value end
+    module.config = owner.config
+    module:Enable()
+    assert(module.view.buttons[2].attributes.unit == "party1", "the secure Spirit button did not bind the missing member")
+    module:Disable()
+    module.config = oldConfig
+    knownSpell = function(id) return id == 27681 end
+    entries = BR.BuildEntries(owner)
+    assert(#entries == 1 and entries[1].id == 27681 and not entries[1].groupTarget,
+        "group rank must remain a self-targeted cast without the single-target spell")
+end
+
+do
+    local function Fire(event, ...) eventFrame.OnEvent(eventFrame, event, ...) end
+    local function Entry(id)
+        for index, entry in ipairs(module.list.entries) do
+            if entry.id == id then return entry, module.view.buttons[index] end
+        end
+    end
+    local function Start(overrides)
+        module.config = { spellIDs = "", items = "", mainHandItem = "", offHandItem = "",
+            size = 38, spacing = 5, columns = 6, borderColor = "e8b855", point = 1, x = 0, y = 0, remindBeforeMinutes = 0 }
+        for key, value in pairs(overrides) do module.config[key] = value end
+        module:Enable()
+    end
+    NS.Client.isForever, NS.Client.modernEquipment = true, false
+    local class, dungeon, pet, knows, track, weaponEnchants = "ROGUE", false, false, {}, {}, {}
+    UnitClass = function() return class, class end
+    UnitExists = function(unit) return unit == "player" or unit == "pet" and pet end
+    UnitCreatureFamily = function() return "Imp", 23 end
+    knownSpell = function(id) return knows[id] == true end
+    GetInstanceInfo = function() return "Place", dungeon and "party" or "none" end
+    GetInventoryItemID = function(_, slot) if slot == 16 then return 1234 end end
+    C_Item.GetItemInfoInstant = function(id) return id, nil, nil, "INVTYPE_WEAPON", nil, 2, 7 end
+    C_Item.IsUsableItem = function(id) return id ~= 250328 end
+    C_UnitAuras.GetAuraDataBySpellName = function() end
+    Enum.ItemEnchantType, Enum.WeaponSlot = { Imbue = 3, Temporary = 2 }, { MainHand = 0, OffHand = 1 }
+    C_Item.GetWeaponEnchantInfo = function(slot) assert(slot == 0); return weaponEnchants end
+    bit = bit or { band = function(mask, power) return math.floor(mask / power) % 2 * power end }
+    inventory = { [281371] = 1, [250328] = 1, [9179] = 1, [12643] = 1, [12404] = 1, [8928] = 1 }
+    auras = {}
+    Start({ foreverMagicalAwareness = true, foreverIntellect = true, foreverWeaponImbues = true, foreverWeaponItems = true })
+    assert(not Entry(281371), "the dungeon buff escaped into the open world")
+    assert(Entry(9179) and not Entry(250328), "an unusable high-rank elixir prevented a usable one")
+    assert(not Entry(12643), "weightstone selected for a sword")
+    local poison, poisonButton = Entry(8928)
+    local stone, stoneButton = Entry(12404)
+    assert(poison and stone and poison.enchantLayer == "imbue" and stone.enchantLayer == "temporary",
+        "a poison and a stone must occupy independent layers on the same weapon")
+    assert(poisonButton.attributes["target-slot"] == 16 and stoneButton.attributes["target-slot"] == 16,
+        "a weapon enchant click must supply the actual inventory slot")
+    weaponEnchants = { { enchantType = 2, hasEnchant = true, timeLeft = 1700000 } }
+    Fire("WEAPON_ENCHANT_CHANGED")
+    assert(poison.present == false and stone.present == true, "a temporary enchant hid a missing poison")
+    weaponEnchants = { { enchantType = 3, hasEnchant = true, timeLeft = 1700000 } }
+    Fire("WEAPON_ENCHANT_CHANGED")
+    assert(poison.present == true and stone.present == false, "a poison hid a missing temporary enchant")
+    weaponEnchants = { { enchantType = { secret = true }, hasEnchant = true, timeLeft = 1700000 } }
+    Fire("WEAPON_ENCHANT_CHANGED")
+    assert(poison.present == nil and stone.present == nil, "an unreadable enchant was treated as empty")
+    dungeon = true
+    Fire("ZONE_CHANGED_NEW_AREA")
+    local censer, censerButton = Entry(281371)
+    assert(censer and censer.aura == 1297774 and censerButton.attributes.item1 == "item:281371",
+        "Elemental Attractor did not bind to Magical Awareness in a dungeon")
+    local awareness = { spellId = 1297774, auraInstanceID = 3010 }
+    auras[1297774] = awareness
+    Fire("UNIT_AURA", "player", { addedAuras = { awareness } })
+    assert(censer.present == true, "Magical Awareness aura did not hide its reminder")
+    inventory[281371], inventory[275730] = nil, 1
+    Fire("BAG_UPDATE_DELAYED")
+    assert(Entry(275730) and not Entry(281371), "the other faction's item did not replace spent stock")
+    module:Disable()
+
+    class, dungeon, knows = "HUNTER", false, { [2383] = true, [2481] = true }
+    local trackingReads = 0
+    C_Minimap = {
+        GetNumTrackingTypes = function() trackingReads = trackingReads + 1; return #track end,
+        GetTrackingInfo = function(index) return track[index] end,
+    }
+    Start({ foreverGatherTracking = true, foreverFindTreasure = true })
+    assert(eventFrame.events.MINIMAP_UPDATE_TRACKING)
+    local gather = assert(Entry(2383))
+    local treasure = assert(Entry(2481))
+    assert(gather.present == false and treasure.present == false)
+    track = { { type = "spell", spellID = 2481, active = true } }
+    Fire("MINIMAP_UPDATE_TRACKING")
+    assert(gather.present == false and treasure.present == true, "a Dwarf racial filled the shared gathering slot")
+    track[2] = { type = "spell", spellID = 1494, active = true }
+    Fire("MINIMAP_UPDATE_TRACKING")
+    assert(gather.present == true and treasure.present == true, "class tracking and Treasure must register independently")
+    local readsBefore = trackingReads
+    Fire("UNIT_AURA", "player", { addedAuras = { { spellId = 111, auraInstanceID = 211 } } })
+    assert(trackingReads == readsBefore, "an unrelated aura rescanned active minimap trackers")
+    module.config.foreverGatherTracking = false
+    module:Refresh()
+    assert(eventFrame.events.MINIMAP_UPDATE_TRACKING and not eventFrame.events.UNIT_AURA,
+        "Find Treasure registered an unused aura listener")
+    module:Disable()
+    assert(not eventFrame.events.MINIMAP_UPDATE_TRACKING, "a disabled module kept the tracking listener")
+
+    class, knows = "WARLOCK", { [18788] = true, [688] = true }
+    inventory[13701] = 1
+    local itemInfo = C_Item.GetItemInfoInstant
+    C_Item.GetItemInfoInstant = function(id) return id, nil, nil, "INVTYPE_WEAPONOFFHAND", nil, 2, 7 end
+    Start({ foreverWeaponImbues = true })
+    assert(not Entry(13701), "Firestone was offered for an off-hand-only weapon")
+    module:Disable()
+    C_Item.GetItemInfoInstant = itemInfo
+    Start({ classReminders = true, classDemonicSacrifice = true })
+    assert(Entry(688) and not Entry(18788), "Sacrifice tried to cast at an absent pet")
+    pet = true
+    Fire("UNIT_PET", "player")
+    local sacrifice, button = Entry(18788)
+    assert(sacrifice and button.attributes.unit == "pet", "a summon did not rebind Demonic Sacrifice to the demon")
+    local felEnergy = { spellId = 18792, auraInstanceID = 3013 }
+    auras[18792] = felEnergy
+    Fire("UNIT_AURA", "player", { addedAuras = { felEnergy } })
+    assert(sacrifice.present == true, "another demon's Sacrifice buff did not satisfy the reminder")
+    module:Disable()
+
+    NS.Client.isForever, NS.Client.modernEquipment = false, true
+    Start({ foreverWeaponItems = true, foreverMagicalAwareness = true, foreverGatherTracking = true, foreverIntellect = true })
+    assert(#module.list.entries == 0 and not eventFrame.events.MINIMAP_UPDATE_TRACKING, "Forever presets leaked into Retail")
+    module:Disable()
+end
+
+for _, key in ipairs(foreverGlobals) do _G[key] = savedGlobals[key] end
+C_UnitAuras.GetAuraDataBySpellName = savedAuraByName
+C_Item.GetItemInfoInstant, C_Item.IsUsableItem, C_Item.GetWeaponEnchantInfo = savedItemInfo, savedUsable, savedWeaponEnchant
+Enum.ItemEnchantType, Enum.WeaponSlot = savedEnchantEnum, savedSlotEnum
+knownSpell, auras, inventory, module.config = savedKnownSpell, savedAuras, savedInventory, savedConfig
+NS.Client.isForever, NS.Client.modernEquipment = savedForever, savedModern
 
 print("Suite buff reminders: secure pool, targeted checks, Rogue spec poisons, advance warnings, restricted aura suppression, combat silence and cleanup passed")

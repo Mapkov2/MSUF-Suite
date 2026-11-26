@@ -69,8 +69,21 @@ local MAGE_ARMOR_RANKS = {
     [7302] = { 10220, 10219, 7320, 7302 },
     [168] = { 7301, 7300, 168 },
 }
+-- Forever's aspect lines, ordered by their fallback choice. A groupmate's
+-- aspect is not the Hunter's own stance.
+local HUNTER_ASPECTS = { 469145, 13165, 13163, 34074, 13161, 20043, 5118, 13159 }
+local HUNTER_ASPECT_RANKS = {
+    [469145] = { 469145 },
+    [13165] = { 25296, 14322, 14321, 14320, 14319, 14318, 13165 },
+    [13163] = { 13163 },
+    [34074] = { 34074, 415423 },
+    [13161] = { 1299447, 1299446, 1299445, 13161 },
+    [20043] = { 20190, 20043 },
+    [5118] = { 5118 },
+    [13159] = { 13159 },
+}
 local ELEMENTAL, ENHANCEMENT, RESTORATION = { [262] = true }, { [263] = true }, { [264] = true }
-local SHIELD_SPECS = { [262] = true, [263] = true }
+local SHIELD_SPECS, AUGMENTATION = { [262] = true, [263] = true }, { [1473] = true }
 NS.BuffReminderClassReminders = {
     { key = "classMageArmor", label = "Mage: armor (Forever)", class = "MAGE", default = NS.Client.isForever == true, standalone = true,
         forever = { kind = "aura", ranked = true, casts = MAGE_ARMORS, auras = MAGE_ARMORS,
@@ -87,7 +100,23 @@ NS.BuffReminderClassReminders = {
     { key = "classPaladinAura", label = "Paladin: an aura", class = "PALADIN",
         retail = { kind = "aura", casts = PALADIN_AURAS, auras = PALADIN_AURAS },
         forever = { kind = "aura", ranked = true, casts = FOREVER_PALADIN_AURAS, auras = FOREVER_PALADIN_AURAS,
-            remember = "paladinAura", ranks = FOREVER_PALADIN_AURA_RANKS } },
+            own = true, remember = "paladinAura", ranks = FOREVER_PALADIN_AURA_RANKS } },
+    { key = "classHunterAspect", label = "Hunter: an aspect", class = "HUNTER",
+        forever = { kind = "aura", ranked = true, own = true, casts = HUNTER_ASPECTS,
+            auras = HUNTER_ASPECTS, remember = "hunterAspect", ranks = HUNTER_ASPECT_RANKS } },
+    { key = "classTrueshotAura", label = "Hunter: Trueshot Aura", class = "HUNTER",
+        forever = { kind = "aura", ranked = true, own = true,
+            casts = { 20906, 20905, 19506, 1299348, 1299346 }, auras = { 19506 } } },
+    { key = "classPaladinBlessing", label = "Paladin: a blessing", class = "PALADIN",
+        forever = { kind = "aura", ranked = true,
+            casts = { 20217, 25291, 19838, 19837, 19836, 19835, 19834, 19740,
+                25290, 19854, 19853, 19852, 19850, 19742, 25898, 25916, 25782, 25918, 25894 },
+            auras = { 20217, 19740, 19742, 25898, 25782, 25894 } } },
+    { key = "classRighteousFury", label = "Paladin: Righteous Fury", class = "PALADIN", default = false,
+        forever = { kind = "aura", casts = { 25780 }, auras = { 25780 } } },
+    { key = "classDemonArmor", label = "Warlock: Demon Skin or Demon Armor", class = "WARLOCK",
+        forever = { kind = "aura", ranked = true, casts = { 11735, 11734, 11733, 1086, 706, 696, 687 },
+            auras = { 706, 687 } } },
     { key = "classPaladinRite", label = "Paladin: a weapon rite", class = "PALADIN",
         retail = { kind = "imbue", imbues = {
             { slot = 16, spell = 433568, equip = "weapon" }, { slot = 16, spell = 433583, equip = "weapon" } } } },
@@ -104,8 +133,8 @@ NS.BuffReminderClassReminders = {
             { slot = 17, spell = 462757, equip = "shield", specs = SHIELD_SPECS },
             { slot = 17, spell = 457481, equip = "shield", specs = RESTORATION } } },
         forever = { kind = "imbue", ranked = true, imbues = {
-            { slot = 16, spells = FOREVER_IMBUES, equip = "weapon" },
-            { slot = 17, spells = FOREVER_IMBUES, equip = "weapon" } } } },
+            { slot = 16, spells = FOREVER_IMBUES, equip = "weapon", layer = "imbue" },
+            { slot = 17, spells = FOREVER_IMBUES, equip = "weapon", layer = "imbue" } } } },
     { key = "classShamanShield", label = "Shaman: Lightning Shield or Water Shield", class = "SHAMAN",
         retail = { kind = "aura", casts = SHAMAN_SHIELDS, auras = SHAMAN_SHIELDS, prefer = { [264] = 52127 } },
         forever = { kind = "aura", ranked = true, casts = FOREVER_SHIELD_CASTS, auras = FOREVER_SHIELDS } },
@@ -115,6 +144,11 @@ NS.BuffReminderClassReminders = {
         retail = { kind = "ally", casts = { 369459 }, auras = { 369459 } } },
     { key = "classBlisteringScales", label = "Evoker: Blistering Scales on an ally", class = "EVOKER",
         retail = { kind = "ally", casts = { 360827 }, auras = { 360827 } } },
+    -- Retail SpellName, SpellEffect and TraitDefinition (12.1.5.70961).
+    { key = "classBestowWeyrnstone", label = "Evoker: Bestow Weyrnstone", class = "EVOKER", default = false,
+        retail = { kind = "ally", casts = { 408233 }, auras = { 410318 }, specs = AUGMENTATION } },
+    { key = "classTimelessness", label = "Evoker: Timelessness", class = "EVOKER", default = false,
+        retail = { kind = "ally", casts = { 412710 }, auras = { 412710 }, specs = AUGMENTATION } },
     { key = "classSymbiosis", label = "Druid: Symbiotic Relationship with an ally", class = "DRUID",
         retail = { kind = "ally", casts = { 474750 }, auras = { 474750, 474754 } } },
     { key = "classArcaneFamiliar", label = "Mage: Arcane Familiar", class = "MAGE",
@@ -144,6 +178,8 @@ B.Section(id, "tracking", "What to remind", {
     B.Tooltip(Bool("foreverSleepingBag", "Well-Rested (Cozy Sleeping Bag)", false),
         "Reminds you below max level when Well-Rested is missing, below three stacks, or about to expire. Click to use the sleeping bag from your bags."),
     Bool("foreverWellFed", "Food buff (Well Fed)", false),
+    Bool("foreverGatherTracking", "Gathering tracking", false),
+    Bool("foreverFindTreasure", "Find Treasure", false),
     -- A potion for maps the player picks; Inky Black Potion (item 124640) by default.
     Bool("mapPotion", "Remind me of a potion on maps I pick", false),
     String("mapPotionItem", "Potion for those maps (item ID)", "124640", 10),
@@ -158,6 +194,7 @@ for _, def in ipairs(NS.BuffReminderClassReminders) do
     local rule = Bool(def.key, def.label, def.default ~= false)
     if def.standalone then B.Add(id, rule, "tracking") else classRules[#classRules + 1] = rule end
 end
+classRules[#classRules + 1] = Bool("classDemonicSacrifice", "Warlock: Demonic Sacrifice", false)
 B.Section(id, "classReminders", "Class reminders", classRules)
 B.Tooltip(NS.SuiteCatalog[id].rules.classMageArmor,
     "Shows one reminder while no Frost Armor, Ice Armor or Mage Armor is active. Click to cast the highest known rank of your last active armor.")
@@ -183,6 +220,18 @@ B.Section(id, "recommended", "Recommended consumables (Mainline)", {
     String("runeChoice", "Augment rune to use first (item ID)", "", 10),
     String("oilChoice", "Weapon oil to use first (item ID)", "", 10),
 }, { requires = "modernEquipment" })
+B.Section(id, "foreverConsumables", "Consumables (Forever)", {
+    Bool("foreverMagicalAwareness", "Magical Awareness in dungeons", false),
+    Bool("foreverWeaponItems", "Weapon stones and oils", false),
+    Bool("foreverWeaponImbues", "Rogue poisons and Warlock stones", false),
+    Bool("foreverIntellect", "Intellect", false),
+    Bool("foreverStrength", "Strength", false),
+    Bool("foreverAgility", "Agility", false),
+    Bool("foreverStamina", "Stamina", false),
+    Bool("foreverSpirit", "Spirit", false),
+    Bool("foreverHealth", "Maximum health", false),
+    Bool("foreverArmor", "Armor", false),
+}, { requires = "foreverEquipment" })
 B.Section(id, "visibility", "When to show", {
     Bool("instancesOnly", "Show only in dungeons and raids", false),
     Bool("hideMounted", "Hide while mounted", true),
@@ -283,6 +332,11 @@ rules.keystoneCover.hidden = NS.Client.isForever or nil
 rules.keystoneMinutes.hidden = NS.Client.isForever or nil
 rules.foreverSleepingBag.hidden = not NS.Client.isForever or nil
 rules.foreverWellFed.hidden = rules.foreverSleepingBag.hidden
+rules.foreverGatherTracking.hidden = rules.foreverSleepingBag.hidden
+rules.foreverFindTreasure.hidden = rules.foreverSleepingBag.hidden
+rules.classDemonicSacrifice.hidden = rules.foreverSleepingBag.hidden
+rules.classDemonicSacrifice.enableKey = "classReminders"
+rules.classDemonicSacrifice.foreverClass = "WARLOCK"
 rules.keystoneMinutes.requiresChoice = { key = "keystoneCover", values = { [3] = true } }
 -- Presentation dependencies for the menu: a setting that only matters while
 -- its switch is on (or a sound is chosen) is greyed otherwise. Greying never
@@ -305,5 +359,6 @@ rules.reminderSoundChannel.requiresChoice = { key = "reminderSound", values = so
 -- Shared class reminders follow their master; client-specific choices stay hidden elsewhere.
 for _, def in ipairs(NS.BuffReminderClassReminders) do
     rules[def.key].enableKey = not def.standalone and "classReminders" or nil
+    if def.forever and not def.retail then rules[def.key].foreverClass = def.class end
     rules[def.key].hidden = (NS.Client.isForever and not def.forever or not NS.Client.isForever and not def.retail) or nil
 end

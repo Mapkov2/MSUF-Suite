@@ -91,14 +91,26 @@ function R.GroupRoster(self)
         self.list.needsFullRefresh = true
     end
     group.units, group.unitList = roster.units, roster.list
+    local manaUnits
+    if NS.Client.isForever then
+        manaUnits = group.manaUnits or {}
+        Clear(manaUnits)
+    end
+    group.manaUnits = manaUnits
     for unit in pairs(roster.units) do
         local _, class = UnitClass(unit)
-        if Public(class) and type(class) == "string" then classes[class] = true end
+        if Public(class) and type(class) == "string" then
+            classes[class] = true
+            if manaUnits then manaUnits[unit] = R.ManaClass(class) end
+        end
     end
     -- Spell/class changes already compile the roster. Keep this selection
     -- off member aura events, which only need to refresh the cached buff.
-    local buff = self.config.groupBuff and R.ClassBuff(R.PlayerClass())
-    group.buff = buff and R.Known(buff.cast) and buff or nil
+    local class = self.config.groupBuff and R.PlayerClass()
+    local buff = class and R.ClassBuff(class)
+    group.buff = buff and R.RaidBuffCast(buff) and buff or nil
+    local extra = NS.Client.isForever and class and R.ExtraClassBuff(class)
+    group.extraBuff = extra and R.RaidBuffCast(extra) and extra or nil
 end
 
 -- Combat end after a roster change in combat (Controller.lua
@@ -225,7 +237,7 @@ end
 -- The group buff on a member, by name for Forever's ranked buffs, else by
 -- spell ID. A member that cannot be read is skipped (nil).
 local function BuffOn(unit, aliases, ranked)
-    if R.AurasRestricted() or not Eligible(unit) then return nil end
+    if not Eligible(unit) then return nil end
     for i = 1, #aliases do
         local known, data = true, nil
         if ranked then
@@ -238,7 +250,9 @@ local function BuffOn(unit, aliases, ranked)
     end
     return false
 end
-R.GroupBuffOn = BuffOn
+function R.GroupBuffOn(unit, aliases, ranked)
+    if not R.AurasRestricted() then return BuffOn(unit, aliases, ranked) end
+end
 
 -- Whether the player's own aura is on no member: true, false, or nil while
 -- a member is unknown. The members' answers are kept in group[key], or in
@@ -272,6 +286,10 @@ local SOULSTONE, LIGHT, FAITH = { R.SOULSTONE_AURA }, { R.BEACON_OF_LIGHT }, { R
 local function RefreshOwnBuffs(self, changedUnit)
     local c, group, notices = self.config, self.group, self.notices
     notices.soulstoneMissing, notices.beaconMissing = nil, nil
+    if not (c.soulstoneOnAlly or c.beaconOnAlly) then
+        group.soulstoneKnown, group.beaconLightKnown, group.beaconFaithKnown = nil, nil, nil
+        return
+    end
     if not changedUnit then
         group.soulstoneKnown = c.soulstoneOnAlly and SoulstoneKnown() or false
         group.beaconLightKnown = c.beaconOnAlly and R.Known(R.BEACON_OF_LIGHT) or false
@@ -312,6 +330,28 @@ function R.AllyPresent(entry)
     return not missing
 end
 
+local function RefreshBuff(self, buff, states, changedUnit)
+    if self.config.raidBuffOverview then
+        local shared = R.RaidBuffPresence(self, buff)
+        if shared then return shared end
+    end
+    states = states or {}
+    local ranked, readable = NS.Client.isForever, not R.AurasRestricted()
+    if changedUnit then
+        if readable then
+            states[changedUnit] = BuffOn(changedUnit, buff.auras, ranked)
+        else
+            states[changedUnit] = nil
+        end
+    else
+        Clear(states)
+        if readable then
+            for unit in pairs(self.group.units) do states[unit] = BuffOn(unit, buff.auras, ranked) end
+        end
+    end
+    return states
+end
+
 function R.RefreshGroup(self, changedUnit)
     local group = self.group
     local units = group.units
@@ -330,24 +370,9 @@ function R.RefreshGroup(self, changedUnit)
         end
     end
     if not config.groupBuff then return end
-    local buff = group.buff
-    if not buff then return end
-    if config.raidBuffOverview then
-        local shared = R.RaidBuffPresence(self, buff)
-        if shared then
-            group.presence = shared
-            return
-        end
-    end
-    local states = group.presence or {}
-    group.presence = states
-    local ranked = NS.Client.isForever
-    if changedUnit then
-        states[changedUnit] = BuffOn(changedUnit, buff.auras, ranked)
-        return
-    end
-    Clear(states)
-    for unit in pairs(units) do states[unit] = BuffOn(unit, buff.auras, ranked) end
+    local buff, extra = group.buff, group.extraBuff
+    if buff then group.presence = RefreshBuff(self, buff, group.presence, changedUnit) end
+    if extra then group.extraPresence = RefreshBuff(self, extra, group.extraPresence, changedUnit) end
 end
 
 -- The advance warning (remindBeforeMinutes) of the group buff entry follows
@@ -379,6 +404,25 @@ function R.OwnGroupBuffTiming(self, entry, fullRefresh, updateInfo)
     end
 end
 
+local function FirstMissing(self, presence, manaUnits)
+    if self.config.classBuff and presence.player == false and (not manaUnits or manaUnits.player) then return "player" end
+    local group, onlyInRange = self.group, self.config.onlyInRange
+    for i = 2, #group.unitList do
+        local unit = group.unitList[i]
+        if presence[unit] == false and (not manaUnits or manaUnits[unit])
+            and (not onlyInRange or group.range and group.range[unit] == true) then
+            return unit
+        end
+    end
+end
+
+function R.BindGroupTarget(button, entry, unit)
+    unit = unit or "player"
+    if entry.boundUnit == unit then return end
+    entry.boundUnit = unit
+    button:SetAttribute("unit", unit)
+end
+
 function R.GroupPresent(self, entry)
     if entry.ally then
         if not R.CanRemindAlly(self) then return true end
@@ -386,25 +430,40 @@ function R.GroupPresent(self, entry)
     end
     local group = self.group
     local presence = group.presence
+    if entry.aliases == R.DIVINE_SPIRIT.auras then presence = group.extraPresence end
+    local manaUnits = entry.manaOnly and group.manaUnits
     local missing = 0
     if presence then
         local config = self.config
         local classBuff = config.classBuff
         if config.onlyInRange then
-            if classBuff and presence.player == false then missing = 1 end
+            if classBuff and presence.player == false and (not manaUnits or manaUnits.player) then missing = 1 end
             if group.range then
                 for unit, inRange in pairs(group.range) do
-                    if inRange == true and presence[unit] == false then missing = missing + 1 end
+                    if inRange == true and presence[unit] == false and (not manaUnits or manaUnits[unit]) then missing = missing + 1 end
                 end
             end
         else
             for unit, present in pairs(presence) do
-                if present == false and (unit ~= "player" or classBuff) then missing = missing + 1 end
+                if present == false and (unit ~= "player" or classBuff) and (not manaUnits or manaUnits[unit]) then missing = missing + 1 end
             end
         end
     end
     entry.missingCount = missing
+    if entry.groupTarget and missing > 0 then return false, FirstMissing(self, presence, manaUnits) end
     return missing == 0
+end
+
+-- A join can expose the unit token before its class. Retry those tokens
+-- only on the existing connection/phase/flag events, never on aura deltas.
+local function ResolvedClass(group, dirty)
+    for unit, memberChanged in pairs(dirty) do
+        if memberChanged and group.manaUnits[unit] == nil and group.units[unit] then
+            local _, class = UnitClass(unit)
+            if Public(class) and type(class) == "string" then return true end
+        end
+    end
+    return false
 end
 
 -- The pass runs only while the module is active (a context job).
@@ -416,8 +475,8 @@ local function Flush(self)
         group.rosterDirty = false
         return
     end
-    if group.rosterDirty then
-        -- A roster change can change who provides which buff: recompile.
+    if group.rosterDirty or group.manaUnits and ResolvedClass(group, dirty) then
+        -- Membership and newly readable classes can change buff coverage.
         group.rosterDirty = false
         Clear(dirty)
         self:Compile()

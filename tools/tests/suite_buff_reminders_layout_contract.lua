@@ -91,13 +91,16 @@ local savedAnchor = anchorRow.get()
 anchorRow.set("player")
 Check(anchorRow.get() == "player" and P.Get("buffReminders", "anchorTarget") == "player", "selected anchor was not saved by key")
 anchorRow.set(savedAnchor)
+local forever = arg[2] == "Forever"
+Check(ui:Focus("suite_buffReminders_foreverConsumables") == forever, "Forever consumables section visibility")
+local rules = P.catalog.buffReminders.rules
 for _, class in ipairs({ "MAGE", "PRIEST", "DRUID", "WARRIOR" }) do
     env.UnitClass = function() return class, class end
-    Check(P.Gates.buffReminders({ key = "classMageArmor" }) == (arg[2] == "Forever" and class == "MAGE"),
+    Check(P.Gates.buffReminders(rules.classMageArmor) == (arg[2] == "Forever" and class == "MAGE"),
         "Mage armor menu gate leaked to another class or client")
-    Check(P.Gates.buffReminders({ key = "classInnerFire" }) == (arg[2] == "Forever" and class == "PRIEST"),
+    Check(P.Gates.buffReminders(rules.classInnerFire) == (arg[2] == "Forever" and class == "PRIEST"),
         "Inner Fire menu gate leaked to another class or client")
-    Check(P.Gates.buffReminders({ key = "classThorns" }) == (arg[2] == "Forever" and class == "DRUID"),
+    Check(P.Gates.buffReminders(rules.classThorns) == (arg[2] == "Forever" and class == "DRUID"),
         "Thorns menu gate leaked to another class or client")
 end
 env.UnitClass = unitClass
