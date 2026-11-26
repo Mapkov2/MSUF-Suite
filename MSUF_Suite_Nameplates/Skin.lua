@@ -167,10 +167,7 @@ local function Paint(uf)
     Threat.Apply(uf)
     FilterFriendlyName(uf, prefix)
     if Status.Paint then Status.Paint(uf, prefix, unit) end
-    if onlyName then Level.Hide(uf) else
-        Level.PaintNative(uf, prefix)
-        Level.Paint(uf, prefix, unit)
-    end
+    if onlyName then Level.Hide(uf) else Level.Paint(uf, prefix, unit) end
     Layout.Apply(uf, prefix, config)
     if Power.enemyEnabled then Power.ApplyEnemy(uf, health, prefix, unit) end
     local styled = prefix and config.look ~= LOOK_BLIZZARD and config[prefix] == true
@@ -451,7 +448,7 @@ local function QuestPass(module)
 end
 
 local function OnQuestLogChanged(module)
-    if Extensions.usesMetadata then Extensions.OnMetadata() end
+    if Extensions.usesQuestText then Extensions.OnQuestMetadata() end
     if module.usesQuests or Extensions.usesQuestText then Roles.ClearQuest() end
     if not module.usesQuests then return end
     if not Roles.inInstance and next(module.activeUnits) then module.questJob:Request() end
@@ -585,12 +582,11 @@ local function OnContextChanged(module, event)
         AuraDisplay.Configure(module.config, true)
     end
     local changed = Roles.RefreshContext()
-    local nameClipChanged = Layout.InstanceNameClip(Roles.inGroupInstance)
     Extensions.OnContext(changed, event)
-    if event == "ZONE_CHANGED" and not changed and not nameClipChanged then return end
+    if event == "ZONE_CHANGED" and not changed then return end
     CancelQuestRefresh(module)
     Roles.ClearQuest()
-    RefreshActive(module, not nameClipChanged and not FULL_CONTEXT[event], event == "PLAYER_SPECIALIZATION_CHANGED")
+    RefreshActive(module, not FULL_CONTEXT[event], event == "PLAYER_SPECIALIZATION_CHANGED")
     -- A specialization brings other interrupt spells: casts that already run
     -- take the kick-ready look again (KickReady.Paint).
     if event == "PLAYER_SPECIALIZATION_CHANGED" then CastTime.Repaint() end
@@ -849,7 +845,6 @@ function M:Refresh()
     Roles.Configure(self.config)
     Text.Configure(self.config, self.castbarStyle)
     NameText.Configure(self.config)
-    Layout.InstanceNameClip(Roles.inGroupInstance)
     Names.ConfigureNameOnly()
     self.targetConfig = Style.TargetConfig(self.config, bars)
     self.friendlyTargetConfig = Style.TargetConfig(self.config, bars, "friendly")
@@ -866,8 +861,9 @@ function M:Refresh()
     AuraDisplay.Configure(self.config)
     Status.Configure(self)
     Extensions.Configure(self)
+    if private.PersonalDisplay then private.PersonalDisplay.Configure(self) end
     CastTime.SyncEvents(self)
-    Roles.SyncQuestEvents(self, OnQuestLogChanged, Extensions.usesMetadata)
+    Roles.SyncQuestEvents(self, OnQuestLogChanged, Extensions.usesQuestText)
     ConfigureUnitEvents(self)
     local auraListeners = self.config.auraColorsEnabled or NS.NameplateAuraDisplay.Active(self.config)
     for _, event in ipairs(AURA_CONFIG_EVENTS) do
@@ -915,6 +911,7 @@ function M:Disable()
     Textures.PrepareFocus()
     Paint, PaintAdded = PaintPlate, PaintPlate
     Extensions.Disable()
+    if private.PersonalDisplay then private.PersonalDisplay.Disable() end
     AuraDisplay.Release()
     self.auraSpellsListening, self.rangeSpellsListening = nil, nil
     Decor.Disable()

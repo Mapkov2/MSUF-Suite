@@ -75,7 +75,7 @@ local function Instance(text, name)
         return true
     end
     local NS = {
-        Suite = S, NameplateText = Text,
+        Suite = S, NameplateText = Text, Finite = S.Finite,
         IsSecret = function(v) return rawequal(v, SECRET) end, IsSecret = isSecret,
         Safety = { IsForbidden = IsForbidden },
         IsCombatLocked = function() world.natives = world.natives + 1 return world.combat end,
@@ -100,7 +100,7 @@ local function Instance(text, name)
         assert(hooked == "CompactUnitFrame_UpdateName")
         callback = fn
     end
-    local private = { NS = NS, Suite = S }
+    local private = { NS = NS, Suite = S, Mode = { LOOK_BLIZZARD = 2 } }
     local chunk = assert(loadstring(text, "@" .. name))
     chunk("MSUF_Suite_Nameplates", private)
     local Names = private.NameText

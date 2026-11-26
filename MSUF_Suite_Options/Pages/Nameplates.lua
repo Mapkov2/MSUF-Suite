@@ -517,7 +517,7 @@ local function IsDotEditorAction(target)
     if target.sectionId ~= PAGE .. "_auraWorkspace" or not target.controlId then return false end
     if not dotActionIds then
         dotActionIds = {}
-        for _, action in ipairs({ "action.auraSpec", "action.auraSuggestion", "action.auraCustom", "action.auraSample" }) do
+        for _, action in ipairs({ "action.auraSpec", "action.auraSuggestion", "action.auraCustom", "action.auraSample", "action.flameShock" }) do
             local id = P.Meta(PAGE, ID, action, "action", target.sectionId).controlId
             if id then dotActionIds[id] = true end
         end

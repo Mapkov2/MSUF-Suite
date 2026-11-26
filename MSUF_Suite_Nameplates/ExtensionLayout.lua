@@ -95,7 +95,7 @@ function L.Alpha(state, alpha, inRange, outMultiplier, injured)
     if alpha == 1 then state.baseAlpha, state.alpha = nil, nil end
 end
 
-local PREDICTION = { "myHealPrediction", "otherHealPrediction", "totalAbsorb", "totalAbsorbOverlay",
+local PREDICTION = { "totalAbsorb", "totalAbsorbOverlay",
     "myHealAbsorb", "myHealAbsorbLeftShadow", "myHealAbsorbRightShadow", "overAbsorbGlow", "overHealAbsorbGlow" }
 
 local function Layer(records, region, alpha)
@@ -116,6 +116,11 @@ local function Layer(records, region, alpha)
     if record.value ~= value then region:SetAlpha(value) end
     record.value = value
     if alpha == 1 then records[region] = nil end
+end
+
+function L.IncomingHeals(records, health, alpha)
+    Layer(records, health.myHealPrediction, alpha)
+    Layer(records, health.otherHealPrediction, alpha)
 end
 
 function L.FadeText(state, label)
@@ -142,9 +147,15 @@ local function RestoreLayers(state)
     state.layerFade, state.layerFill = nil, nil
 end
 
-function L.Layers(state, fade, force)
+function L.Layers(state, fade, force, hideHeals)
+    local applyHide = hideHeals and L.Mutable(state, state.health)
     if not fade then
-        if state.layerFade or state.layers and next(state.layers) then RestoreLayers(state) end
+        if state.layerFade or not hideHeals and state.layers then RestoreLayers(state) end
+        if applyHide then
+            local records = state.layers or {}
+            L.IncomingHeals(records, state.health, 0)
+            state.layers = next(records) and records or nil
+        end
         return
     end
     if not force and state.layerFade == fade then return end
@@ -160,6 +171,7 @@ function L.Layers(state, fade, force)
         Layer(records, visual.back, fade.background)
         if visual.gradient then NS.NameplateStyle.Gradient.SetAlpha(visual.gradient, fade.health) end
     end
+    if not hideHeals or applyHide then L.IncomingHeals(records, health, applyHide and 0 or fade.prediction) end
     for _, key in ipairs(PREDICTION) do Layer(records, health[key], fade.prediction) end
     if state.labels then
         for _, label in pairs(state.labels) do Layer(records, label, fade.text) end

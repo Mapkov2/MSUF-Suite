@@ -608,6 +608,12 @@ local function CheckDungeonNameWidth(forever)
         callback()
     end
     private.NameText = { secretNameWidth = 66, ObserveNameClip = function(fn, marks) observer, observed = fn, marks end }
+    local function ConfigureWidths()
+        local names = private.NameText
+        local width = names.secretNameWidth
+        names.limits = { enemy = width and { pixels = width, healthSize = 10 } }
+        layout.NameLimits()
+    end
     local uf, name, hpText, Reset = DungeonPlate()
     local function Apply() layout.Apply(uf, "enemy", config) end
     local function Unclipped() assert(name.points.LEFT[1] == uf.HealthBarsContainer, "native anchor was not restored") end
@@ -620,14 +626,14 @@ local function CheckDungeonNameWidth(forever)
     layout.Configure(config)
     Apply()
     Unclipped()
-    assert(name.reads == 0, "outside dungeons layout queried the name")
-    assert(layout.InstanceNameClip, "dungeon name width support missing")
+    assert(name.reads == 0, "a disabled width limit queried the name")
+    assert(layout.NameLimits, "name width support missing")
     local options = NamePlateSetupOptions
     options.unitNameAnchorStyle, options.healthBarToNameAboveSpacing = 2, "secret"
     assert(not private.Geometry.LimitNativeName(uf, options, false, { Name = { 0, 0 } }, 66),
         "the width cap used secret baseline anchor offsets")
     options.unitNameAnchorStyle, options.healthBarToNameAboveSpacing = 1, nil
-    layout.InstanceNameClip(true)
+    ConfigureWidths()
     local layoutHandoffs = layouts
     Apply()
     Clipped()
@@ -652,11 +658,13 @@ local function CheckDungeonNameWidth(forever)
     uf.UpdateNameOverride = nil
     layout.Reapply(uf, "enemy", config)
     Clipped()
-    layout.InstanceNameClip(false)
+    private.NameText.secretNameWidth = nil
+    ConfigureWidths()
     Apply()
     Unclipped()
 
-    layout.InstanceNameClip(true)
+    private.NameText.secretNameWidth = 66
+    ConfigureWidths()
     combat, uf.protected = true, true
     local before = calls
     Apply()
@@ -682,7 +690,7 @@ local function CheckDungeonNameWidth(forever)
     name.text = "secret"
     config.enemyTextMode = 4
     private.NameText.secretNameWidth = 1000
-    layout.InstanceNameClip(true)
+    ConfigureWidths()
     Apply()
     local available = (forever and 190 or 230) - 20 - 8 - 15 * 10 * .75 - 2
     assert(name.points.RIGHT[3] - name.points.LEFT[3] == available, "long caps did not reserve the HP column")
@@ -692,7 +700,7 @@ local function CheckDungeonNameWidth(forever)
     private.NameText.secretNameWidth = 66
     name.text = "Public name with custom offsets"
     layout.Configure(config)
-    layout.InstanceNameClip(true)
+    ConfigureWidths()
     Apply()
     assert(name.x == 9 and name.y == -4, "the public name did not acquire its ordinary offset")
     name.text = "secret"
@@ -742,7 +750,14 @@ local function CheckDungeonNameWidth(forever)
     layout.Apply(friendly, "friendly", config)
     assert(calls == beforeCombat, "a friendly name unnecessarily reapplied its centre anchor in combat")
     combat = false
-    layout.InstanceNameClip(false)
+    local reads = friendlyName.reads
+    private.NameText.limits.friendly = { pixels = 52, fixed = true, healthSize = 10 }
+    layout.NameLimits()
+    layout.Apply(friendly, "friendly", config)
+    assert(friendlyName.reads == reads and friendlyName.points.BOTTOMRIGHT,
+        "an explicit friendly width did not apply without inspecting the text")
+    private.NameText.secretNameWidth = nil
+    ConfigureWidths()
     layout.Restore(friendly)
     module.pendingPlates[friendly] = nil
 end

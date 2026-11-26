@@ -30,8 +30,10 @@ Decor.lua
 AuraFilter.lua
 AuraDisplay.lua
 ExtensionLayout.lua
+PersonalDisplay.lua
 ExtensionText.lua
 ExtensionEffects.lua
+UnitMarkers.lua
 Extensions.lua
 Status.lua
 CastSettings.lua

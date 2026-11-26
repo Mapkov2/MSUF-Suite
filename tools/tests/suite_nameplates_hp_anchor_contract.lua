@@ -264,4 +264,51 @@ for _, forever in ipairs({ false, true }) do
     NS.AnchorPoints[5] = nil
     private.FriendlyNames = nil
 end
+-- The native driver frequently reuses the same plate. The backing record can
+-- be retained after restore, but cannot keep an old frame or an obsolete edge.
+for _, forever in ipairs({ false, true }) do
+    NS.Client.isForever = forever
+    local geometry, uf, state = private.Geometry, Plate(), {}
+    local label = uf.name
+    local restoredPoints, right = 0, nil
+    label.GetJustifyH = function() return "CENTER" end
+    label.ClearAllPoints = function() restoredPoints, right = 0, nil end
+    label.SetJustifyH = Noop
+    label.SetPoint = function(_, point, owner)
+        restoredPoints = restoredPoints + 1
+        if point == "RIGHT" then right = owner end
+    end
+    local setup = { castBarToHealthBarSpacing = 1, healthBarToNameAboveSpacing = 2, castBarHeight = 5,
+        castIconHeight = 5, spellNameInsideCastBar = true, unitNameAnchorStyle = 1 }
+    local function Place()
+        state.nameAnchor = assert(geometry.CenterName(uf, setup, 10, 0, false))
+        return state.nameAnchor
+    end
+    local first = Place()
+    label.accessible = false
+    assert(not geometry.RestoreNameAnchor(state, uf) and state.nameAnchor == first,
+        "a blocked name restore released a live record")
+    label.accessible = true
+    assert(geometry.RestoreNameAnchor(state, uf) and restoredPoints == 2 and right == uf.HealthBarsContainer.healthBar.Text)
+    assert(not first.owner and not first.right and not first[2] and not first[7], "a released name anchor retained an old plate region")
+    setup.unitNameAnchorStyle = 3
+    assert(Place() == first and not first.right, "single-point reuse allocated a record or retained a stale right edge")
+    assert(geometry.RestoreNameAnchor(state, uf) and restoredPoints == 1)
+    setup.unitNameAnchorStyle = 1
+    uf.HealthBarsContainer.healthBar.Text = Region()
+    for i = 1, 128 do
+        assert(Place() == first and geometry.RestoreNameAnchor(state, uf) and restoredPoints == 2
+            and right == uf.HealthBarsContainer.healthBar.Text, "reused plate lost its new text owner")
+    end
+    Place()
+    local clear = label.ClearAllPoints
+    local rebound
+    label.ClearAllPoints = function()
+        label.ClearAllPoints = clear
+        geometry.NativeAnchorsReset(state, uf)
+        rebound = Place()
+    end
+    assert(geometry.RestoreNameAnchor(state, uf) and rebound ~= first and state.nameAnchor == rebound
+        and geometry.RestoreNameAnchor(state, uf), "a native rebind recycled an in-flight restore record")
+end
 print("Nameplate HP anchors: Retail and Forever combat acquire, rebuild, reuse, deferral and repeat costs passed")

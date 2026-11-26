@@ -142,11 +142,7 @@ local function Component(name, methods)
     return component
 end
 local layout = Component("Layout", "Bind Configure Apply Restore RestoreAll Observe")
-local instanceNameClip
-function layout.InstanceNameClip(enabled)
-    instanceNameClip = enabled
-    Count("Layout.InstanceNameClip")
-end
+function layout.NameLimits() Count("Layout.NameLimits") end
 Component("Power", "Enable ConfigureEnemy Refresh Reapply Disable SetExtraTextEvents")
 Component("Threat", "Enable Apply Restore Disable Refresh")
 Component("Level", "Bind PaintNative Paint Hide RestoreNative")
@@ -287,17 +283,12 @@ for _, forever in ipairs({ false, true }) do
     module.active = true
     module:Enable()
     local previousInstance = instance
-    for _, context in ipairs({ { "party", true }, { "raid", true }, { "none", false },
-        { "arena", false }, { "pvp", false }, { "scenario", false }, { secret, false } }) do
-        instance = context[1]
-        -- The instance flag is forwarded by the real Skin event handler.
+    module:Refresh()
+    assert(counts["Layout.NameLimits"], "refresh did not compile name widths")
+    for _, context in ipairs({ "party", "raid", "none", "arena", "pvp", "scenario", secret }) do
+        instance = context
         Event("PLAYER_ENTERING_WORLD")
-        assert(instanceNameClip == context[2], "incorrect secret-name clip scope for this instance")
-        if instance == "raid" then
-            instanceNameClip = nil
-            module:Refresh()
-            assert(instanceNameClip == true, "initial raid configuration missed the secret-name width limit")
-        end
+        assert(not counts["Layout.NameLimits"], "a zone change recompiled name widths")
     end
     instance = previousInstance
     Event("PLAYER_ENTERING_WORLD")

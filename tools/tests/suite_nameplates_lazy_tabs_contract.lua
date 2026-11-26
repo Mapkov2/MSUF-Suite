@@ -863,14 +863,20 @@ do
             side .. " health position is no longer editable in the shared preview")
     end
     P.Set("nameplates", "friendlyNamesOnly", friendlyDisplay)
-    Order("friendly", { "friendlyBasics", "friendlyStyle", "auraWorkspace", "friendlyText", "friendlyCast",
-        "friendlyMarkers", "friendlyRange", "friendlyOpacity" })
-    Order("friendlyNpc", { "friendlyNpcBasics", "friendlyNpcStyle", "auraWorkspace", "friendlyText", "friendlyCast",
-        "friendlyNpcMarkers", "friendlyNpcRange", "friendlyNpcOpacity" })
-    Order("neutral", { "neutralBasics", "neutralStyle", "auraWorkspace", "enemyText", "enemyPower", "castbar",
-        "neutralMarkers", "neutralRange", "neutralOpacity" })
-    Order("enemy", { "enemyBasics", "enemyVisibility", "enemyStyle", "auraWorkspace", "enemyText", "enemyPower",
-        "classResources", "castbar", "enemyMarkers", "enemyRange", "enemyOpacity" })
+    Order("friendly", { "friendlyBasics", "friendlyStyle", "plateHealthDisplay", "auraWorkspace", "auraSpellEmphasis",
+        "friendlyText", "plateNameDisplay", "platePersonalDisplay", "friendlyCast", "friendlyMarkers", "platePvpMarkers",
+        "friendlyRange", "friendlyOpacity" })
+    Order("friendlyNpc", { "friendlyNpcBasics", "friendlyNpcStyle", "plateHealthDisplay", "auraWorkspace", "auraSpellEmphasis",
+        "friendlyText", "plateNameDisplay", "friendlyCast", "friendlyNpcMarkers", "plateNpcMarkers", "friendlyNpcRange",
+        "friendlyNpcOpacity" })
+    Order("neutral", { "neutralBasics", "neutralStyle", "plateHealthDisplay", "auraWorkspace", "auraSpellEmphasis",
+        "enemyText", "plateNameDisplay", "enemyPower", "castbar", "neutralMarkers", "plateNpcMarkers", "neutralRange", "neutralOpacity" })
+    Order("enemy", { "enemyBasics", "enemyVisibility", "enemyStyle", "plateHealthDisplay", "auraWorkspace", "auraSpellEmphasis",
+        "enemyText", "plateNameDisplay", "enemyPower", "classResources", "castbar", "enemyMarkers", "platePvpMarkers",
+        "plateNpcMarkers", "enemyRange", "enemyOpacity" })
+    Open({ "nameplatePersonalStyle" })
+    assert(P.NameplatesWorkspace.Kind() == "friendly", "personal display search missed the Friendly Players workspace")
+    Open({ "enemyNameMaxWidth" })
     assert(not page.sections.suite_nameplates_enemy and not page.sections.suite_nameplates_friendly,
         "Nameplates still registers a Texture Layer accordion")
     assert(not records["msufsuite.nameplates.enemyFillTexture"], "retired fill texture appeared in search")

@@ -273,6 +273,13 @@ function UI.Build(ctx, body, width, resize)
     local note = P.Description(body, CUSTOM_HELP, 16, y, width, Tr("DoT health colors"))
     y = y - math.max(14, math.ceil(note:GetStringHeight() or 14)) - 12
     y = Picker(ctx, body, y, width)
+    if D.ShowsFlameShockSetup() then
+        local setup = DraftButton(ctx, body, "Track Flame Shock", 16, y, width, D.TrackFlameShock, "action.flameShock")
+        local function PaintSetup() setup:SetEnabled(D.CanTrackFlameShock()) end
+        M.TrackRefresh(ctx, PaintSetup)
+        PaintSetup()
+        y = y - 34
+    end
     local list, pool = CreateFrame("Frame", nil, body), {}
     list:SetSize(width, 1)
     list:SetPoint("TOPLEFT", body, "TOPLEFT", 16, y)

@@ -2,6 +2,7 @@ local _, private = ...
 local NS, S = private.NS, private.Suite
 local Text = NS.NameplateText
 local IsSecret = NS.IsSecret
+local HasSecret = hasanysecretvalues
 local IsCombatLocked = NS.IsCombatLocked
 local states = setmetatable({}, { __mode = "k" })
 local Names = { states = states, inUse = false }
@@ -15,14 +16,14 @@ function Names.ObserveNameClip(observer, observed)
     nameClipObserver, clippedNames = observer, observed
 end
 
-local function SecretNameWidth(config, look)
-    if not look.enabled or not config.enemy then return end
+local function SecretNameWidth(config, look, prefix)
+    if not look.enabled or not config[prefix] then return end
     local shared = look.shared
     local mode = shared and shared.nameDisplayFormat or look.formatID
     if mode ~= "CUT" and mode ~= "ABBREV_CUT" then return end
     local max = shared and shared.nameDisplayMax or look.max
     if not NS.Finite(max) or max <= 0 then return end
-    local size = Text.FontStyle(config, "enemy", shared).size
+    local size = Text.FontStyle(config, prefix, shared).size
     -- A proportional font has no fixed character width. Use an average
     -- glyph advance and the configured size, with the native size as fallback.
     return max * (NS.Finite(size) and size > 0 and size or 10) * 0.6
@@ -79,12 +80,16 @@ end
 
 local function CaptureColor(state, label)
     local r, g, b, a = label:GetTextColor()
+    state.colorDirty = nil
+    -- The retained channels were already finite. Compare only after checking
+    -- all four fresh values for secrecy, including on a previously public plate.
+    if state.r and HasSecret and not HasSecret(r, g, b, a)
+        and r == state.r and g == state.g and b == state.b and a == state.a then return end
     if S.Finite(r) and S.Finite(g) and S.Finite(b) and S.Finite(a) then
         state.r, state.g, state.b, state.a = r, g, b, a
     else
         state.r, state.g, state.b, state.a = nil, nil, nil, nil
     end
-    state.colorDirty = nil
 end
 
 local function Capture(state, label, raw, look)
@@ -178,7 +183,7 @@ local function PaintTint(state, label, look, freshNativeColor)
 end
 
 local function Paint(uf, state, label, look, freshNativeColor)
-    if look.enabled then
+    if look.enabled or look.npcLastWord or look.firstNameOnly then
         local output = Text.Format(state, state.raw, look)
         local changed = output ~= state.raw
         if changed or state.formatted then
@@ -258,7 +263,7 @@ local function OnNativeName(uf)
     if IsSecret(raw) then
         if state.captured then ForgetPlain(state) end
         state.look, state.nativeDirty = look, nil
-        if clippedNames and not clippedNames[uf] and look.visualSide == "enemy" then nameClipObserver(uf, true) end
+        if clippedNames and not clippedNames[uf] then nameClipObserver(uf, true) end
         return
     end
     if clippedNames and clippedNames[uf] then nameClipObserver(uf, false) end
@@ -285,7 +290,7 @@ end
 
 -- A side owns the native name only when its look formats or colors it.
 local function Owning(look, side)
-    if look.enabled or look.customColor or look.shared ~= nil then
+    if look.enabled or look.npcLastWord or look.firstNameOnly or look.customColor or look.shared ~= nil then
         look.visualSide = side
         return look
     end
@@ -312,11 +317,29 @@ function Names.CustomNameColor(scope)
     return color, color and color.customColor == true
 end
 
+local function NameLimit(config, prefix, fallback, font)
+    if config.look == private.Mode.LOOK_BLIZZARD or not config[prefix] then return end
+    local value = config[prefix .. "NameMaxWidth"]
+    local fixed = NS.Finite(value) and value > 0
+    local pixels = fixed and value or fallback
+    if not pixels then return end
+    return { pixels = pixels, fixed = fixed, healthSize = NS.Finite(font) and font > 0 and font or 10 }
+end
+
 function Names.Configure(config)
     Names.threatNames = private.EasyFeatures and config.look ~= 2 and config.threatNameColor == true
     local enemy, friendly = Text.Compile(config, "enemy"), Text.Compile(config, "friendly")
-    Names.secretNameWidth = SecretNameWidth(config, enemy)
-    Names.secretNameHealthSize = Names.secretNameWidth and Text.ResolveSize(config, "enemyHealthTextSize", enemy.shared)
+    Names.secretNameWidth = SecretNameWidth(config, enemy, "enemy")
+    Names.friendlySecretNameWidth = SecretNameWidth(config, friendly, "friendly")
+    Names.secretNameHealthSize = (Names.secretNameWidth or config.enemyNameMaxWidth and config.enemyNameMaxWidth > 0)
+        and Text.ResolveSize(config, "enemyHealthTextSize", enemy.shared)
+    Names.friendlySecretNameHealthSize = (Names.friendlySecretNameWidth or config.friendlyNameMaxWidth and config.friendlyNameMaxWidth > 0)
+        and Text.ResolveSize(config, "friendlyHealthTextSize", friendly.shared)
+    Names.limits = {
+        enemy = NameLimit(config, "enemy", Names.secretNameWidth, Names.secretNameHealthSize),
+        friendly = NameLimit(config, "friendly", Names.friendlySecretNameWidth, Names.friendlySecretNameHealthSize),
+    }
+    if private.Layout then private.Layout.NameLimits() end
     local neutral = Text.Compile(config, "enemy", "neutral")
     local friendlyNeutral = Text.Compile(config, "friendly", "neutral")
     customNameColors.enemy = Text.CustomNameColor and Text.CustomNameColor(enemy)
@@ -375,7 +398,7 @@ function Names.Apply(uf, prefix, unit, kind)
     if IsSecret(current) then
         ForgetPlain(state)
         state.look = look
-        if clippedNames and not clippedNames[uf] and look.visualSide == "enemy" then nameClipObserver(uf, true) end
+        if clippedNames and not clippedNames[uf] then nameClipObserver(uf, true) end
         return
     end
     if clippedNames and clippedNames[uf] then nameClipObserver(uf, false) end

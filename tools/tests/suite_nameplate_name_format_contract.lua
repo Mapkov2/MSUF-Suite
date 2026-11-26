@@ -48,9 +48,17 @@ for _, flavor in ipairs({ "Mainline", "Forever" }) do
     end
     local provider = legacy
     local combat, checks, reads, writes, hooks = false, 0, 0, 0, 0
+    local finiteReads = 0
+    hasanysecretvalues = function(...)
+        for i = 1, select("#", ...) do if rawequal(select(i, ...), secret) then return true end end
+        return false
+    end
     local S = {
         Public = function(v) return not rawequal(v, secret) end,
-        Finite = function(v) return not rawequal(v, secret) and type(v) == "number" and v == v end,
+        Finite = function(v)
+            finiteReads = finiteReads + 1
+            return not rawequal(v, secret) and type(v) == "number" and v == v
+        end,
         RGB = function(hex) return tonumber(hex:sub(1, 2), 16)/255, tonumber(hex:sub(3, 4), 16)/255,
             tonumber(hex:sub(5, 6), 16)/255 end,
         SetFont = function(label, ...) label:SetFont(...) end,
@@ -63,7 +71,7 @@ for _, flavor in ipairs({ "Mainline", "Forever" }) do
         IsCombatLocked = function() return combat end }
     NS.NameplatePortableText = { Stored = function() end, Resolve = function() end }
     assert(loadfile(os.getenv("SUITE_NAME_TEXT_HELPER_OVERRIDE") or root .. "/MSUF_Suite/Core/NameplateText.lua"))("Suite", NS)
-    local private = { NS = NS, Suite = S }
+    local private = { NS = NS, Suite = S, Mode = { LOOK_BLIZZARD = 2 } }
     local callback
     UnitIsPlayer, UnitPlayerControlled, UnitClass = world.env.UnitIsPlayer, world.env.UnitIsPlayer, world.env.UnitClass
     C_Secrets = { ShouldUnitIdentityBeSecret = function() return classSecret end }
@@ -282,8 +290,15 @@ for _, flavor in ipairs({ "Mainline", "Forever" }) do
     Names.Apply(uf, "enemy", "nameplate1")
     assert(label.r == .78 and label.g == .61 and label.b == .43, "Shared player class color was not applied: " .. tostring(label.r) .. "," .. tostring(label.g) .. "," .. tostring(label.b))
     local beforeClassReads = classReads
+    local beforeFinite = finiteReads
     for _ = 1, 1000 do Native("Player Example") end
     assert(classReads == beforeClassReads and label.r == .78, "warm class tint resolved the same public player again")
+    assert(finiteReads == beforeFinite, "warm native RGBA was validated one channel at a time")
+    label.value, label.g = "Player Example", secret
+    callback(uf)
+    assert(Names.states[uf].r == nil, "newly restricted RGBA retained the previous baseline")
+    Native("Player Example")
+    assert(Names.states[uf].g == .7 and label.r == .78, "public RGBA failed to recover")
     Native("Ada")
     local beforeWrites = writes
     for _ = 1, 100 do callback(uf) end

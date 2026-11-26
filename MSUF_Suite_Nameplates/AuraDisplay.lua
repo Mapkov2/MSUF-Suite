@@ -90,8 +90,7 @@ RampStep = function()
         snapshot[index] = nil
         ramping[record] = nil
         if record.shown then
-            for slot = 1, #GROUP_NAMES do
-                local name = GROUP_NAMES[slot]
+            for _, name in ipairs(record.groupOrder or GROUP_NAMES) do
                 local want = record.want[name]
                 if want then
                     local allowed = record.allowed[name]
@@ -325,15 +324,18 @@ end
 
 local function StylePart(record, part)
     local c, values, button = record.c, plan.values, part.button
+    local emphasis = part.slot and part.slot.appearance or record.groupAppearance and record.groupAppearance[part.group]
+    local width, height = c.width, c.height
+    if emphasis then width, height = emphasis.width, emphasis.height end
     local mouse = c.tooltip and not c.clickthrough
-    button:SetSize(c.width, c.height)
+    button:SetSize(width, height)
     button:SetAlpha(c.alpha)
     button:SetMouseClickEnabled(mouse)
     button:SetMouseMotionEnabled(mouse)
     part.icon:SetTexCoord(c.crop, 1 - c.crop, c.crop, 1 - c.crop)
     local look = c.iconSkin and plan.iconLook
     if look or part.skinned then
-        part.skinned = NS.HostBridge.PaintIconSkin(button, look or nil, c.width, c.height, part.icon, true)
+        part.skinned = NS.HostBridge.PaintIconSkin(button, look or nil, width, height, part.icon, true)
     end
     Font(part, c, "Time")
     Font(part, c, "Stack")
@@ -344,7 +346,14 @@ local function StylePart(record, part)
     Ring(part.dispel, button, values.auraHighlightSize)
     Border(part.pandemicEdges, part.pandemicStyle, values.auraHighlightSize)
     for _, texture in ipairs(part.pandemicEdges) do texture:SetColorTexture(NS.RGB(values.auraPandemicColor)) end
-    part.pandemicStyle:SetShown(values.auraPandemicHighlight and c.pandemic)
+    part.pandemicStyle:SetShown(emphasis and emphasis.spellPandemic or values.auraPandemicHighlight and c.pandemic)
+    if emphasis and emphasis.spellGlow then
+        Ring(part.spellGlow, button, 2)
+        part.spellGlow:Show()
+    elseif part.glowShown then
+        part.spellGlow:Hide()
+    end
+    part.glowShown = emphasis and emphasis.spellGlow
     if part.bound then
         DurationText(part, c.timeDecimals)
         RebindDispel(record, part)
@@ -358,12 +367,16 @@ local function Advance(record, name)
     if made >= record.allowed[name] and record.allowed[name] < record.want[name] then Ramp(record) end
 end
 
-local function Initialize(record, button, slot, anyGroup)
+local function Initialize(record, button, slot, anyGroup, group)
     local level = button:GetFrameLevel()
-    local part = { button = button, slot = slot, anyGroup = anyGroup == true }
+    local part = { button = button, slot = slot, anyGroup = anyGroup == true, group = group }
     part.icon = button:CreateTexture(nil, "ARTWORK")
     part.icon:SetAllPoints(button)
     part.dispel = button:CreateTexture(nil, "BACKGROUND")
+    part.spellGlow = button:CreateTexture(nil, "OVERLAY")
+    part.spellGlow:SetTexture("Interface\\Buttons\\UI-ActionButton-Border")
+    part.spellGlow:SetBlendMode("ADD")
+    part.spellGlow:Hide()
     part.cooldown = CreateFrame("Cooldown", nil, button, "CooldownFrameTemplate")
     part.cooldown:SetAllPoints(button)
     part.cooldown:SetDrawBling(false)
@@ -388,10 +401,7 @@ local function Initialize(record, button, slot, anyGroup)
     button:AddPandemicRegion(part.pandemic)
     part.bound = true
     record.parts[#record.parts + 1] = part
-    if not slot then
-        -- A group's button filled its allowance: the group may take more.
-        Advance(record, anyGroup == true and "any" or "auras")
-    end
+    if not slot then Advance(record, group) end
 end
 
 local function NewRecord(state, c)
@@ -406,7 +416,7 @@ local function Place(state, record, c)
     record.level = state.wrapper:GetFrameLevel() + c.layer
     frame:ClearAllPoints()
     frame:SetPoint(c.point, state.health, c.relative, c.x, c.y)
-    frame:SetSize(c.gridWidth, c.gridHeight)
+    frame:SetSize(c.emphasisGridWidth or c.gridWidth, c.emphasisGridHeight or c.gridHeight)
     frame:SetFrameLevel(record.level)
     frame:SetFlowLayoutAnchorPoint(c.flowPoint)
     frame:SetFlowLayoutGrowthDirection(direction[c.horizontal], direction[c.vertical])
@@ -442,7 +452,9 @@ local function Slots(state, record, c)
     for index, row in ipairs(c.rows) do
         local slot = record.slots[index] or NewSlot(state, record, index)
         local fixed = c.fixedSlots[index]
-        slot.anchor:SetSize(c.width, c.height)
+        slot.appearance = fixed.appearance
+        local appearance = slot.appearance or c
+        slot.anchor:SetSize(appearance.width, appearance.height)
         slot.anchor:ClearAllPoints()
         slot.anchor:SetPoint(c.flowPoint, record.frame, c.flowPoint, fixed.x, fixed.y)
         slot.anchor:SetFrameLevel(record.level)
@@ -471,7 +483,7 @@ end
 
 -- Flow: one native aura group packs the active auras; auras from every
 -- player (index 2) need their own filter and follow as a second group.
-local function Group(record, c, name, index, filter, candidate, count)
+local function Group(record, c, name, index, filter, candidate, count, anyGroup, emphasis)
     local frame = record.frame
     -- The limit is set before the group exists: Blizzard may make buttons at once.
     -- A group that is still short after its buttons fill is ramped by Initialize.
@@ -481,7 +493,7 @@ local function Group(record, c, name, index, filter, candidate, count)
         local allowed = Grant(math.min(count, RAMP))
         record.allowed[name] = allowed
         frame:AddAuraGroup(name, filter, { maxFrameCount = allowed, candidateFilters = candidate,
-            initializeFrame = function(button) Initialize(record, button, nil, index == 2) end })
+            initializeFrame = function(button) Initialize(record, button, nil, anyGroup, name) end })
         record.groups[name] = true
         if record.made[name] >= allowed and allowed < count then Ramp(record) end
     else
@@ -496,8 +508,9 @@ local function Group(record, c, name, index, filter, candidate, count)
             if record.made[name] >= allowed and allowed < count then Ramp(record) end
         end
     end
-    local layout = { elementWidth = c.width, elementHeight = c.height, elementSpacing = c.gap, lineSpacing = c.gap }
-    if c.anyCount > 0 or record.groups.any then
+    local size = emphasis or c
+    local layout = { elementWidth = size.width, elementHeight = size.height, elementSpacing = c.gap, lineSpacing = c.gap }
+    if c.anyCount > 0 or record.groups.any or record.groupOrder then
         layout.groupSpacing, layout.groupLineSpacing, layout.layoutIndex = c.gap, c.gap, index
     end
     frame:SetAuraGroupLayout(name, layout)
@@ -518,8 +531,7 @@ local function Configure(state, record, c, excluded)
             Slots(state, record, c)
         else
             ClearSlots(record, 1)
-            Group(record, c, "auras", 1, c.filter, c.groupCandidate, c.groupCount)
-            Group(record, c, "any", 2, c.anyFilter, c.groupAnyCandidate, c.anyCount)
+            Filter.ConfigureGroups(record, c, Group, ClearGroups, EMPTY)
         end
         for index = 1, styled do StylePart(record, record.parts[index]) end
     end
@@ -597,7 +609,7 @@ local function Show(state, unit, sideKey, target)
             if record.shown ~= shown then
                 record.frame:SetEnabled(shown)
                 if shown then
-                    for _, name in ipairs(GROUP_NAMES) do
+                    for _, name in ipairs(record.groupOrder or GROUP_NAMES) do
                         local allowed = record.allowed[name]
                         if allowed and allowed < record.want[name] and (record.made[name] or 0) >= allowed then Ramp(record) end
                     end

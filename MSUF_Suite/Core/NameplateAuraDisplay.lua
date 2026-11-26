@@ -467,6 +467,104 @@ function Display.Excluding(candidate, ids)
     return { includeSpellIDs = candidate.includeSpellIDs, maxDuration = candidate.maxDuration, excludeSpellIDs = ids }
 end
 
+local Emphasis = { flags = { { key = "auraLargeSpells", mask = 1 }, { key = "auraGlowSpells", mask = 2 },
+    { key = "auraPandemicSpells", mask = 4 } }, scale = 1.3 }
+NS.NameplateAuraEmphasis = Emphasis
+
+function Emphasis.Compile(config, model)
+    local result, signature = {}, {}
+    for index, entry in ipairs(Emphasis.flags) do
+        local source = config[entry.key .. model.Client]
+        signature[index] = source or ""
+        if type(source) == "string" and source ~= "" then
+            for _, id in ipairs(model.IDs(source)) do result[id] = (result[id] or 0) + entry.mask end
+        end
+    end
+    if next(result) then return result, table.concat(signature, "|") end
+end
+
+local function Has(mask, flag)
+    return math.floor(mask / flag) % 2 == 1
+end
+
+function Emphasis.Appearance(container, mask)
+    if not mask then return end
+    local scale = Has(mask, 1) and Emphasis.scale or 1
+    return { width = math.ceil(container.width * scale), height = math.ceil(container.height * scale),
+        spellGlow = Has(mask, 2), spellPandemic = Has(mask, 4) }
+end
+
+local function Candidates(include, exclude, base)
+    return { includeSpellIDs = include, excludeSpellIDs = exclude, maxDuration = base.maxDuration }
+end
+
+local function Packet(name, filter, group, count, candidate, appearance)
+    return { name = name, filter = filter, any = group == "any", count = count, candidate = candidate, appearance = appearance }
+end
+
+local function Partition(container, rule, root, filter, candidate, limit, out)
+    if limit == 0 then return end
+    local groups, include = {}, candidate.includeSpellIDs
+    local excluded = candidate.excludeSpellIDs
+    for id, mask in pairs(rule) do
+        if (not include or include[id]) and not (excluded and excluded[id]) then
+            local bucket = groups[mask]
+            if not bucket then bucket = {} groups[mask] = bucket end
+            bucket[#bucket + 1] = id
+        end
+    end
+    if not next(groups) then
+        out[#out + 1] = Packet(root, filter, root, limit, candidate)
+        return
+    end
+    local ordinary, reserve = {}, limit
+    if excluded then for id in pairs(excluded) do ordinary[id] = true end end
+    for mask = 7, 1, -1 do
+        local bucket = groups[mask]
+        if bucket and reserve > 0 then
+            local capacity = math.min(#bucket, reserve)
+            if capacity < #bucket then table.sort(bucket) end
+            local chosen = {}
+            for i = 1, capacity do
+                local id = bucket[i]
+                ordinary[id], chosen[id] = true, true
+            end
+            local appearance = Emphasis.Appearance(container, mask)
+            out[#out + 1] = Packet(root .. mask, filter, root, capacity, Candidates(chosen, excluded, candidate), appearance)
+            reserve = reserve - capacity
+        end
+    end
+    -- A native group reserves capacity even when none of its spells is active.
+    -- Keep the normal row's limit and cap the optional emphasis groups separately.
+    out[#out + 1] = Packet(root, filter, root, limit, Candidates(include, ordinary, candidate))
+end
+
+function Emphasis.Groups(container, rule)
+    local packets = {}
+    Partition(container, rule, "auras", container.filter, container.groupCandidate, container.groupCount, packets)
+    Partition(container, rule, "any", container.anyFilter, container.groupAnyCandidate, container.anyCount, packets)
+    return packets
+end
+
+function Emphasis.Fixed(container, rule)
+    local widest
+    for index, row in ipairs(container.rows) do
+        local mask = rule[row.id]
+        if not mask then
+            for id in pairs(row.candidate.includeSpellIDs) do
+                if rule[id] then mask = rule[id] break end
+            end
+        end
+        container.fixedSlots[index].appearance = Emphasis.Appearance(container, mask)
+        if mask and Has(mask, 1) then widest = true end
+    end
+    local scale = widest and Emphasis.scale
+    container.emphasisGridWidth = scale and math.ceil(container.gridWidth * scale)
+    container.emphasisGridHeight = scale and math.ceil(container.gridHeight * scale)
+    if not scale then return end
+    for _, slot in ipairs(container.fixedSlots) do slot.x, slot.y = slot.x * scale, slot.y * scale end
+end
+
 -- The immutable plan of every container. signature: any change; style: the
 -- settings every container shares; a container's sig: its own settings, so
 -- the runtime touches only the containers an edit changed. used: the side
@@ -477,13 +575,16 @@ function Display.Plan(config, preview)
         values[key] = Read(config, key)
         shared[#shared + 1] = tostring(values[key])
     end
-    local plan = { values = values, scopes = {}, used = {}, targetOnly = {}, always = {}, exclusions = {}, style = table.concat(shared, "|") }
+    local emphasis, emphasisSig = NS.NameplateAuraEmphasis.Compile(config, Display)
+    local plan = { values = values, scopes = {}, used = {}, targetOnly = {}, always = {}, exclusions = {},
+        style = table.concat(shared, "|"), emphasis = emphasis }
     signature[1] = plan.style
     plan.iconSkin = false
     for _, scope in ipairs(Display.Scopes) do
         local list = {}
         for _, container in ipairs(Display.Containers) do
             local c = Compile(config, values, scope, container, preview)
+            if emphasisSig then c.sig = c.sig .. "#" .. emphasisSig end
             list[#list + 1], signature[#signature + 1] = c, c.sig
             if c.enabled then
                 plan.used[scope.key] = true

@@ -2,6 +2,7 @@ local _, private = ...
 local NS = private.NS
 local SAME_GEOMETRY = private.Mode.SAME_GEOMETRY
 local Key = private.Key
+local Safety, Public, Finite = NS.Safety, NS.Public, NS.Finite
 local G = {}
 private.Geometry = G
 
@@ -14,7 +15,7 @@ end
 local Point = G.Point
 
 local function Accessible(region)
-    return region and not NS.Safety.IsForbidden(region)
+    return region and not Safety.IsForbidden(region)
 end
 
 -- Restricted nameplate regions cannot be measured, even outside combat.
@@ -89,7 +90,7 @@ end
 local function Writable(frame)
     if not Accessible(frame) then return false end
     local allowed = frame:CanBeAccessedInContext()
-    return NS.Public(allowed) and allowed == true
+    return Public(allowed) and allowed == true
 end
 
 G.Writable = Writable
@@ -195,24 +196,47 @@ local function NameAnchorWritable(label)
     return NS.Public(restricted) and restricted == false
 end
 
+-- A plate can keep one empty restore record between native bindings. The
+-- extents and frame owners themselves always come from the new layout.
+local spareNamePoints = setmetatable({}, { __mode = "k" })
+
+local function ForgetNameAnchor(state, uf, saved)
+    if saved.native and not saved.restoring then
+        saved.owner = nil
+        saved.right = nil
+        spareNamePoints[uf] = saved
+    end
+    state.nameAnchor = nil
+end
+
+function G.NativeAnchorsReset(state, uf)
+    state.header = nil
+    if state.nameAnchor then ForgetNameAnchor(state, uf, state.nameAnchor) end
+end
+
 function G.RestoreNameAnchor(state, uf)
     local saved = state.nameAnchor
     if not saved then return true end
-    local writable = saved.native and Writable or NameAnchorWritable
-    if not writable(uf.name) then
+    local label = uf.name
+    local shape = saved.native
+    local writable = shape and Writable or NameAnchorWritable
+    if not writable(label) then
         return false
     end
-    uf.name:ClearAllPoints()
-    if saved.native then
-        -- Blizzard has one or two known five-value anchors. Geometry saves
-        -- both tuples directly on the restore record during acquisition.
-        uf.name:SetPoint(unpack(saved, 1, 5))
-        if saved[6] then uf.name:SetPoint(unpack(saved, 6, 10)) end
+    -- A frame hook can rebind this plate during the writes. Its old snapshot
+    -- stays readable until the last write, and the new record stays owned.
+    local restoring = saved.restoring
+    saved.restoring = true
+    label:ClearAllPoints()
+    if shape then
+        label:SetPoint(shape[1], saved.owner, shape[2], shape[3], saved.y)
+        if shape[4] then label:SetPoint(shape[4], saved.right, shape[5], shape[6], shape[7]) end
     else
-        for _, point in ipairs(saved.points) do uf.name:SetPoint(unpack(point)) end
+        for _, point in ipairs(saved.points) do label:SetPoint(unpack(point)) end
     end
-    uf.name:SetJustifyH(saved.justify)
-    state.nameAnchor = nil
+    label:SetJustifyH(saved.justify)
+    saved.restoring = restoring
+    if state.nameAnchor == saved then ForgetNameAnchor(state, uf, saved) end
     return true
 end
 
@@ -249,53 +273,76 @@ function G.ApplyNameAnchor(state, uf, plan, width)
     return true
 end
 
+-- Blizzard's point names, horizontal offsets and the second vertical offset
+-- are constant for each anchor style. Only the live owners and first y vary.
+local INSIDE_NAME = { "LEFT", "LEFT", 4, "RIGHT", "RIGHT", -4, 0 }
+local ABOVE_NAME = { "BOTTOMLEFT", "TOPLEFT", 4, "BOTTOMRIGHT", "TOPRIGHT", -4, 2 }
+local INSIDE_BAR = { "LEFT", "LEFT", 4, "RIGHT", "LEFT", -2, 0 }
+local CENTER_ABOVE = { "BOTTOM", "TOP", 0 }
+local ABOVE_BAR = { "BOTTOMLEFT", "TOPLEFT", 4, "BOTTOMRIGHT", "BOTTOMLEFT", -2, 0 }
+local ABOVE_BADGE = { "BOTTOMLEFT", "TOPLEFT", 0, "RIGHT", "RIGHT", 0, 0 }
+local ABOVE_TEXT = { "BOTTOMLEFT", "TOPLEFT", 0, "RIGHT", "LEFT", -2, 0 }
+
+local function NamePoints(uf, shape, owner, right, y)
+    local saved = spareNamePoints[uf] or {}
+    spareNamePoints[uf] = nil
+    saved.native = shape
+    saved.owner = owner
+    saved.right = right
+    saved.y = y
+    return saved
+end
+
 -- The native name points from Blizzard_NamePlateUnitFrame:UpdateAnchors.
 -- They can be restored even when FrameMeasurement is blocked for the label.
 local function NativeNamePoints(uf, setup, badgeShown)
     local container = uf.HealthBarsContainer
     local health = container and container.healthBar
     local healthText = health and health.Text
-    if not NS.Public(healthText) or not healthText or NS.Safety.IsForbidden(healthText) then return end
+    if not Public(healthText) or not healthText or Safety.IsForbidden(healthText) then return end
     local style, spacing = setup.unitNameAnchorStyle, setup.healthBarToNameAboveSpacing
     if uf.showOnlyName then
-        if style == 1 then return { "LEFT", container, "LEFT", 4, 0, "RIGHT", container, "RIGHT", -4, 0 } end
-        return { "BOTTOMLEFT", container, "TOPLEFT", 4, 2, "BOTTOMRIGHT", container, "TOPRIGHT", -4, 2 }
+        if style == 1 then return NamePoints(uf, INSIDE_NAME, container, container, 0) end
+        return NamePoints(uf, ABOVE_NAME, container, container, 2)
     end
-    if style == 1 then return { "LEFT", container, "LEFT", 4, 0, "RIGHT", healthText, "LEFT", -2, 0 } end
-    if not NS.Finite(spacing) then return end
-    if style == 3 then return { "BOTTOM", container, "TOP", 0, spacing } end
+    if style == 1 then return NamePoints(uf, INSIDE_BAR, container, healthText, 0) end
+    if not Finite(spacing) then return end
+    if style == 3 then return NamePoints(uf, CENTER_ABOVE, container, nil, spacing) end
     if style ~= 2 then return end
     if not NS.Client.isForever then
-        return { "BOTTOMLEFT", container, "TOPLEFT", 4, spacing, "BOTTOMRIGHT", healthText, "BOTTOMLEFT", -2, 0 }
+        return NamePoints(uf, ABOVE_BAR, container, healthText, spacing)
     end
     local inside = setup.healthTextInsideBarWhenNameAboveHealthBar
-    if not NS.Public(inside) or type(inside) ~= "boolean" or badgeShown == nil then return end
+    if not Public(inside) or type(inside) ~= "boolean" or badgeShown == nil then return end
     if badgeShown or inside then
         local right = container
         if badgeShown then right = uf.PlayerLevelDiffFrame end
-        return { "BOTTOMLEFT", container, "TOPLEFT", 0, spacing, "RIGHT", right, "RIGHT", 0, 0 }
+        return NamePoints(uf, ABOVE_BADGE, container, right, spacing)
     end
-    return { "BOTTOMLEFT", container, "TOPLEFT", 0, spacing, "RIGHT", healthText, "LEFT", -2, 0 }
+    return NamePoints(uf, ABOVE_TEXT, container, healthText, spacing)
 end
 
 function G.LimitNativeName(uf, setup, badgeShown, plan, width)
     local label, points = uf.name, NativeNamePoints(uf, setup, badgeShown)
     if not points then return end
     local justify = label:GetJustifyH()
-    if not NS.Public(justify) or type(justify) ~= "string" then return end
+    if not Public(justify) or type(justify) ~= "string" then return end
     local healthText = uf.HealthBarsContainer.healthBar.Text
-    local index = 1
-    if points[6] and justify == "RIGHT" and points[7] ~= healthText then index = 6 end
-    local point, owner, relative, x, y = unpack(points, index, index + 4)
+    local shape = points.native
+    local point, owner, relative, x, y = shape[1], points.owner, shape[2], shape[3], points.y
+    if shape[4] and justify == "RIGHT" and points.right ~= healthText then
+        point, owner, relative, x, y = shape[4], points.right, shape[5], shape[6], shape[7]
+    end
     if uf.showOnlyName and justify == "CENTER" then
         point, relative, x = setup.unitNameAnchorStyle == 1 and "CENTER" or "BOTTOM",
             setup.unitNameAnchorStyle == 1 and "CENTER" or "TOP", 0
     end
-    if not NS.Public(owner) or not Accessible(owner) then return end
+    if not Public(owner) or not Accessible(owner) then return end
     -- Keep a static edge. HP text can change width during the fight.
     label:ClearAllPoints()
     SetNameSpan(label, point, owner, relative, x + plan.Name[1], y + plan.Name[2], width)
-    points.native, points.justify = true, justify
+    points.centered = nil
+    points.justify = justify
     return points
 end
 
@@ -347,11 +394,11 @@ function G.CenterName(uf, setup, healthHeight, offsetY, badgeShown, geometry, wi
     local castHeight = geometry and geometry.castHeight or setup.castBarHeight
     local iconHeight = geometry and geometry.iconHeight or setup.castIconHeight
     local inside = setup.spellNameInsideCastBar
-    if not NS.Public(inside) or not NS.Public(setup.unitNameAnchorStyle)
-        or not NS.Finite(castHeight) or not inside and not NS.Finite(iconHeight) or not NS.Finite(healthHeight)
-        or not NS.Finite(spacing) or not NS.Finite(gap) then return end
+    if not Public(inside) or not Public(setup.unitNameAnchorStyle)
+        or not Finite(castHeight) or not inside and not Finite(iconHeight) or not Finite(healthHeight)
+        or not Finite(spacing) or not Finite(gap) then return end
     local justify = label:GetJustifyH()
-    if not NS.Public(justify) or type(justify) ~= "string" then return end
+    if not Public(justify) or type(justify) ~= "string" then return end
     local points = NativeNamePoints(uf, setup, badgeShown)
     if not points then return end
     local y = castHeight + (inside and 0 or iconHeight) + spacing + healthHeight + (uf.showOnlyName and 2 or gap) + offsetY
@@ -365,7 +412,8 @@ function G.CenterName(uf, setup, healthHeight, offsetY, badgeShown, geometry, wi
         label:SetPoint("BOTTOMRIGHT", uf, "BOTTOMRIGHT", -4, y)
     end
     label:SetJustifyH("CENTER")
-    points.native, points.centered, points.justify = true, true, justify
+    points.centered = true
+    points.justify = justify
     return points
 end
 
@@ -399,7 +447,8 @@ function G.FitNameOnly(uf, setup, x, y, badgeShown, manual, width)
         label:SetPoint(edge .. "RIGHT", bar, relative .. "RIGHT", x, y)
     end
     label:SetJustifyH(justify)
-    points.native, points.justify = true, original
+    points.centered = nil
+    points.justify = original
     return points
 end
 

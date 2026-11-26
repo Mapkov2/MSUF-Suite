@@ -3,7 +3,7 @@ local support = dofile(root .. "/tools/tests/suite_test_support.lua")
 local toc = support.TocFiles(root, "MSUF_Suite_Nameplates")
 assert(table.concat(toc, ",") == "Bootstrap.lua,Modes.lua,Geometry.lua,Layout.lua,Roles.lua,Text.lua,NameText.lua,Power.lua,Threat.lua,"
     .. "Level.lua,CastTime.lua,KickReady.lua,CVars.lua,Auras.lua,AuraColors.lua,Selection.lua,"
-    .. "Mouseover.lua,FriendlyNames.lua,Decor.lua,AuraFilter.lua,AuraDisplay.lua,ExtensionLayout.lua,ExtensionText.lua,ExtensionEffects.lua,Extensions.lua,Status.lua,"
+    .. "Mouseover.lua,FriendlyNames.lua,Decor.lua,AuraFilter.lua,AuraDisplay.lua,ExtensionLayout.lua,PersonalDisplay.lua,ExtensionText.lua,ExtensionEffects.lua,UnitMarkers.lua,Extensions.lua,Status.lua,"
     .. "CastSettings.lua,CastAppearance.lua,CastOutline.lua,CastTextStyle.lua,CastGlowStyle.lua,Absorbs.lua,TargetResource.lua,EasyFeatures.lua,SlantedHealth.lua,Textures.lua,HealthAppearance.lua,Skin.lua",
     "nameplate runtime must stay in its own optional addon")
 local installed, events = nil, {}

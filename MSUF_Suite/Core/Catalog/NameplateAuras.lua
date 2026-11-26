@@ -28,6 +28,17 @@ local rules = {
     B.Number("auraHighlightSize", "Aura highlight thickness", 2, 1, 5),
 }
 B.Section(id, "auraDisplay", "Shared aura appearance", rules)
+local emphasisLabels = { "Enlarge these spells", "Glow for these spells", "Pandemic glow for these spells" }
+local emphasis = {}
+local emphasisHelp = "Enter spell IDs separated by commas. Applies to spells in your tracked aura rows."
+for index, entry in ipairs(NS.NameplateAuraEmphasis.flags) do
+    for _, client in ipairs(Model.Clients) do
+        local rule = B.Tooltip(B.String(entry.key .. client.id, emphasisLabels[index], "", Model.LIST_BYTES), emphasisHelp)
+        rule.hidden = client.id ~= Model.Client
+        emphasis[#emphasis + 1] = rule
+    end
+end
+B.Section(id, "auraSpellEmphasis", "Tracked spell emphasis", emphasis)
 
 -- A rule of one container. short: the label inside the container's own
 -- workspace, where the Container bar already names it; the full label names

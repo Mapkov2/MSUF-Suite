@@ -361,7 +361,7 @@ end
 function X.Plan(c)
     local plan = {
         enemy = Side(c, "enemy"), friendly = Side(c, "friendly"), interaction = {}, sources = {}, kinds = {},
-        enemyLoad = EnemyLoad(c),
+        enemyLoad = EnemyLoad(c), hideIncomingHeals = c.nameplateHideIncomingHeals == true,
         interrupt = c.interruptFeedbackEnabled == true,
         interruptShared = c.interruptFeedbackShared ~= false,
         interruptDuration = Number(c.interruptFeedbackDuration, 1.2, .1, 5),
@@ -391,7 +391,7 @@ function X.Plan(c)
     plan.neutralContext = X.ContextKind(c, "neutralNpc") == "neutralNpc"
         and (X.ContextEnabled(c, "neutralNpc") or X.ContextEnabled(c, "enemyNpc"))
     plan.enabled = plan.contextEnabled or plan.opacity ~= nil or plan.enemyLoad ~= nil or plan.interrupt or plan.focusReminder or plan.execute
-        or plan.focusScale ~= 1 or plan.castScale ~= 1 or plan.scoped
+        or plan.focusScale ~= 1 or plan.castScale ~= 1 or plan.scoped or plan.hideIncomingHeals
     for _, prefix in ipairs({ "enemy", "friendly" }) do
         local side = plan[prefix]
         plan.enabled = plan.enabled or side.nameCast > 1 or side.raidAnchor > 1 or side.iconAnchor > 1

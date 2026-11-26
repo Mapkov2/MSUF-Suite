@@ -7,7 +7,7 @@ local LevelBadgeShown = private.Geometry.LevelBadgeShown
 -- applies to Blizzard's own level frames while that number replaces them.
 local Level = {}
 private.Level = Level
-local M
+local M, levelCap
 local WHITE = { r = 1, g = 1, b = 1 }
 
 function Level.Bind(module) M = module end
@@ -55,11 +55,11 @@ local function NativeAlpha(uf, frame, hide, locked)
     end
 end
 
-function Level.PaintNative(uf, prefix)
+function Level.PaintNative(uf, prefix, maximum)
     local styled = prefix and M.config.look ~= LOOK_BLIZZARD and M.config[prefix]
     local badge, legacy = uf.PlayerLevelDiffFrame, uf.LevelFrame
     local forever = NS.Client.isForever
-    local off = styled and M.config[Key[prefix].LevelEnabled] == false
+    local off = styled and (maximum or M.config[Key[prefix].LevelEnabled] == false)
     local hide = off or forever and styled and M.config.levelAppearance ~= LEVEL_BADGE
     local hideLegacy = off or forever and styled
     if not hide and not hideLegacy and not M.nativeLevelAlphas[badge] and not M.nativeLevelAlphas[legacy] then return end
@@ -176,8 +176,22 @@ local function Anchor(uf, label, prefix)
     label._suiteLevelAnchor = choice
 end
 
+local function AtLevelCap(prefix, unit)
+    if not prefix or not M.config[prefix] or M.config.look == LOOK_BLIZZARD or not unit then return false end
+    if not levelCap then
+        local cap = GetMaxLevelForPlayerExpansion and GetMaxLevelForPlayerExpansion()
+        if not S.Finite(cap) or cap <= 0 then cap = GetMaxPlayerLevel and GetMaxPlayerLevel() end
+        if not S.Finite(cap) or cap <= 0 then return false end
+        levelCap = cap
+    end
+    local level = UnitLevel(unit)
+    return S.Finite(level) and level == levelCap
+end
+
 function Level.Paint(uf, prefix, unit)
-    if not ShowsNumber(uf, prefix, unit) then
+    local maximum = M.config.nameplateHideMaxLevel and AtLevelCap(prefix, unit)
+    Level.PaintNative(uf, prefix, maximum)
+    if maximum or not ShowsNumber(uf, prefix, unit) then
         Level.Hide(uf)
         return
     end

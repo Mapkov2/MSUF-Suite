@@ -798,6 +798,182 @@ do
     Apply(npc, npcHealth, npcCast, "enemy", "nameplate4")
     assert(title:IsShown() and not label:IsShown(), "title-only display kept the quest text")
     local getUnit = C_TooltipInfo.GetUnit
+    do
+        local function FlushMetadata()
+            for _, job in ipairs(jobs) do
+                if job.pending then job.pending = false job.callback(M) end
+            end
+        end
+        local questLog = X.OnQuestMetadata or X.OnMetadata
+        local function AdvanceSparse(seconds)
+            now = now + seconds
+            for callback, deadline in pairs(timers) do
+                if deadline <= now then timers[callback] = nil callback(M) end
+            end
+            FlushMetadata()
+        end
+        local count, titleText, instance = {}, "First title", 401
+        local weak, serial = setmetatable({}, { __mode = "v" }), 0
+        local function TrackData(lines)
+            local data = { dataInstanceID = instance, lines = lines }
+            serial = serial + 1
+            weak[serial] = data
+            return data
+        end
+        C_TooltipInfo.GetUnit = function(unit)
+            count[unit] = (count[unit] or 0) + 1
+            local lines = { { type = 2, leftText = "Enemy" } }
+            if titleText then lines[2] = { type = 0, leftText = titleText } end
+            lines[3], lines[4] = { type = 17, leftText = "Quest" }, { type = 8, leftText = "3/8 enemies defeated" }
+            return TrackData(lines)
+        end
+        local unit = "nameplate4"
+        X.OnUnit(M, "UNIT_NAME_UPDATE", unit)
+        local firstLease = serial
+        collectgarbage("collect")
+        assert(weak[firstLease], "active native tooltip instance lost its backing data")
+        local beforeQuest = count[unit]
+        for i = 1, 21 do
+            questLog()
+            if i % 4 == 0 or i == 21 then FlushMetadata() end
+        end
+        assert(count[unit] == beforeQuest, "quest-log churn queried a title-only NPC")
+        local sparse = assert(ctx.callbacks.TOOLTIP_DATA_UPDATE)
+        local phase = assert(ctx.callbacks.UNIT_PHASE)
+        titleText = "Late title"
+        sparse(M, "TOOLTIP_DATA_UPDATE", 402)
+        sparse(M, "TOOLTIP_DATA_UPDATE", secret)
+        FlushMetadata()
+        assert(count[unit] == beforeQuest, "unrelated or secret tooltip ID queried a bound title")
+        sparse(M, "TOOLTIP_DATA_UPDATE", 401)
+        sparse(M, "TOOLTIP_DATA_UPDATE", 401)
+        FlushMetadata()
+        assert(count[unit] == beforeQuest + 1 and title.text == titleText, "sparse title was not delivered once")
+        collectgarbage("collect")
+        assert(not weak[firstLease], "replaced native tooltip object remained retained")
+        local other = "nameplate5"
+        local _, otherNPC, otherHealth, otherCast = Plate(other)
+        P.UnitKinds[otherNPC] = "neutralNpc"
+        P.FriendlyNames.KeepsQuestText = function(frame) return frame == otherNPC end
+        Apply(otherNPC, otherHealth, otherCast, "enemy", other)
+        local beforeOther = count[other]
+        questLog()
+        FlushMetadata()
+        assert(count[unit] == beforeQuest + 1 and count[other] == beforeOther + 1,
+            "mixed profile did not limit quest events to the visible quest consumer")
+        sparse(M, "TOOLTIP_DATA_UPDATE", 401)
+        FlushMetadata()
+        assert(count[unit] == beforeQuest + 2 and count[other] == beforeOther + 2,
+            "two bindings sharing a data instance did not both update")
+        titleText = "Phased title"
+        phase(M, "UNIT_PHASE", unit)
+        FlushMetadata()
+        assert(title.text == titleText and count[other] == beforeOther + 2, "phase refresh skipped or touched a sibling")
+        local previousTarget = target
+        target, npc.unit = unit, unit
+        function plates.nameplate4:CanBeAccessedInContext() return true end
+        function npc:CanBeAccessedInContext() return true end
+        titleText = "Target alias phase"
+        phase(M, "UNIT_PHASE", "target")
+        FlushMetadata()
+        assert(title.text == titleText, "phase delivery through a target alias missed its bound plate")
+        titleText = "Target alias name"
+        ctx.callbacks.UNIT_NAME_UPDATE(M, "UNIT_NAME_UPDATE", "target")
+        assert(title.text == titleText, "name delivery through a target alias missed its bound plate")
+        target = previousTarget
+        titleText = "Quest turned in"
+        ctx.callbacks.QUEST_TURNED_IN(M, "QUEST_TURNED_IN", 123)
+        FlushMetadata()
+        assert(title.text == titleText, "a real quest transition did not invalidate the title")
+        instance, titleText = secret, nil
+        C_TooltipInfo.GetUnit = function(key)
+            count[key] = (count[key] or 0) + 1
+            local lines = { { type = 2 } }
+            if titleText then lines[2] = { type = 0, leftText = titleText } end
+            return TrackData(lines)
+        end
+        X.OnUnit(M, "UNIT_NAME_UPDATE", unit)
+        local missingReads = count[unit]
+        for i = 1, 20 do sparse(M, "TOOLTIP_DATA_UPDATE", 1000 + i) FlushMetadata() end
+        assert(count[unit] == missingReads, "unrelated notifications synchronously probed an unidentified tooltip")
+        AdvanceSparse(.5)
+        assert(count[unit] == missingReads + 1, "one unidentified burst performed more than one probe")
+        instance, titleText = 901, "Recovered"
+        sparse(M, "TOOLTIP_DATA_UPDATE", 901)
+        AdvanceSparse(.5)
+        assert(count[unit] == missingReads + 1, "persistently unresolved instance did not back off")
+        AdvanceSparse(.5)
+        assert(title.text == titleText, "a sparse lookup with an initially unavailable ID never recovered")
+        titleText = "Global update"
+        sparse(M, "TOOLTIP_DATA_UPDATE", nil)
+        FlushMetadata()
+        assert(title.text == titleText, "global sparse delivery failed")
+        P.FriendlyNames.KeepsQuestText = function() return false end
+        Apply(otherNPC, otherHealth, otherCast, "enemy", other)
+        titleText = nil
+        X.OnUnit(M, "UNIT_NAME_UPDATE", unit)
+        titleText = "Missing text recovered"
+        beforeOther = count[other]
+        sparse(M, "TOOLTIP_DATA_UPDATE", secret)
+        FlushMetadata()
+        assert(title.text == titleText and count[other] == beforeOther,
+            "invalid sparse delivery missed the missing title or reparsed a populated sibling")
+        local lastLease = serial
+        sparse(M, "TOOLTIP_DATA_UPDATE", 901)
+        local restore = P.ExtensionLayout.Restore
+        P.ExtensionLayout.Restore = function() return false end
+        X.Restore(npc)
+        collectgarbage("collect")
+        assert(not weak[lastLease], "a protected layout restore retained the released native tooltip")
+        P.ExtensionLayout.Restore = restore
+        X.Restore(otherNPC)
+        X.OnCombatEnded()
+        instance, titleText = 902, "Rebound"
+        Apply(npc, npcHealth, npcCast, "enemy", unit)
+        local rebound = count[unit]
+        FlushMetadata()
+        sparse(M, "TOOLTIP_DATA_UPDATE", 901)
+        FlushMetadata()
+        assert(title.text == titleText and count[unit] == rebound, "released binding or stale ID repainted a pooled NPC")
+        local oldConfig = M.config
+        M.config = { enemy = true, look = 3, enemyExtraTextTitle = true, enemyHideMounted = true }
+        X.Configure(M)
+        local hiddenToken = "nameplate27"
+        local _, hiddenNPC, hiddenHealth, hiddenCast = Plate(hiddenToken)
+        P.UnitKinds[hiddenNPC] = "enemyNpc"
+        instance, titleText = 927, "Before hiding"
+        Apply(hiddenNPC, hiddenHealth, hiddenCast, "enemy", hiddenToken)
+        local lease, visibleReads = serial, count[hiddenToken]
+        assert(hiddenNPC.labels[1] and hiddenNPC.labels[1].text == titleText, "fixture needs a visible enemy title")
+        mounted = true
+        ctx.callbacks.PLAYER_MOUNT_DISPLAY_CHANGED(M,"PLAYER_MOUNT_DISPLAY_CHANGED")
+        assert(hiddenNPC.alpha == 0, "fixture needs an enemy hidden by its public load condition")
+        collectgarbage("collect")
+        assert(not weak[lease], "a binding hidden by load rules retained its native tooltip")
+        sparse(M, "TOOLTIP_DATA_UPDATE", 927)
+        FlushMetadata()
+        X.OnUnit(M, "UNIT_NAME_UPDATE", hiddenToken)
+        assert(count[hiddenToken] == visibleReads, "a hidden plate read its tooltip for sparse or name data")
+        titleText = "Visible again"
+        mounted = false
+        ctx.callbacks.PLAYER_MOUNT_DISPLAY_CHANGED(M,"PLAYER_MOUNT_DISPLAY_CHANGED")
+        assert(hiddenNPC.alpha == 1 and hiddenNPC.labels[1].text == titleText and count[hiddenToken] == visibleReads + 1,
+            "showing a filtered plate did not refresh its title once")
+        X.Restore(hiddenNPC)
+        mounted = true
+        ctx.callbacks.PLAYER_MOUNT_DISPLAY_CHANGED(M, "PLAYER_MOUNT_DISPLAY_CHANGED")
+        Apply(hiddenNPC, hiddenHealth, hiddenCast, "enemy", hiddenToken)
+        assert(count[hiddenToken] == visibleReads + 1, "first binding queried an already filtered plate")
+        mounted = false
+        ctx.callbacks.PLAYER_MOUNT_DISPLAY_CHANGED(M, "PLAYER_MOUNT_DISPLAY_CHANGED")
+        assert(count[hiddenToken] == visibleReads + 2 and hiddenNPC.labels[1].text == titleText,
+            "a plate first acquired while filtered did not paint its initial title on reveal")
+        X.Restore(hiddenNPC)
+        M.config = oldConfig
+        X.Configure(M)
+        Apply(npc, npcHealth, npcCast, "enemy", unit)
+        P.FriendlyNames.KeepsQuestText = function() return false end
+    end
     C_TooltipInfo.GetUnit = function()
         return { lines = { { type = 2, leftText = "Enemy" }, { type = 0, leftText = secret } } }
     end

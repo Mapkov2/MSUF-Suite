@@ -10,7 +10,7 @@ local states = setmetatable({}, { __mode = "k" })
 local spareStates = setmetatable({}, { __mode = "k" })
 local hooked = setmetatable({}, { __mode = "k" })
 local plans, generation, module = {}, 0
-local instanceNameWidth, instanceHealthFontSize, queuedNames
+local nameLimits, queuedNames = {}
 local clippedNames = setmetatable({}, { __mode = "k" })
 local elements, X = NS.NameplateStyle.Elements, NS.NameplateExtensions
 local AuraModel = NS.NameplateAuraDisplay
@@ -237,7 +237,7 @@ local function Restore(uf, recycled)
         -- ApplyFrameOptions and UpdateAnchors rebuild these sizes, anchors
         -- and justification before the pooled frame represents a new unit.
         state.geometry, state.healthSize = nil, nil
-        state.nameAnchor, state.header = nil, nil
+        Geometry.NativeAnchorsReset(state, uf)
     elseif not RestoreNameAnchor(state, uf) or not RestoreHeader(state, uf) then
         return true
     end
@@ -305,7 +305,7 @@ local function OnAnchors(uf)
             end
         end
         for index = retained + 1, #links do links[index] = nil end
-        state.header, state.nameAnchor = nil, nil -- Blizzard rebuilt the anchors and justification.
+        Geometry.NativeAnchorsReset(state, uf) -- Blizzard rebuilt the anchors and justification.
         clippedNames[uf], state.nameWidthGeneration = nil, nil
         state.healthTextApplied, state.generation = nil, nil
         state.nativeReset, state.combatCastApplied = true, nil
@@ -393,9 +393,10 @@ local CombatWritable = Geometry.CombatWritable
 
 local function ReadNameWidth(uf, requested)
     local label, override = uf.name, uf.UpdateNameOverride
-    if not NS.Public(override) or override or not Writable(label) then return end
+    if not requested or not NS.Public(override) or override or not Writable(label) then return end
+    if requested.fixed then return requested.pixels end
     local shown = label:IsShown()
-    if NS.Public(shown) and shown and NS.IsSecret(label:GetText()) then return requested end
+    if NS.Public(shown) and shown and NS.IsSecret(label:GetText()) then return requested.pixels end
 end
 
 local function NativeNameLayout(state, uf, plan, config, castApplied, limit, locked)
@@ -411,9 +412,8 @@ local function NativeNameLayout(state, uf, plan, config, castApplied, limit, loc
         Defer(uf)
         return state
     end
-    local desired
-    if probe then desired = ReadNameWidth(uf, limit)
-    elseif limit and clippedNames[uf] then desired = limit end
+    local desired = limit and (limit.fixed or clippedNames[uf]) and limit.pixels or nil
+    if probe then desired = ReadNameWidth(uf, limit) end
     local wanted = center or nameOnly or desired
     if wanted and anchor and not probe and not castApplied and anchor.generation == generation
         and (limit or not anchor.width) and (anchor.centered == true) == (center == true) then return state end
@@ -431,7 +431,7 @@ local function NativeNameLayout(state, uf, plan, config, castApplied, limit, loc
     if wanted then
         local badge = Geometry.LevelBadgeShown(uf, uf.unit)
         local delta = state.healthSize and state.healthSize[1] or 0
-        local width = desired and Geometry.NameWidthWithinPlate(desired, uf, setup, config, badge, delta, instanceHealthFontSize)
+        local width = desired and Geometry.NameWidthWithinPlate(desired, uf, setup, config, badge, delta, limit.healthSize)
         local castCurrent = state.combatCastApplied and not state.combatCastWriting
         local geometry = castCurrent and state.geometry
         if center or nameOnly or width then
@@ -441,7 +441,7 @@ local function NativeNameLayout(state, uf, plan, config, castApplied, limit, loc
             Layout.Observe(uf)
         end
     end
-    clippedNames[uf], state.nameWidthGeneration = desired and true or nil, generation
+    clippedNames[uf], state.nameWidthGeneration = desired and not limit.fixed or nil, generation
     state.nameWidthDeferred = locked and pending or nil
     return state
 end
@@ -659,7 +659,7 @@ end
 
 local function Lay(uf, prefix, config, force)
     local plan, state = plans[prefix], states[uf]
-    local limit = prefix == "enemy" and instanceNameWidth or nil
+    local limit = nameLimits[prefix]
     local enabled = plan and (plan.active or limit) and config.look ~= Mode.LOOK_BLIZZARD and config[prefix]
     if not enabled then
         if state then return Restore(uf) end
@@ -712,12 +712,12 @@ local function Lay(uf, prefix, config, force)
     HealthSize(state, uf, setup, width, height, force or geometryChanged, baseHeight)
     local badgeShown = LevelOffsets(state, uf, prefix, plan, setup, config, force)
     local desired = limit and ReadNameWidth(uf, limit)
-    local nameWidth = desired and Geometry.NameWidthWithinPlate(desired, uf, setup, config, badgeShown, width, instanceHealthFontSize)
+    local nameWidth = desired and Geometry.NameWidthWithinPlate(desired, uf, setup, config, badgeShown, width, limit.healthSize)
     local center = plan.centerName and Geometry.CenterEnabled(unitKind, config)
     local placed, namePending = PlaceNameAndOffsets(state, uf, prefix, plan, setup, config, baseHeight,
         badgeShown, center, nameWidth, force)
     if not placed then return true end
-    clippedNames[uf], state.nameWidthGeneration = desired and true or nil, generation
+    clippedNames[uf], state.nameWidthGeneration = desired and not limit.fixed or nil, generation
     AuraAnchors(state, uf, plan)
     ControlAuraAnchors(state, uf, plan, setup, config, badgeShown)
     DebuffPaddingAnchor(state, uf, plan, setup)
@@ -747,17 +747,19 @@ end
 local function ReplayNameChanges()
     local queued = queuedNames
     queuedNames = nil
-    if not module.active or not instanceNameWidth then return end
+    if not module.active then return end
     for uf, unit in pairs(queued) do
-        if module.activeUnits[unit] == uf and private.PlatePrefix(uf) == "enemy"
-            and (not private.IsSkinSuppressed or not private.IsSkinSuppressed(uf)) then Apply(uf, "enemy", module.config) end
+        local prefix = private.PlatePrefix(uf)
+        if nameLimits[prefix] and module.activeUnits[unit] == uf
+            and (not private.IsSkinSuppressed or not private.IsSkinSuppressed(uf)) then Apply(uf, prefix, module.config) end
     end
 end
 
 local function NamePrivacyChanged(uf, secret)
     local unit = uf.unit
     if not NS.Public(unit) or type(unit) ~= "string" or module.activeUnits[unit] ~= uf then return end
-    if not instanceNameWidth or private.PlatePrefix(uf) ~= "enemy" then
+    local limit = nameLimits[private.PlatePrefix(uf)]
+    if not limit or limit.fixed then
         clippedNames[uf] = nil
         return
     end
@@ -771,16 +773,13 @@ local function NamePrivacyChanged(uf, secret)
     end
 end
 
-function Layout.InstanceNameClip(inGroupInstance)
+function Layout.NameLimits()
     local names = private.NameText
-    local width = inGroupInstance and module.config.look ~= Mode.LOOK_BLIZZARD and names.secretNameWidth or nil
-    local size = names.secretNameHealthSize
-    local healthFont = width and (NS.Finite(size) and size > 0 and size or 10)
-    if instanceNameWidth == width and instanceHealthFontSize == healthFont then return end
-    instanceNameWidth, instanceHealthFontSize = width, healthFont
+    nameLimits = names.limits or {}
+    local enemy, friendly = nameLimits.enemy, nameLimits.friendly
+    local observe = enemy and not enemy.fixed or friendly and not friendly.fixed
     generation = generation + 1
-    names.ObserveNameClip(width and NamePrivacyChanged or nil, width and clippedNames or nil)
-    return true
+    names.ObserveNameClip(observe and NamePrivacyChanged or nil, observe and clippedNames or nil)
 end
 
 function Layout.InvalidateName(uf)

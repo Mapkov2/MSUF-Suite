@@ -3,7 +3,7 @@ local NS = private.NS
 local Filter = {}
 private.AuraFilter = Filter
 
-local Model = NS.NameplateAuraDisplay
+local Model, Emphasis = NS.NameplateAuraDisplay, NS.NameplateAuraEmphasis
 
 local function PrepareScope(c, excluded, prepared)
     if not c.enabled then return end
@@ -15,9 +15,11 @@ local function PrepareScope(c, excluded, prepared)
             c.fixedSlots[index] = { x = x, y = y, artID = artID, candidate = Model.Excluding(row.candidate, excluded) }
             if artID then prepared.artIDs[artID] = true end
         end
+        if prepared.emphasis then Emphasis.Fixed(c, prepared.emphasis) end
     else
         c.groupCandidate = Model.Excluding(c.candidate, excluded)
         c.groupAnyCandidate = Model.Excluding(c.anyCandidate, excluded)
+        if prepared.emphasis then c.emphasisGroups = Emphasis.Groups(c, prepared.emphasis) end
     end
 end
 
@@ -26,6 +28,32 @@ function Filter.PrepareDisplay(plan)
     for side, scopes in pairs(plan.scopes) do
         local exclusions = plan.exclusions[side]
         for _, scope in ipairs(scopes) do PrepareScope(scope, exclusions and exclusions[scope.key], plan) end
+    end
+end
+
+function Filter.ConfigureGroups(record, c, group, clearGroups, empty)
+    local packets = c.emphasisGroups
+    if not packets then
+        if record.groupOrder then
+            clearGroups(record)
+            record.groupOrder, record.groupAppearance = nil, nil
+        end
+        group(record, c, "auras", 1, c.filter, c.groupCandidate, c.groupCount)
+        group(record, c, "any", 2, c.anyFilter, c.groupAnyCandidate, c.anyCount, true)
+        return
+    end
+    local order, appearances, keep = {}, {}, {}
+    record.groupOrder, record.groupAppearance = order, appearances
+    for index, packet in ipairs(packets) do
+        local name = packet.name
+        order[index], appearances[name], keep[name] = name, packet.appearance, true
+        group(record, c, name, index, packet.filter, packet.candidate, packet.count, packet.any, packet.appearance)
+    end
+    for name in pairs(record.groups) do
+        if not keep[name] then
+            record.frame:SetAuraGroupCandidateFilters(name, empty)
+            record.want[name] = 0
+        end
     end
 end
 
@@ -114,7 +142,8 @@ local function ConfirmedIDs(record, key, filter, candidate, visible)
         if not PublicTable(aura) then return false end
         local id = aura.spellId
         if not NS.Finite(id) then return false end
-        if candidate.includeSpellIDs[id] and not (record.excluded and record.excluded[id]) then
+        if candidate.includeSpellIDs[id] and not (record.excluded and record.excluded[id])
+            and not (candidate.excludeSpellIDs and candidate.excludeSpellIDs[id]) then
             local duration, maxDuration = aura.duration, candidate.maxDuration
             if maxDuration and not NS.Finite(duration) then return false end
             if not maxDuration or duration > 0 and duration <= maxDuration then
@@ -159,6 +188,16 @@ end
 
 local function Packed(record, id, lane)
     local c = record.c
+    if c.emphasisGroups then
+        for _, packet in ipairs(c.emphasisGroups) do
+            local ids = packet.candidate.includeSpellIDs
+            if ids and ids[id] and CanMatchSource(packet.filter, lane) then
+                local shown = PackedIDs(record, packet.name, packet.filter, packet.candidate)
+                if shown and shown[id] then return true end
+            end
+        end
+        return false
+    end
     if c.groupCount > 0 and c.candidate.includeSpellIDs[id] and CanMatchSource(c.filter, lane) then
         local ids = PackedIDs(record, "auras", c.filter, c.candidate)
         return ids and ids[id]

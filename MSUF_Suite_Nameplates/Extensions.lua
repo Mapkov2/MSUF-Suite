@@ -1,6 +1,7 @@
 local _, P = ...
 local NS, S = P.NS, P.Suite
 local X, L, T, E = NS.NameplateExtensions, P.ExtensionLayout, P.ExtensionText, P.ExtensionEffects
+local Markers = P.UnitMarkers
 local Extensions = { inUse = false }
 P.Extensions = Extensions
 local M, plan, context, hasFocus, targetState, hideEnemies, opacityCombat
@@ -9,7 +10,7 @@ local castStates = setmetatable({}, { __mode = "k" })
 local subscribed = {}
 local registeredSpell, RangeEvent
 local nativeRange = C_Spell and C_Spell.EnableSpellRangeCheck
-local restoreFrame, hooked, metadataJob
+local restoreFrame, hooked, metadataJob, allMetadata
 local IN_COMBAT, RANGE_OWNER = { inCombat = true }, "MSUF_Suite_NameplateExtensions"
 local ExpireInterrupts
 
@@ -135,6 +136,7 @@ local function ApplyAlpha(state)
     local opacity = state.visible and state.opacity or 0
     local fade = state.layerFade
     if fade and not opacityCombat then opacity = opacity * fade.ooc end
+    if state.markerOpacity then opacity = opacity * state.markerOpacity end
     local rangeValue
     local scope = state.interaction
     if opacity > 0 and state == targetState and scope and scope.range then
@@ -148,9 +150,9 @@ local function ApplyAlpha(state)
 end
 
 local function PlateLayers(state, force)
-    if plan.opacity or state.layerFade or state.layers then
+    if plan.opacity or state.layerFade or state.layers or plan.hideIncomingHeals then
         local scope = X.OpacityScope(state.kind)
-        L.Layers(state, plan.opacity and plan.opacity[scope], force)
+        L.Layers(state, plan.opacity and plan.opacity[scope], force, plan.hideIncomingHeals)
     end
 end
 
@@ -164,13 +166,16 @@ local function Presentation(state)
     -- Public load conditions still update alpha when Blizzard holds the click area.
     if not clickable and not (loadHidden or state.loadHidden) then visible = state.visible ~= false end
     state.visible, state.loadHidden = visible, loadHidden
+    if wasVisible and not visible then T.SuspendTooltip(state) end
     state.opacity, state.injured = opacity, enemy and plan.enemyLoad.enemyShowWhenInjured
+    if plan.markers or state.markersActive then Markers.Paint(state, plan.markers) end
     ApplyAlpha(state)
     if state.focus then scale = scale * plan.focusScale end
     if state.casting then scale = scale * plan.castScale end
     L.Scale(state, scale)
     L.Name(state)
     if L.Mutable(state, state.uf) then
+        if visible and state.tooltipSuspended then T.Apply(state, "TOOLTIP_DATA_UPDATE") end
         E.Reminder(state, plan.focusReminder and hasFocus == false
             and (state.relevant or state.casting == true and state.kind == "enemyNpc"))
         E.Range(state, state == targetState)
@@ -207,10 +212,14 @@ ExpireInterrupts = function()
 end
 
 local function Retire(state)
-    if not L.Restore(state) then return false end
+    if not L.Restore(state) then
+        T.Unwatch(state)
+        return false
+    end
     T.Hide(state)
     T.Invalidate(state)
     E.Hide(state)
+    if state.unitMarker or state.markersActive then Markers.Release(state) end
     state.unit, state.plan, state.casting, state.castID, state.interruptExpired = nil, nil, nil, nil, nil
     state.watchesCast = nil
     state.focus, state.relevant, state.range, state.rangeValue, state.visible = nil, nil, nil, nil, nil
@@ -443,18 +452,28 @@ local function TargetEvent(module, event, unit)
 end
 
 local needsNameData, nameEventUnits
-local function NameEvent(module, event, unit)
-    if P.FriendlyNames.managedNames and PublicUnit(unit) then
-        local token, uf = unit, module.activeUnits[unit]
-        if unit == "target" then
-            local plate = C_NamePlate.GetNamePlateForUnit(unit)
-            uf = Safe(plate) and Is(plate:CanBeAccessedInContext(), true) and plate.UnitFrame
-            token = Safe(uf) and Is(uf:CanBeAccessedInContext(), true) and uf.unit
-            if not PublicUnit(token) or module.activeUnits[token] ~= uf then uf = nil end
-        end
-        if uf then P.FriendlyNames.RepairMissing(uf, token) end
+local function BoundUnit(module, unit)
+    if not PublicUnit(unit) then return end
+    if unit == "target" then
+        local plate = C_NamePlate.GetNamePlateForUnit(unit)
+        local uf = Safe(plate) and Is(plate:CanBeAccessedInContext(), true) and plate.UnitFrame
+        unit = Safe(uf) and Is(uf:CanBeAccessedInContext(), true) and uf.unit
+        if not PublicUnit(unit) or module.activeUnits[unit] ~= uf then return end
     end
+    return unit
+end
+
+local function NameEvent(module, event, unit)
+    unit = BoundUnit(module, unit)
+    if not unit then return end
+    local uf = module.activeUnits[unit]
+    if uf and P.FriendlyNames and P.FriendlyNames.managedNames then P.FriendlyNames.RepairMissing(uf, unit) end
     if needsNameData then DataEvent(module, event, unit) end
+    if plan.markers and uf then Markers.NameChanged(states[uf], restores, Presentation) end
+end
+
+local function RefreshMarkers(module, event, unit)
+    Markers.Refresh(plan.markers, event, BoundUnit(module, unit), states, module.activeUnits, restores, Presentation)
 end
 
 function Extensions.OnUnit(_, event, unit)
@@ -463,13 +482,44 @@ end
 
 local function MetadataPass()
     if not M.active then return end
-    for _, state in pairs(states) do
-        if state.unit and not restores[state] and L.Mutable(state, state.uf) then state.metadataReady = nil T.Apply(state) end
+    local full = allMetadata
+    if full then
+        for _, state in pairs(states) do T.pendingMetadata[state] = true end
+        allMetadata = nil
+    end
+    for state in pairs(T.pendingMetadata) do
+        T.pendingMetadata[state] = nil
+        if state.unit and M.activeUnits[state.unit] == state.uf and not restores[state] and L.Mutable(state, state.uf) then
+            if full then
+                state.metadataReady = nil
+                T.Apply(state)
+            else
+                T.Apply(state, "TOOLTIP_DATA_UPDATE")
+            end
+        end
     end
 end
 
 function Extensions.OnMetadata()
-    if metadataJob then metadataJob:Request() end
+    if metadataJob then allMetadata = true metadataJob:Request() end
+end
+
+function Extensions.OnQuestMetadata()
+    if metadataJob and T.QueueQuests() then metadataJob:Request() end
+end
+
+local function TooltipChanged(_, event, id)
+    if not metadataJob then return end
+    if event == "UNIT_PHASE" then
+        if not PublicUnit(id) then return end
+        if id ~= "player" then
+            local token = BoundUnit(M, id)
+            if token and T.QueueUnit(states[M.activeUnits[token]]) then metadataJob:Request() end
+            return
+        end
+    end
+    if event ~= "TOOLTIP_DATA_UPDATE" then id = nil end
+    if T.QueueTooltips(id) then metadataJob:Request() end
 end
 
 RangeEvent = function(_, _, spell, inRange, checksRange)
@@ -542,10 +592,11 @@ function Extensions.OnContext(changed, event)
     local oldContext, oldFocus = context, hasFocus
     local loadChanged = ReadContext(event)
     if event == "PLAYER_ENTERING_WORLD" then ReseedTarget() end
-    if changed == false and not loadChanged and oldContext == context and oldFocus == hasFocus then return end
+    local markersChanged = plan.markers and Markers.Context(plan.markers)
+    if changed == false and not loadChanged and not markersChanged and oldContext == context and oldFocus == hasFocus then return end
     for _, state in pairs(states) do
         if state.unit and not restores[state] and Safe(state.uf) then
-            state.metadataReady = nil
+            state.metadataReady, state.markerPlan = nil, nil
             state.relevant = Relevant(state)
             Presentation(state)
             if L.Mutable(state, state.uf) then T.Apply(state) end
@@ -569,7 +620,7 @@ function Extensions.OnCombatEnded()
     FlushRestores()
     if plan and plan.enabled then
         Extensions.OnContext(nil, "PLAYER_REGEN_ENABLED")
-        if plan.neutralQuestText then Extensions.OnMetadata() end
+        if plan.neutralQuestText then Extensions.OnQuestMetadata() end
     end
 end
 
@@ -651,30 +702,41 @@ local function Subscriptions()
     local aggro = M.active and P.Selection and P.Selection.aggroEnabled
     Subscribe("UNIT_TARGET", aggro and TargetEvent or DataEvent, aggro or enabled and (sources[2] or sources[7]))
     local identity = plan.enemy.identity > 1 or plan.friendly.identity > 1
-    needsNameData = enabled and (sources[2] or sources[4] or sources[5] or identity or plan.neutralQuestText)
+    needsNameData = enabled and (sources[2] or sources[3] or sources[4] or sources[5] or identity or plan.neutralQuestText)
     local managed = M.active and P.FriendlyNames and P.FriendlyNames.managedNames
     -- The router retains the first native unit filter until unregistration.
     -- Both consumers share this stable filter when a setting changes.
-    if (managed or needsNameData) and not nameEventUnits and S.NameplateUnits then
+    local markers = enabled and plan.markers
+    local markerNames = markers and (markers.npcs or markers.totems)
+    if (managed or needsNameData or markerNames or markers and markers.objectives) and not nameEventUnits and S.NameplateUnits then
         nameEventUnits = { unpack(S.NameplateUnits) }
         nameEventUnits[#nameEventUnits + 1] = "target"
+        nameEventUnits[#nameEventUnits + 1] = "player"
     end
-    Subscribe("UNIT_NAME_UPDATE", managed and NameEvent or DataEvent, managed or needsNameData, nameEventUnits)
+    Subscribe("UNIT_NAME_UPDATE", NameEvent, managed or needsNameData or markerNames, nameEventUnits)
+    if Markers then Markers.Events(Subscribe, RefreshMarkers, markers, nameEventUnits) end
     Subscribe("UNIT_POWER_UPDATE", DataEvent, enabled and sources[8])
     P.Power.SetExtraTextEvents(enabled and sources[8])
     Subscribe("UNIT_ABSORB_AMOUNT_CHANGED", DataEvent, enabled and sources[9])
     Subscribe("UPDATE_SHAPESHIFT_FORM", Extensions.RangeSpellChanged, enabled and plan.range)
     Extensions.usesQuestText = enabled and (sources[3] or plan.neutralQuestText)
     local metadata = enabled and (Extensions.usesQuestText or sources[4] or sources[5] or sources[10])
+    local tooltip = enabled and (Extensions.usesQuestText or sources[5])
+    T.ConfigureSparse(tooltip and M.context, MetadataPass)
+    Subscribe("TOOLTIP_DATA_UPDATE", TooltipChanged, tooltip)
+    Subscribe("UNIT_PHASE", TooltipChanged, tooltip, nameEventUnits)
+    Subscribe("QUEST_ACCEPTED", TooltipChanged, enabled and sources[5])
+    Subscribe("QUEST_REMOVED", TooltipChanged, enabled and sources[5])
+    Subscribe("QUEST_TURNED_IN", TooltipChanged, enabled and sources[5])
     Subscribe("CHALLENGE_MODE_START", Extensions.OnMetadata, metadata and sources[10])
     Subscribe("CHALLENGE_MODE_COMPLETED", Extensions.OnMetadata, metadata and sources[10])
     Subscribe("PLAYER_GUILD_UPDATE", Extensions.OnMetadata, metadata and sources[4])
     Extensions.usesMetadata = metadata or false
     if metadata then
-        metadataJob = M.context:Coalesce(.5, MetadataPass)
+        metadataJob = metadataJob or M.context:Coalesce(.5, MetadataPass)
     elseif metadataJob then
         metadataJob:Cancel()
-        metadataJob = nil
+        metadataJob, allMetadata = nil, nil
     end
 end
 
@@ -693,6 +755,7 @@ function Extensions.Configure(module)
     M = module
     local hadInterrupt = plan and plan.enabled and plan.interrupt
     plan = X.Plan(module.config)
+    if Markers then Markers.Extend(plan, module.config) end
     plan.enabled = plan.enabled and module.config.look ~= P.Mode.LOOK_BLIZZARD
     if plan.enabled and plan.range then
         for _, scope in pairs(plan.interaction) do

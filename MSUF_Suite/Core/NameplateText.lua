@@ -67,7 +67,10 @@ function Text.Compile(config, prefix, scope)
         mode = shared.nameFormat or (shared.nameShorten and "CUT" or MODE_FULL)
         side, dots, maxChars = shared.nameShortenSide, shared.nameShortenDots, shared.nameShortenMax
     end
+    local styled = config.look ~= 2
     return { enabled = formatting and formatter ~= nil,
+        npcLastWord = styled and config.nameplateNpcLastWord == true,
+        firstNameOnly = styled and NS.Client.isForever and config.nameplateFirstNameOnly == true,
         displayName = nativeScope and shared and shared.characterNameParts and provider.DisplayName,
         formatter = formatter, formatID = mode, max = maxChars, side = side, dots = dots,
         customColor = color, r = r, g = g, b = b, shared = shared, colorPainter = shared and provider }
@@ -84,8 +87,27 @@ function Text.CustomNameColor(look)
     if color and NS.Finite(color.r) and NS.Finite(color.g) and NS.Finite(color.b) then return color end
 end
 
+local function SelectNamePart(unit, value, look)
+    if not unit or type(value) ~= "string" then return value end
+    local player = UnitIsPlayer(unit)
+    if not NS.Public(player) then return value end
+    if player and look.firstNameOnly then
+        local first = UnitFullName(unit)
+        if NS.Public(first) and type(first) == "string" and first ~= "" then return first, true end
+    elseif player == false and look.npcLastWord then
+        local creature = UnitCreatureType(unit)
+        local totem = NS.Public(creature) and creature == NS.Text("Totem")
+        return (totem and value:match("^%S+") or value:match("%S+$")) or value
+    end
+    return value
+end
+
 function Text.Format(state, value, look)
-    if look.displayName and state.unit then value = look.displayName(value, state.unit) end
+    local firstName
+    if (look.npcLastWord or look.firstNameOnly) and not NS.IsSecret(value) then
+        value, firstName = SelectNamePart(state.unit, value, look)
+    end
+    if not firstName and look.displayName and state.unit then value = look.displayName(value, state.unit) end
     if not look.enabled then return value end
     if NS.IsSecret(value) then
         state.formatLook = nil

@@ -113,6 +113,50 @@ for _, prefix in ipairs({ "enemy", "friendly" }) do
 end
 B.Section(id, "plateIdentity", "Player identity icons", identity)
 
+local nameDisplay = {
+    B.Tooltip(B.Number("enemyNameMaxWidth", "Enemy name maximum width", 0, 0, 400), "Maximum name width in pixels. 0 uses the current layout."),
+    B.Tooltip(B.Number("friendlyNameMaxWidth", "Friendly name maximum width", 0, 0, 400), "Maximum name width in pixels. 0 uses the current layout."),
+    B.Bool("nameplateNpcLastWord", "Show the last word of NPC names", false),
+}
+if NS.Client.isForever then
+    nameDisplay[#nameDisplay + 1] = B.Bool("nameplateFirstNameOnly", "Show only player first names", false)
+end
+B.Section(id, "plateNameDisplay", "Name display", nameDisplay)
+B.Section(id, "plateHealthDisplay", "Health and level display", {
+    B.Bool("nameplateHideMaxLevel", "Hide maximum-level numbers", false),
+    B.Bool("nameplateHideIncomingHeals", "Hide incoming healing on nameplates", false),
+})
+
+B.Section(id, "platePvpMarkers", "PvP and group markers", {
+    B.Bool("nameplateArenaNumbers", "Arena opponent numbers", false),
+    B.Bool("nameplateArenaSpecs", "Arena specialization abbreviations", false),
+    B.Bool("nameplateGroupPointer", "Arrow above group members", false),
+    B.Tooltip(B.Bool("nameplateObjectives", "Show missing battleground objective icons", false),
+        "Adds an icon for flag and orb carriers when Blizzard's own icon is hidden."),
+    B.Number("nameplateMarkerSize", "Nameplate marker size", 18, 10, 44),
+    B.Number("nameplateMarkerY", "Nameplate marker vertical offset", 4, -50, 80),
+})
+
+B.Section(id, "platePersonalDisplay", "Personal resource display", {
+    B.Choice("nameplatePersonalStyle", "Personal bar style", 1, { "Blizzard", "Suite texture", "Compact flat bars" }),
+    B.Texture("nameplatePersonalTexture", "Personal status bar texture"),
+    B.Choice("nameplatePersonalAuras", "Personal aura row", 1, { "Off", "Buffs", "Debuffs", "Buffs and debuffs" }),
+    B.Number("nameplatePersonalAuraCount", "Personal auras per row", 6, 1, 12),
+    B.Number("nameplatePersonalAuraSize", "Personal aura icon size", 20, 10, 40),
+})
+
+local npcListHelp = "Enter exact unit names or NPC IDs separated by commas. The current target stays visible."
+B.Section(id, "plateNpcMarkers", "NPC and totem indicators", {
+    B.Tooltip(B.String("nameplateNpcHideList", "Hide NPCs", "", 1024), npcListHelp),
+    B.Tooltip(B.String("nameplateNpcDimList", "Dim NPCs", "", 1024), npcListHelp),
+    B.Tooltip(B.String("nameplateNpcIconList", "Replace NPCs with a small icon", "", 1024), npcListHelp),
+    B.Number("nameplateNpcDimOpacity", "Dimmed NPC opacity (%)", 30, 5, 90),
+    B.Bool("nameplateTotemIcons", "Show important totem icons", false),
+    B.Bool("nameplateTotemIconOnly", "Only show the totem icon", false),
+    B.Tooltip(B.String("nameplateTotemList", "Totem spell IDs", "", 1024),
+        "Comma-separated spell IDs. Leave blank for defaults. Add seconds after a colon for an estimate from first sighting."),
+})
+
 B.Section(id, "combatExtensions", "Combat emphasis", {
     B.Bool("focusScaleEnabled", "Scale the focused nameplate", false),
     Enabled(B.Number("focusScalePercent", "Focus nameplate scale (%)", 110, 50, 200, 5), "focusScaleEnabled"),

@@ -3,6 +3,15 @@ local UI = {}
 P.NameplatesExtensions = UI
 local X = P.Suite.NameplateExtensions
 
+local DISPLAY_SECTIONS = {
+    plateNameDisplay = { enemy = 41, neutral = 41, friendly = 41, friendlyNpc = 41 },
+    plateHealthDisplay = { enemy = 21, neutral = 21, friendly = 21, friendlyNpc = 21 },
+    platePvpMarkers = { enemy = 71, friendly = 71 },
+    plateNpcMarkers = { enemy = 72, neutral = 72, friendlyNpc = 72 },
+    auraSpellEmphasis = { enemy = 31, neutral = 31, friendly = 31, friendlyNpc = 31 },
+    platePersonalDisplay = { friendly = 51 },
+}
+
 local function AddHelp(help)
     if not help then return end
     help.castFeedback = P.Help("Show timed feedback when Blizzard reports an interrupted cast.",
@@ -33,7 +42,7 @@ local function Gates()
             or rule.section == "plateContext" or rule.section == "plateDimensions" or rule.section == "enemyLoadConditions"
             or rule.section == "plateOpacity"
             or rule.section == "threatDetail" or rule.section == "plateIdentity"
-            or rule.section == "plateExtraText" then
+            or rule.section == "plateExtraText" or DISPLAY_SECTIONS[rule.section] then
             if P.Get("nameplates", "look") == 2 then
                 return false, P.Tr("Choose a nameplate look other than Blizzard under Look.")
             end
@@ -87,6 +96,9 @@ function UI.Append(sections, help)
             "friendlyIdentityIcons", "friendlyIdentityIconSize", "friendlyIdentityIconX", "friendlyIdentityIconY" } },
     } }
     sections[#sections + 1] = EnemyVisibility()
+    for catalog, scopes in pairs(DISPLAY_SECTIONS) do
+        sections[#sections + 1] = { key = catalog, catalog = catalog, scopes = scopes }
+    end
 end
 
 Gates()
