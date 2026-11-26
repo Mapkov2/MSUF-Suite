@@ -391,7 +391,19 @@ local count = #WorldMapFrame.activePins
 local beforeFrames = frameCreates
 local releasedPin = WorldMapFrame.activePins[1]
 releasedPin:OnMouseEnter()
+for _, frame in ipairs(WorldMapFrame.activePins) do
+    Check(frame.highlight == nil, "an untouched map pin created a highlight")
+    frame:SetHighlightLocked(false)
+    Check(frame.highlight == nil, "clearing an untouched map pin created a highlight")
+end
 releasedPin:SetHighlightLocked(true)
+local firstHighlight = releasedPin.highlight
+releasedPin:SetHighlightLocked(false)
+releasedPin:SetHighlightLocked(true)
+Check(firstHighlight and firstHighlight == releasedPin.highlight and firstHighlight.shown,
+    "subsequent mouse/gamepad highlights must reuse the same texture")
+Check(frameCreates == beforeFrames + 1, "first hover creates only one highlight texture")
+beforeFrames = frameCreates
 WorldMapFrame:Hide()
 Check(#WorldMapFrame.activePins == 0, "native blank-map lifecycle releases own pins")
 Check(not releasedPin.highlight.shown and not GameTooltip.shown and not releasedPin.record,
@@ -483,6 +495,31 @@ Refresh()
 Check(HasPin(2) and HasPin(3) and HasPin(4), "re-enabling transports restores all three kinds")
 local pin = WorldMapFrame.activePins[1]
 Check(pin.parent == canvas and pin.level == 25, "markers use the native canvas coordinates and flight-pin level")
+do
+    local writes = 0
+    local function Count(owner, method)
+        local original = owner[method]
+        owner[method] = function(self, ...)
+            writes = writes + 1
+            return original(self, ...)
+        end
+    end
+    Count(pin.icon, "SetAtlas")
+    Count(pin.icon, "SetTexture")
+    Count(pin, "SetSize")
+    Count(pin, "SetScale")
+    Count(pin, "SetPoint")
+    local firstTitle = pin.title
+    Refresh()
+    Check(pin == WorldMapFrame.activePins[1] and pin.title == firstTitle and writes == 0,
+        "refreshing an unchanged private map pin rewrote icon, size, scale or anchor")
+    local oldSize = module.config.pinSize
+    module.config.pinSize = oldSize + 1
+    Refresh()
+    Check(writes == 1 and pin.width == oldSize + 1, "pool reuse did not apply a changed size exactly once")
+    module.config.pinSize = oldSize
+    Refresh()
+end
 local x, y = pin:GetCenter()
 WorldMapFrame.zoom, WorldMapFrame.canvasScale = 1, 1.5
 WorldMapFrame:OnCanvasScaleChanged()

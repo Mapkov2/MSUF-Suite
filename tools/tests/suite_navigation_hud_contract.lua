@@ -206,15 +206,15 @@ assert(loadfile(root .. "/MSUF_Suite_QualityOfLife/NavigationHUDMarkers.lua"))("
 assert(loadfile(root .. "/MSUF_Suite_QualityOfLife/NavigationHUD.lua"))("QoL", private)
 local dataText = { Suite = S, NS = NS }
 assert(loadfile(root .. "/MSUF_Suite_DataTexts/Compass.lua"))("DataTexts", dataText)
-ctx = { events = {}, deferred = {}, callbacks = {} }
+ctx = { events = {}, eventUnits = {}, deferred = {}, callbacks = {} }
 local compassTask = { Cancel = function() ctx.ticker = nil end }
 function S.ScheduleDataTick(owner, interval, callback)
     assert(owner == "compassHeading" and interval == .05 and not ctx.ticker, "only one timed heading job is allowed")
     ctx.ticker = callback
     return compassTask
 end
-function ctx:Event(event, callback) self.events[event] = callback end
-function ctx:RemoveEvent(event) self.events[event] = nil end
+function ctx:Event(event, callback, _, unit) self.events[event], self.eventUnits[event] = callback, unit end
+function ctx:RemoveEvent(event) self.events[event], self.eventUnits[event] = nil, nil end
 function ctx:Callback(event, callback) self.callbacks[event] = callback end
 function ctx:RemoveCallback(event) self.callbacks[event] = nil end
 EventRegistry = { TriggerEvent = function(_, event) ctx.callbacks[event](hud) end }
@@ -589,14 +589,16 @@ C_AreaPoiInfo = {
 }
 C_QuestLog = {
     GetQuestsOnMap = function() return { { questID = 5, x = .5, y = .51 } } end,
-    GetTitleForQuestID = function() return "Tracked quest" end,
+    GetTitleForQuestID = function() return world.questTitle or "Tracked quest" end,
 }
 C_SuperTrack = { GetSuperTrackedQuestID = function() return 5 end }
 Enum.FlightPathFaction = { Neutral = 0, Horde = 1, Alliance = 2 }
-function UnitFactionGroup() return "Alliance" end
+function UnitFactionGroup() return world.taxiFaction or "Alliance" end
 C_TaxiMap = { GetTaxiNodesForMap = function()
-    return { { position = { x = .48, y = .5 }, name = "Flight master", faction = 2 },
-        { position = { x = .49, y = .5 }, name = "Enemy flight master", faction = 1 } }
+    world.taxiReads = (world.taxiReads or 0) + 1
+    if world.taxiData then return world.taxiData end
+    return { { position = { x = .48, y = .5 }, name = "Flight master", faction = 2, atlasName = "FlightAlliance" },
+        { position = { x = .49, y = .5 }, name = "Enemy flight master", faction = 1, atlasName = "FlightHorde" } }
 end }
 C_VignetteInfo = {
     GetVignettes = function() return { "vignette", secret } end,
@@ -691,20 +693,123 @@ Fire("QUEST_LOG_UPDATE")
 MarkerTick()
 assert(imported == 2, "quest updates must not reload gathering data")
 
+do
+    local function HasPoint(name)
+        for _, point in ipairs(markers.points) do if point.label == name then return true end end
+    end
+    local reads = world.taxiReads
+    world.questTitle = "Changed quest"
+    Fire("QUEST_LOG_UPDATE")
+    MarkerTick()
+    assert(world.taxiReads == reads and HasPoint("Changed quest") and HasPoint("Flight master"),
+        "a quest-only refresh must update the quest without rereading flight paths")
+    for _, taxiFirst in ipairs({ false, true }) do
+        Fire(taxiFirst and "TAXI_NODE_STATUS_CHANGED" or "QUEST_LOG_UPDATE")
+        Fire(taxiFirst and "QUEST_LOG_UPDATE" or "TAXI_NODE_STATUS_CHANGED")
+        MarkerTick()
+        reads = reads + 1
+        assert(world.taxiReads == reads, "coalescing lost a taxi update")
+    end
+    world.taxiFaction = "Horde"
+    Fire("QUEST_LOG_UPDATE")
+    MarkerTick()
+    assert(world.taxiReads == reads + 1 and HasPoint("Enemy flight master") and not HasPoint("Flight master"),
+        "a faction change reused the wrong flight network")
+    world.taxiFaction, world.taxiData = nil, secret
+    Fire("TAXI_NODE_STATUS_CHANGED")
+    MarkerTick()
+    assert(not HasPoint("Enemy flight master"), "restricted flight paths stayed on screen")
+    world.taxiData = nil
+    Fire("QUEST_LOG_UPDATE")
+    MarkerTick()
+    assert(world.taxiReads == reads + 3 and HasPoint("Flight master"), "a restricted taxi result prevented recovery")
+    world.taxiData = { { position = secret, name = "Pending", faction = 2 } }
+    Fire("TAXI_NODE_STATUS_CHANGED")
+    MarkerTick()
+    world.taxiData = nil
+    Fire("QUEST_LOG_UPDATE")
+    MarkerTick()
+    assert(world.taxiReads == reads + 5 and HasPoint("Flight master"), "an incomplete taxi node prevented recovery")
+    world.taxiFaction = secret
+    Fire("QUEST_LOG_UPDATE")
+    MarkerTick()
+    assert(not HasPoint("Flight master") and not HasPoint("Enemy flight master"), "a restricted faction reused public flight paths")
+    world.taxiFaction = nil
+    Fire("QUEST_LOG_UPDATE")
+    MarkerTick()
+    assert(HasPoint("Flight master"), "an unreadable faction prevented recovery")
+    world.taxiData = { { position = { x = .48, y = .5 }, name = "Second map flight master", faction = 2 } }
+    world.map = 2
+    Fire("QUEST_LOG_UPDATE")
+    Fire("ZONE_CHANGED_NEW_AREA")
+    MarkerTick()
+    assert(HasPoint("Second map flight master") and not HasPoint("Flight master"), "a map transition reused old flight paths")
+    world.taxiData, world.map = nil, 1
+    Fire("ZONE_CHANGED_NEW_AREA")
+    MarkerTick()
+    assert(HasPoint("Flight master"), "returning to a map kept the last map's flight paths")
+    assert(ctx.eventUnits.UNIT_PHASE == "player", "the phase listener must be registered only for the player")
+    for _, event in ipairs({ "QUEST_ACCEPTED", "QUEST_TURNED_IN", "QUEST_REMOVED", "UNIT_PHASE" }) do
+        local before = world.taxiReads
+        world.taxiData = { { name = event, faction = 2, atlasName = "FlightAlliance", position = { x = .48, y = .5 } } }
+        Fire("QUEST_LOG_UPDATE")
+        Fire(event, event == "UNIT_PHASE" and "player" or 1234)
+        Fire("QUEST_LOG_UPDATE")
+        MarkerTick()
+        assert(world.taxiReads == before + 1 and HasPoint(event), event .. " failed to refresh the flight network")
+    end
+    -- A continent-sized network can project fully known pins outside this zone.
+    -- They stay outside until a map/network/phase change, just as on-screen pins do.
+    world.taxiData = {
+        { position = { x = -1.2, y = .3 }, name = "West", faction = 2, atlasName = "FlightAlliance" },
+        { position = { x = .4, y = 1.3 }, name = "North", faction = 2, atlasName = "FlightAlliance" },
+        { position = { x = .4, y = .6 }, name = "Here", faction = 2, atlasName = "FlightAlliance" },
+    }
+    Fire("TAXI_NODE_STATUS_CHANGED")
+    MarkerTick()
+    local before = world.taxiReads
+    for i = 1, 16 do Fire("QUEST_LOG_UPDATE") MarkerTick() end
+    assert(world.taxiReads == before and HasPoint("Here") and not HasPoint("West") and not HasPoint("North"),
+        "off-map flight points made every quest update allocate the native flight table")
+    world.taxiData[1].position.x = .38
+    Fire("UNIT_PHASE", "player")
+    MarkerTick()
+    assert(world.taxiReads == before + 1 and HasPoint("West"), "a phase change kept an off-map flight point hidden")
+    world.taxiData[1].position = { x = -1.2, y = secret }
+    Fire("TAXI_NODE_STATUS_CHANGED")
+    MarkerTick()
+    before = world.taxiReads
+    world.taxiData[1].position = { x = .38, y = .3 }
+    Fire("QUEST_LOG_UPDATE")
+    MarkerTick()
+    assert(world.taxiReads == before + 1 and HasPoint("West"), "a partial flight position was cached as off-map")
+    world.taxiData = nil
+    world.questTitle = nil
+end
+
 hud.config.showMarkers, hud.config.showGatheringMinimap = false, true
 hud:Refresh()
 Present(true, true)
 assert(not ctx.markerTick and not ctx.events.UNIT_SPELLCAST_SUCCEEDED and not hud.map.pin.shown
     and Visible(markers.mapPins) == 0 and Visible(markers.compassPins) == 0 and not markers.focusShown)
+for _, event in ipairs({ "QUEST_ACCEPTED", "QUEST_TURNED_IN", "QUEST_REMOVED", "UNIT_PHASE" }) do
+    assert(not ctx.events[event], event .. " remained registered with all markers off")
+end
 hud.config.showMarkers = true
+world.readsOnClose = world.taxiReads
 hud:Refresh()
 assert(hud.map.pin.shown and Visible(markers.mapPins) > 0 and Visible(markers.miniPins) == 3)
+assert(world.taxiReads > world.readsOnClose, "reopening navigation reused a closed flight network")
+assert(ctx.events.QUEST_ACCEPTED and ctx.events.QUEST_TURNED_IN and ctx.events.QUEST_REMOVED and ctx.eventUnits.UNIT_PHASE == "player",
+    "reopening general markers did not restore the quest and phase listeners")
 
 hud.config.showCompass, hud.config.showGatheringMinimap = false, true
 assert(not hud:ToggleMap())
 hud:Refresh()
 Present(false, false)
 assert(not ctx.ticker and Visible(markers.miniPins) == 3 and markers.minimapFrame.parent == Minimap)
+assert(not ctx.events.QUEST_ACCEPTED and not ctx.events.QUEST_TURNED_IN and not ctx.events.QUEST_REMOVED and not ctx.events.UNIT_PHASE,
+    "a gathering-only minimap kept flight network events")
 assert(not markers.minimapFrame.mouse and not markers.focusShown)
 local readsBeforeChunk = imported
 Fire("NEW_WMO_CHUNK")

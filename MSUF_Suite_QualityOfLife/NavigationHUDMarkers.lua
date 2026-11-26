@@ -23,6 +23,7 @@ local POINT_EVENTS = {
     "AREA_POIS_UPDATED", "QUEST_LOG_UPDATE", "SUPER_TRACKING_CHANGED",
     "VIGNETTES_UPDATED", "VIGNETTE_MINIMAP_UPDATED", "TAXI_NODE_STATUS_CHANGED",
 }
+local PHASE_EVENTS = { "QUEST_ACCEPTED", "QUEST_TURNED_IN", "QUEST_REMOVED", "UNIT_PHASE" }
 local cachedAtlases, NO_VIEWS = {}, {}
 local ownerWithMinimap, compassOwner, minimapHooked
 local Tick
@@ -420,7 +421,8 @@ local function RefreshSources(state, mapID)
     local rebuildOffers, rebuildServices = state.offerDirty, state.serviceDirty
     state.mapDirty, state.gatherDirty, state.offerDirty, state.serviceDirty = nil, nil, nil, nil
     if rebuildMap then
-        state.points = (state.general or state.waypoint) and Points.ReadMap(mapID, state.general, state.waypoint) or nil
+        local previous = rebuildMap == "quests" and state.points or nil
+        state.points = (state.general or state.waypoint) and Points.ReadMap(mapID, state.general, state.waypoint, previous) or nil
     end
     if rebuildOffers then state.offerPoints = state.questOffers and Points.ReadQuestOffers(mapID) or nil end
     if rebuildServices then state.servicePoints = state.services and Points.ReadServices(mapID, state.questie) or nil end
@@ -510,9 +512,28 @@ Tick = function(owner)
     end
 end
 
+local function PointsChanged(owner, event)
+    if owner.markerState.general then Markers.Invalidate(owner, event == "QUEST_LOG_UPDATE" and "quests" or "map") end
+end
+
+-- Quest transitions can change a flight network on the same map.
+local function WatchPhaseChanges(owner, enabled)
+    local state = owner.markerState
+    if state.phaseEvents == enabled then return end
+    state.phaseEvents = enabled
+    for _, event in ipairs(PHASE_EVENTS) do
+        if enabled then
+            owner.context:Event(event, PointsChanged, false, event == "UNIT_PHASE" and "player" or nil)
+        else
+            owner.context:RemoveEvent(event)
+        end
+    end
+end
+
 function Markers.Stop(owner)
     local state = owner.markerState
     if not state then return end
+    WatchPhaseChanges(owner, nil)
     owner.context:Cancel(Tick)
     state.wantMap, state.wantCompass, state.wantMini, state.compactViews = nil, nil, nil, nil
     state.positionMisses = nil
@@ -558,6 +579,7 @@ function Markers.Sync(owner, event)
     if state.gather ~= gather then state.gatherDirty = true end
     state.wantMap, state.wantCompass, state.wantMini, state.compactViews = map, compass, mini, compact
     state.general, state.questOffers, state.services, state.waypoint = general, questOffers, services, waypoint
+    WatchPhaseChanges(owner, general or nil)
     state.handyNotes, state.questie = handyNotes, questie
     state.gather, state.mapGather, state.miniGather, state.miniNavigation = gather, mapGather, miniGather, miniNavigation
     if changed then state.lastX = nil end
@@ -577,6 +599,8 @@ function Markers.Invalidate(owner, scope)
         MarkAllDirty(state)
     elseif scope == "map" then
         state.mapDirty = true
+    elseif scope == "quests" then
+        state.mapDirty = state.mapDirty or "quests"
     elseif scope == "gathering" then
         state.gatherDirty = true
     elseif scope == "questOffers" then
@@ -589,10 +613,6 @@ function Markers.Invalidate(owner, scope)
         state.questieDirty = true
     end
     if state.wantMap or state.wantCompass or state.wantMini or state.compactViews then owner.context:Ticker(INTERVAL, Tick) end
-end
-
-local function PointsChanged(owner)
-    if owner.markerState.general then Markers.Invalidate(owner, "map") end
 end
 
 function Markers.ResetQuestOffers()

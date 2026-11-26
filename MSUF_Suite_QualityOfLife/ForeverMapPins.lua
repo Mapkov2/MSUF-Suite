@@ -15,15 +15,19 @@ local icons = {}
 function Pin:OnLoad()
     self.icon = S.CreateTexture(self, nil, "ARTWORK")
     self.icon:SetAllPoints()
-    self.highlight = S.CreateTexture(self, nil, "BACKGROUND")
-    self.highlight:SetPoint("TOPLEFT", -2, 2)
-    self.highlight:SetPoint("BOTTOMRIGHT", 2, -2)
-    self.highlight:SetColorTexture(.2, .8, 1, .7)
-    self.highlight:Hide()
 end
 
 function Pin:SetHighlightLocked(locked)
-    self.highlight:SetShown(locked == true)
+    local highlight = self.highlight
+    if not highlight then
+        if locked ~= true then return end
+        highlight = S.CreateTexture(self, nil, "BACKGROUND")
+        highlight:SetPoint("TOPLEFT", -2, 2)
+        highlight:SetPoint("BOTTOMRIGHT", 2, -2)
+        highlight:SetColorTexture(.2, .8, 1, .7)
+        self.highlight = highlight
+    end
+    highlight:SetShown(locked == true)
 end
 
 function Pin:OnAcquired(owner, record, x, y, title, kind)
@@ -34,8 +38,15 @@ function Pin:OnAcquired(owner, record, x, y, title, kind)
         atlas = C_Texture.GetAtlasInfo(ATLASES[kind]) and ATLASES[kind] or false
         icons[kind] = atlas
     end
-    if atlas then self.icon:SetAtlas(atlas) else self.icon:SetTexture("Interface\\Icons\\INV_Misc_Map_01") end
-    self:SetSize(owner.config.pinSize, owner.config.pinSize)
+    if self.appliedAtlas ~= atlas then
+        if atlas then self.icon:SetAtlas(atlas) else self.icon:SetTexture("Interface\\Icons\\INV_Misc_Map_01") end
+        self.appliedAtlas = atlas
+    end
+    local size = owner.config.pinSize
+    if self.appliedSize ~= size then
+        self:SetSize(size, size)
+        self.appliedSize = size
+    end
 end
 
 function Pin:OnMouseEnter()
@@ -68,7 +79,7 @@ end
 
 function Pin:OnReleased()
     self:OnMouseLeave()
-    self.highlight:Hide()
+    self:SetHighlightLocked(false)
     self:Hide()
     self.owner, self.record, self.title, self.kind = nil, nil, nil, nil
 end
@@ -130,8 +141,15 @@ function Pins.Layout(map)
         local pin = Pins.frames[index]
         if pin:GetParent() ~= canvas then pin:SetParent(canvas) end
         if pin:GetFrameLevel() ~= level then pin:SetFrameLevel(level) end
-        pin:SetScale(scale)
-        pin:SetPoint("CENTER", canvas, "TOPLEFT", width * pin.x / scale, -height * pin.y / scale)
+        if pin.appliedScale ~= scale then
+            pin:SetScale(scale)
+            pin.appliedScale = scale
+        end
+        local x, y = width * pin.x / scale, -height * pin.y / scale
+        if pin.anchorCanvas ~= canvas or pin.anchorX ~= x or pin.anchorY ~= y then
+            pin:SetPoint("CENTER", canvas, "TOPLEFT", x, y)
+            pin.anchorCanvas, pin.anchorX, pin.anchorY = canvas, x, y
+        end
         if not pin:IsShown() then pin:Show() end
     end
     lastX = nil

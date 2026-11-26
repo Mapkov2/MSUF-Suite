@@ -23,9 +23,12 @@ local function Fraction(value)
 end
 
 local function Coordinates(vector)
-    if not Table(vector) then return end
+    if not Table(vector) or not canaccesstable(vector) then return end
     local x, y = vector.x, vector.y
-    if Fraction(x) and Fraction(y) then return x, y end
+    if not Finite(x) or not Finite(y) then return end
+    -- A complete projection can legitimately fall outside the current map.
+    if x < 0 or x > 1 or y < 0 or y > 1 then return nil, nil, true end
+    return x, y
 end
 
 Points.Position = S.ReadPlayerMapPosition
@@ -135,17 +138,37 @@ local function ReadQuests(output, map)
     end
 end
 
-local function ReadTravel(output, map)
-    local nodes = C_TaxiMap.GetTaxiNodesForMap(map)
-    if not Table(nodes) then return end
+-- A quest-only refresh can carry the already filtered flight pins forward in
+-- their original position in the list. Incomplete reads retry on any refresh.
+local function ReadTravel(output, map, previous)
+    local first = #output + 1
     local faction = Text(UnitFactionGroup("player"))
+    if previous and previous.travelMap == map and previous.travelFaction == faction then
+        for i = previous.travelFirst, previous.travelLast do output[#output + 1] = previous[i] end
+        output.travelFirst, output.travelLast = first, #output
+        output.travelMap, output.travelFaction = map, faction
+        return
+    end
+    local nodes = C_TaxiMap.GetTaxiNodesForMap(map)
+    if not Table(nodes) or not canaccesstable(nodes) then return end
     local filters = Enum.FlightPathFaction
     local own = faction and filters[faction]
+    local complete = own ~= nil and #nodes > 0
     for i = 1, min(#nodes, NATIVE_LIMIT) do
         local node = nodes[i]
-        if Table(node) and Finite(node.faction) and (node.faction == filters.Neutral or node.faction == own) then
-            AddPosition(output, node.position, node.name, node.atlasName, "poi")
+        if not Table(node) or not canaccesstable(node) or not Finite(node.faction) then
+            complete = false
+        elseif node.faction == filters.Neutral or node.faction == own then
+            local x, y, offMap = Coordinates(node.position)
+            if not offMap then
+                local point = x and Add(output, x, y, node.name, node.atlasName, "poi")
+                if not point or not point.label or not point.atlas then complete = false end
+            end
         end
+    end
+    if complete then
+        output.travelFirst, output.travelLast = first, #output
+        output.travelMap, output.travelFaction = map, faction
     end
 end
 
@@ -219,7 +242,7 @@ function Points.ReadGathering(map)
     return cells, #output
 end
 
-function Points.ReadMap(map, general, waypoint)
+function Points.ReadMap(map, general, waypoint, previous)
     local output = {}
     if waypoint then
         local pin = C_Map.GetUserWaypoint()
@@ -230,7 +253,7 @@ function Points.ReadMap(map, general, waypoint)
     if general then
         ReadAreaPOIs(output, map)
         ReadQuests(output, map)
-        ReadTravel(output, map)
+        ReadTravel(output, map, previous)
         ReadVignettes(output, map)
         for _, point in ipairs(S.WaypointPoints() or {}) do
             if point.map == map then Add(output, point.x, point.y, point.name, nil, "saved") end
