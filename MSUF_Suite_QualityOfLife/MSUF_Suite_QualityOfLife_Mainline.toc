@@ -104,6 +104,9 @@ GroupBloodlust.lua
 CursorEffects.lua
 MapLandingShortcuts.lua
 CombatStatsHUD.lua
+ProcAlerts.lua
+TargetDotEstimate.lua
+PartyCastbars.lua
 SelfCombatText.lua
 FloatingTextDisplay.lua
 FloatingTextGains.lua

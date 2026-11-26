@@ -126,6 +126,9 @@ local GROUPS = {
     { id = "burningRushCue", title = "Burning Rush cue (Retail Warlock)", switch = "enabled",
         sections = { "burning_rush_cue" } },
     { id = "qol", title = "Repair", switch = "repair", other = "autoJunk", sections = { "repair" } },
+    { id = "castEnhancements", title = "Castbar enhancements", switch = "enabled", sections = { "cast_extras" } },
+    { id = "targetDotEstimate", title = "Target DoT estimate", switch = "enabled", sections = { "target_dot_estimate" } },
+    { id = "procAlerts", title = "Proc alerts", switch = "enabled", sections = { "proc_alerts" } },
     { id = "combatStatsHUD", title = "Secondary stats (Retail)", switch = "enabled",
         sections = { "secondary_stats", "stats_numbers", "stats_fps" } },
     { id = "targetDistance", title = "Target spell-range estimate (Retail)", switch = "enabled", sections = { "target_distance" },
@@ -214,8 +217,8 @@ end
 local function GameplayGroups()
 return {
     Subgroup("combatInformation", "Combat information",
-        "actionTracker selfCombatText floatingCombatText combatStatsHUD targetDistance threatMeter"),
-    Subgroup("combatCues", "Combat cues", "burningRushCue combatMovementCue combatPetStatus cursorEffects"),
+        "actionTracker selfCombatText floatingCombatText combatStatsHUD targetDistance threatMeter targetDotEstimate castEnhancements"),
+    Subgroup("combatCues", "Combat cues", "burningRushCue combatMovementCue combatPetStatus cursorEffects procAlerts"),
     Subgroup("groupCombat", "Group combat", "battleRes groupBloodlust groupDeathAlert innervateCue enemyCastStack"),
 }
 end

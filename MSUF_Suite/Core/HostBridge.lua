@@ -43,6 +43,21 @@ end
 
 function HostBridge.HasCoreAPI() return CoreAPI() ~= nil end
 
+function HostBridge.CastEnhancements()
+    local api = CoreAPI()
+    if api and type(api.PartyCastAnchor) == "function" and type(api.SetPlayerSpellCastColors) == "function" then return api end
+end
+
+function HostBridge.HasTargetHealthAnchor()
+    local api = CoreAPI()
+    return api and type(api.TargetHealthAnchor) == "function" or false
+end
+
+function HostBridge.TargetHealthAnchor()
+    local api = CoreAPI()
+    if api and api.TargetHealthAnchor then return api.TargetHealthAnchor() end
+end
+
 function HostBridge.UnitFrameTooltipAPI()
     local api = CoreAPI()
     if api and type(api.GetUnitFrameTooltipSetting) == "function"

@@ -1,6 +1,80 @@
 local _, NS = ...
 local B = NS.CatalogBuild.ForAddon("MSUF_Suite_QualityOfLife")
 local Number, Bool, Choice = B.Number, B.Bool, B.Choice
+B.Module("procAlerts", {
+    title = "Proc alerts", description = "Show a separate cue when the game highlights a spell.",
+    optIn = true, defaultEnabled = false, page = "suite_qualityOfLife", editElement = "alerts",
+    available = function()
+        if NS.Client.SupportsEvent("SPELL_ACTIVATION_OVERLAY_GLOW_SHOW")
+            and NS.Client.SupportsEvent("SPELL_ACTIVATION_OVERLAY_GLOW_HIDE") then return true end
+        return false, "Spell glow events are unavailable on this client"
+    end,
+})
+B.Section("procAlerts", "proc_alerts", "Proc alerts", {
+    Choice("mode", "Spells to show", 1, { "All spell glows", "Selected spell IDs" }),
+    B.String("spells", "Spell IDs separated by commas", "", 480),
+    B.Color("color", "Proc alert color", "f5bf67"),
+    Bool("pulse", "Pulse while the spell glows", true),
+    Number("pulseSpeed", "Pulse duration (milliseconds)", 440, 200, 1200, 20),
+    Bool("auraDetails", "Show readable aura timers and stacks", true),
+    Number("minimumStacks", "Minimum stacks when count is readable", 0, 0, 40),
+    B.String("auraOverrides", "Spell-to-buff IDs (spell:buff, separated by commas)", "", 720),
+    Bool("sound", "Play a sound when a proc appears", false),
+    Number("scale", "Scale (percent)", 100, 60, 175, 5),
+    Number("x", "Horizontal position", 0, -4000, 4000),
+    Number("y", "Vertical position", 170, -3000, 3000),
+})
+do
+    local rules = NS.SuiteCatalog.procAlerts.rules
+    rules.spells.spells = true
+    rules.pulseSpeed.enableKey = "pulse"
+    rules.minimumStacks.enableKey, rules.auraOverrides.enableKey = "auraDetails", "auraDetails"
+    rules.x.hidden, rules.y.hidden = true, true
+end
+
+
+B.Module("targetDotEstimate", {
+    title = "Target DoT estimate",
+    description = "Shade estimated remaining damage on the target's health bar when the game provides readable aura and health data.",
+    optIn = true, defaultEnabled = false, page = "suite_qualityOfLife",
+    available = function()
+        if not NS.Client.isForever then return false, "Target DoT estimates are available only in WoW Forever" end
+        if not (C_Secrets and C_Secrets.ShouldAurasBeSecret and C_UnitAuras
+            and C_UnitAuras.GetUnitAuras and canaccesstable) then return false, "Native aura data is unavailable on this client" end
+        if not (NS.HostBridge.HasTargetHealthAnchor and NS.HostBridge.HasTargetHealthAnchor()) then
+            return false, "Update Midnight Simple Unit Frames for this feature"
+        end
+        local locale = GetLocale()
+        if locale == "deDE" or locale == "enUS" or locale == "enGB" then return true end
+        return false, "Target DoT estimates require an English or German game client"
+    end,
+})
+
+B.Section("targetDotEstimate", "target_dot_estimate", "Target DoT estimate", {
+    Number("opacity", "Prediction opacity (percent)", 55, 15, 100, 5),
+})
+
+B.Module("castEnhancements", {
+    title = "Castbar enhancements", description = "Add castbars to party frames and set colors for individual player spells.",
+    optIn = true, defaultEnabled = false, page = "suite_qualityOfLife",
+    available = function()
+        if not (NS.HostBridge.CastEnhancements and NS.HostBridge.CastEnhancements()) then
+            return false, "Update Midnight Simple Unit Frames for this feature"
+        end
+        if UnitCastingDuration and UnitChannelDuration and Enum.StatusBarTimerDirection and Enum.StatusBarInterpolation then
+            return true
+        end
+        return false, "Native cast timers are unavailable on this client"
+    end,
+})
+B.Section("castEnhancements", "cast_extras", "Party castbars and spell colors", {
+    Bool("party", "Show party member castbars", true),
+    Choice("partyPosition", "Party castbar position", 1, { "Below the frame", "Above the frame", "Along the bottom edge" }),
+    Number("partyHeight", "Party castbar height", 13, 8, 30),
+    B.Color("partyColor", "Party castbar color", "629bc0"),
+    Bool("partyMotion", "Animate castbar appearance", false),
+    B.String("playerColors", "Player spell colors (spell ID:hex color)", "", 1800),
+})
 
 B.Module("combatStatsHUD", {
     title = "Secondary stats",
