@@ -25,6 +25,7 @@ local C = P.CDM
 local Visibility = { pending = {}, drivers = {}, state = {}, expr = {} }
 C.Visibility = Visibility
 local SLOTS = NS.CDM.SLOTS
+local HUD = NS.HUDVisibility
 local Public = S.Public
 local tremove, abs, min = table.remove, math.abs, math.min
 local ATTR = "msufvis"
@@ -102,9 +103,11 @@ end
 -- bar.hidden: nothing of the bar can be seen (its rule hides it or its
 -- opacity is 0); the icon layer reads it for tooltips and mouse. A bar seen
 -- again samples the usability it skipped while invisible.
+local TotemPulse = C.TotemPulse
 local function Flip(slot, bar, hidden)
     local wasHidden = bar.hidden
     bar.hidden = hidden
+    if TotemPulse and wasHidden ~= hidden then TotemPulse.BarVisibility(slot, hidden) end
     Mouse(slot, not hidden)
     if C.M.active and wasHidden == true and not hidden then
         local list = C.Index.usable
@@ -154,6 +157,7 @@ local function Paint(slot)
             alpha = 1
         end
     end
+    if HUD and not state.preview then alpha = alpha * HUD.Factor("cooldownManager", bar.hover) end
     hidden = alpha <= 0
     if bar.hidden ~= hidden then Flip(slot, bar, hidden) end
     if bar.alpha ~= alpha then
@@ -311,6 +315,7 @@ PaintFx = function(slot, bar, view)
     local concealed = view.hoverShow == true and alpha < full
     Probe(slot, bar, concealed)
     if concealed and bar.hover then alpha = full end
+    if HUD then alpha = alpha * HUD.Factor("cooldownManager", bar.hover) end
     Commit(slot, bar, alpha, view.fadeTime)
 end
 
@@ -575,6 +580,12 @@ end
 -- [combat] state a frame later and repaint through the handler.
 function Visibility.CombatChanged()
     for i = 1, #KEYS do Paint(KEYS[i]) end
+end
+
+if HUD then
+    HUD.Register("cooldownManager", function()
+        if C.M.active then Visibility.CombatChanged() end
+    end)
 end
 
 -- PLAYER_REGEN_ENABLED: apply parked (un)registrations.

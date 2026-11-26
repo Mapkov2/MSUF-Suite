@@ -107,6 +107,7 @@ CombatStatsHUD.lua
 ProcAlerts.lua
 TargetDotEstimate.lua
 PartyCastbars.lua
+HUDVisibility.lua
 SelfCombatText.lua
 FloatingTextDisplay.lua
 FloatingTextGains.lua

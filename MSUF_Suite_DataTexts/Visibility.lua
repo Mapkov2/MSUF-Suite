@@ -10,6 +10,7 @@ local VISIBILITY = NS.DataTextVisibility
 local Visibility = {}
 P.DataTextBarVisibility = Visibility
 local ID = "dataTexts"
+local HUD = NS.HUDVisibility
 local healthCurve
 
 local function Clear(t)
@@ -139,6 +140,21 @@ local function SetDriver(bar, expression)
 end
 Visibility.SetDriver = SetDriver
 
+function Visibility.PaintAlpha(config, bar)
+    local shown = S.editMode or config[bar.visibilityKey] ~= VISIBILITY.MOUSEOVER or bar.hover
+    local alpha = shown and 1 or 0
+    if HUD and shown and not S.editMode then alpha = HUD.Factor("dataTexts", bar.hover) end
+    bar.frame:SetAlpha(alpha)
+end
+
+if HUD then
+    HUD.Register("dataTexts", function()
+        local module = P.DataTexts
+        if not module.active then return end
+        for _, bar in pairs(module.bars) do Visibility.PaintAlpha(module.config, bar) end
+    end)
+end
+
 -- Shows, hides and fades every bar of the module for its settings, the
 -- current zone and Edit Mode; the caller rebinds the sources afterwards.
 function Visibility.Apply(module)
@@ -159,7 +175,7 @@ function Visibility.Apply(module)
         if SetDriver(bar, expression) and not expression then
             bar.frame:SetShown(enabled and (S.editMode or not blocked))
         end
-        bar.frame:SetAlpha((S.editMode or mode ~= VISIBILITY.MOUSEOVER or bar.hover) and 1 or 0)
+        Visibility.PaintAlpha(c, bar)
         RefreshHealthAlpha(c, bar)
     end
     module.styling = false

@@ -106,7 +106,7 @@ local TELEMETRY = Standard.TELEMETRY
 local function SetHover(bar, hovered)
     if M.config[bar.visibilityKey] ~= VISIBILITY.MOUSEOVER or bar.hover == hovered then return end
     bar.hover = hovered
-    bar.frame:SetAlpha(hovered and 1 or 0)
+    P.DataTextBarVisibility.PaintAlpha(M.config, bar)
     M:Rebind()
 end
 

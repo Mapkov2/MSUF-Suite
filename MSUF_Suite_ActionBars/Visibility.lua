@@ -123,6 +123,17 @@ local function UpdateFeedbackVisibility()
     AB.nativeFeedbackVisible = false
 end
 
+local hud = NS.HUDVisibility
+if hud then
+    hud.Register("actionBars", function()
+        if not M.active then return end
+        for index = 1, AB.BAR_COUNT do
+            local bar = AB.bars[index]
+            if bar and bar.header and not bar.native then AB.UpdateAlpha(bar) end
+        end
+    end)
+end
+
 ------------------------------------------------------------------ fade timing
 -- The "Fade duration" setting. A bar's move between its faded and revealed
 -- opacity is a native Alpha animation of its header: the engine ramps the
@@ -205,6 +216,8 @@ function AB.UpdateAlpha(bar)
         -- overlay so count updates cannot leave ghost stack/key text.
         alpha = math.max(0.01, fadeAlpha)
     end
+    local hud = NS.HUDVisibility
+    if hud and not bar.native and not S.editMode then alpha = alpha * hud.Factor("actionBars", bar.hover) end
     local fading = bar.alpha ~= alpha and inFade and bar.inFade and bar.faded ~= faded
         and bar.fade ~= nil and bar.fade.seconds > 0
     -- A zero fade is still a shown secure hit target. Park visual walks and

@@ -191,6 +191,9 @@ end
 
 local function Build(ctx)
     local b = P.HUDMenu.Builder(ctx)
+    P.ModuleCard(ctx, b, PAGE, "hudVisibility", nil, {
+        title = "HUD visibility", open = false, rules = P.SectionRules("hudVisibility", "hud_visibility"),
+    })
     BuildObjectives(ctx, b)
     BuildSummary(ctx, b)
     BuildAnnouncements(ctx, b)

@@ -1,6 +1,27 @@
 local _, NS = ...
 local B = NS.CatalogBuild.ForAddon("MSUF_Suite_QualityOfLife")
 local Number, Bool, Choice = B.Number, B.Bool, B.Choice
+
+
+
+B.Module("hudVisibility", {
+    title = "HUD visibility", description = "Use the same dimming rules for selected HUD modules.",
+    optIn = true, defaultEnabled = false, page = "suite_hud",
+})
+B.Section("hudVisibility", "hud_visibility", "HUD visibility", {
+    Choice("mode", "Show HUD at full opacity", 3, { "With a target", "In combat", "In combat or with a target", "Always" }),
+    Bool("worldOnly", "Dim only in the open world", true),
+    Bool("onTaxi", "Dim while on a flight path", false),
+    Bool("hover", "Reveal dimmed bars on hover where supported", true),
+    Number("opacity", "Dimmed opacity (percent)", 25, 5, 100, 5),
+    Number("delay", "Delay before dimming (seconds)", 2, 0, 20),
+    Bool("actionBars", "Include Suite action bars", true),
+    Bool("cooldownManager", "Include the Cooldown Manager", true),
+    Bool("dataTexts", "Include data bars", true),
+    Bool("procAlerts", "Include proc alerts", false),
+    Bool("playerBuffGroups", "Include player buff groups", false),
+})
+
 B.Module("procAlerts", {
     title = "Proc alerts", description = "Show a separate cue when the game highlights a spell.",
     optIn = true, defaultEnabled = false, page = "suite_qualityOfLife", editElement = "alerts",
