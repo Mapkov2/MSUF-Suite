@@ -37,7 +37,6 @@ O.Read = Read
 -- not be read: the collected list is then not known to be whole (CollectQuests).
 local partial = false
 
--- Read for what a quest shows: a secret answer also marks the collection partial.
 local function Detail(fn, ...)
     local value = fn(...)
     if Public(value) then return value or nil end
@@ -87,6 +86,7 @@ local function AddLine(entry, text, done, percent, progressText)
     end
     line.text, line.done, line.percent, line.progressText = text, done, percent, progressText
     lines.count = index
+    return line
 end
 O.NextEntry, O.AddLine = NextEntry, AddLine
 
@@ -96,7 +96,9 @@ local function QuestIndex(questID)
     if not Public(index) then partial = true end
 end
 
-local function IsAutoComplete(index)
+local function IsAutoComplete(index, displayQuestID)
+    local cached = displayQuestID and O.CachedAutoComplete and O.CachedAutoComplete(displayQuestID)
+    if cached ~= nil then return cached end
     local info = Detail(C_QuestLog.GetInfo, index)
     if type(info) == "table" then
         local auto = info.isAutoComplete
@@ -149,27 +151,29 @@ local function QuestTimeLeft(questID, task)
     end
 end
 
-local function SplitQuestProgress(text, objective)
+local function SplitQuestProgress(row, text, objective)
     local current, required = objective.numFulfilled, objective.numRequired
     if not (Finite(current) and current >= 0 and current % 1 == 0
         and Finite(required) and required > 0 and required % 1 == 0) then return text end
-    -- Only move a counter when it matches the native progress values at a label boundary.
+    if row.splitSource == text and row.fulfilled == current and row.required == required then
+        return row.splitLabel, row.splitCount
+    end
+    -- Match the label and counters once per public value on this pooled row.
     local count = tostring(current) .. "/" .. tostring(required)
     local pattern = count:gsub("(%p)", "%%%1")
     local label = text:match("^(.-):%s*" .. pattern .. "%s*$")
-        or text:match("^(.-)：%s*" .. pattern .. "%s*$")
+        or text:match("^(.-)ï¼š%s*" .. pattern .. "%s*$")
         or text:match("^(.-)%s*%(" .. pattern .. "%)%s*$")
         or text:match("^(.-)%s+" .. pattern .. "%s*$")
         or text:match("^" .. pattern .. "%s+(.+)$")
-    if label then
-        label = label:match("^%s*(.-)%s*$")
-        if label ~= "" then return label, count end
-    end
-    return text
+    label = label and label:match("^%s*(.-)%s*$")
+    if not label or label == "" then label, count = text, nil end
+    row.splitSource, row.fulfilled, row.required = text, current, required
+    row.splitLabel, row.splitCount = label, count
+    return label, count
 end
 
--- A quest whose objectives or one of their texts cannot be read keeps the lines
--- that can; the collection is partial (the lines come back once readable).
+-- Keep readable lines when an objective is only partially available.
 local function AddObjectiveLines(entry, questID, c)
     local objectives = Detail(C_QuestLog.GetQuestObjectives, questID)
     if type(objectives) ~= "table" then
@@ -198,12 +202,11 @@ local function AddObjectiveLines(entry, questID, c)
                     done, partial = false, true
                 end
                 if not hideCompleted or not done then
-                    local progressText
+                    local row = AddLine(entry, line, done, percent)
                     if progressColumn and readableKind and kind ~= "progressbar" then
-                        line, progressText = SplitQuestProgress(line, objective)
-                        if progressText and c.showQuestObjectiveIcons then progressText = O.IconQuestProgress(kind, progressText) end
+                        row.text, row.progressText = SplitQuestProgress(row, line, objective)
+                        if row.progressText and c.showQuestObjectiveIcons then row.progressText = O.IconQuestProgress(kind, row.progressText) end
                     end
-                    AddLine(entry, line, done, percent, progressText)
                 end
             elseif not Public(objective.text) or objective.text == nil then
                 partial = true
@@ -249,16 +252,14 @@ local function AddQuest(list, c, id, title, group, tracked, task, complete)
     local showCompletion = not task and complete
     local index = (showItem or showCompletion) and QuestIndex(id)
     if showCompletion then
-        if index and IsAutoComplete(index) then AddLine(entry, QUEST_WATCH_CLICK_TO_COMPLETE, true)
+        if index and IsAutoComplete(index, id) then AddLine(entry, QUEST_WATCH_CLICK_TO_COMPLETE, true)
         elseif c.groupQuestsByHeader then
             AddLine(entry, S.Text("Ready to turn in"), true)
         end
     end
-    if index then
-        if showItem then
-            if task then complete = Detail(C_QuestLog.IsComplete, id) == true end
-            entry.itemIcon, entry.itemLink = QuestItem(index, complete)
-        end
+    if index and showItem then
+        if task then complete = Detail(C_QuestLog.IsComplete, id) == true end
+        entry.itemIcon, entry.itemLink = QuestItem(index, complete)
     end
     if c.questIconStyle == 3 then
         local asset, atlas = QuestUtil.GetQuestIconActiveForQuestID(id)
@@ -284,14 +285,22 @@ end
 
 -- A dungeon or micro-map may be a child of the quest's zone. Compare
 -- zone IDs, never a continent, so adjacent zones do not count as local.
+local zones = {}
 local function ZoneMap(mapID)
+    if not Finite(mapID) or mapID <= 0 then return end
+    local origin = mapID
     for _ = 1, 8 do
-        if not Finite(mapID) or mapID <= 0 then return end
+        local cached = zones[mapID]
+        if cached then zones[origin] = cached return cached end
         local info = Read(C_Map.GetMapInfo, mapID)
         if type(info) ~= "table" or not Finite(info.mapType) then return end
-        if info.mapType == Enum.UIMapType.Zone then return mapID end
+        if info.mapType == Enum.UIMapType.Zone then
+            zones[mapID], zones[origin] = mapID, mapID
+            return mapID
+        end
         if info.mapType < Enum.UIMapType.Zone then return end
         mapID = info.parentMapID
+        if not Finite(mapID) or mapID <= 0 then return end
     end
 end
 
@@ -306,29 +315,21 @@ local function QuestGroup(questID, focused, zone, complete)
     return ZoneGroup(questID, zone) or Category(questID, focused, complete)
 end
 
+O.QuestZoneMap = ZoneMap
+
 local function PlayerZone(c)
     return not c.groupQuestsByHeader and c.groupQuestsByZone and ZoneMap(Read(C_Map.GetBestMapForUnit, "player"))
 end
 
--- The quests list carries what it was collected with (CollectQuests): zone is
--- the player's zone (false with the grouping off, nil without a readable one),
--- focus the focused quest, and known tells that every watched quest and all a
--- quest shows was read. Objectives.lua clears known where it empties the list.
---
--- A zone event with zone grouping on (Objectives.lua) collected every watched
--- quest in full on each subzone change, in the frame that also showed the zone
--- banner (the 2026-11-15 outdoor walk). For a list known to be whole it now
--- reads again only what the groups are made from (the player's zone, the
--- focused quest and each quest's own zone) and collects when one of them
--- changed: the zone and focus are compared by what was read, so one that was
--- unreadable collects once it reads differently. A list that is not known
--- (never collected, emptied, or a watch count, quest ID, title, objective or
--- other detail was secret or missing) is collected on every zone event as
--- before, which is what shows a quest or line again once the client gives it.
+-- A complete list can keep its rows across subzone changes while the player,
+-- focused quest and individual quest groups still match. Incomplete reads
+-- retry on every zone event so newly public objectives reappear.
 local function QuestGroupsChanged(self)
     local list = self.sources.quests
     if not list or not list.known then return true end
     local zone = PlayerZone(self.config)
+    if self.config.groupQuestsByHeader and self.config.questCurrentZoneFirst
+        and ZoneMap(Read(C_Map.GetBestMapForUnit, "player")) ~= list.localZone then return true end
     if zone ~= list.zone or Read(C_SuperTrack.GetSuperTrackedQuestID) ~= list.focus then return true end
     if not zone then return false end
     for i = 1, list.count do
@@ -377,6 +378,7 @@ local function CollectQuests(list, c)
             partial = true
         end
     end
+    if O.SortQuestGroups then O.SortQuestGroups(list, c) end
     list.known = not partial
 end
 
@@ -787,6 +789,8 @@ O.COLLECTORS = COLLECTORS
 
 -- Re-reads every dirty source into its reused entry list.
 function O.CollectDirty(self)
+    -- Share public map ancestry only within this synchronous collection pass.
+    for id in pairs(zones) do zones[id] = nil end
     tasksRead, tasksTable = false, nil
     -- A zone event: the quests are collected unless their list is known and its groups still hold.
     if self.dirty.questZones then

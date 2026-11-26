@@ -27,6 +27,10 @@ local objectiveContent = {
     B.Bool("showWorldQuests", "World quests", true),
     B.Bool("groupQuestsByZone", "Group watched quests by current zone", false),
     B.Bool("groupQuestsByHeader", "Group quests by zone and dungeon name", false),
+    B.Choice("questZoneSort", "Quest group order", 1, { "Quest log order", "Alphabetically", "By quest level", "Custom order" }),
+    B.Bool("questCurrentZoneFirst", "Show the current quest zone first"),
+    B.String("questZoneOrder", "Custom quest group order", "", 3800),
+    B.Bool("focusQuestInCombat", "Show only the focused quest in combat", false),
     B.Bool("groupReadyQuests", "Group quests ready to turn in separately", false),
     B.Bool("altClickQuestCollapse", "Alt-click to expand or collapse a quest", false),
     B.Bool("showQuestLevel", "Show quest levels", false),
@@ -63,6 +67,9 @@ B.Section("objectives", "content", "What to track", objectiveContent)
 local objectiveRules = NS.SuiteCatalog.objectives.rules
 objectiveRules.hideDuringBoss.disabledBy = "hideInRaid"
 objectiveRules.pauseInRaidCombat.disabledBy = "hideInRaid"
+objectiveRules.questZoneOrder.hidden = true
+objectiveRules.questZoneSort.enableKey = "groupQuestsByHeader"
+objectiveRules.questCurrentZoneFirst.enableKey = "groupQuestsByHeader"
 if not NS.Client.isForever then
     -- One choice names both the reference (a boss's own best or the fastest
     -- whole run) and its scope (this keystone level or any level).

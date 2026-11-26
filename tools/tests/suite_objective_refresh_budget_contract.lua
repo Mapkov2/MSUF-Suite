@@ -1,10 +1,12 @@
 local root = assert(arg[1], "repository root required")
 local source = arg[2] or root
 local fixture = dofile(root .. "/tools/tests/comfort_fixture.lua").New(root, true)
+fixture.S.BlizzardText = fixture.NS.BlizzardText
 local function Load(file)
     assert(loadfile(source .. "/MSUF_Suite_Modules/" .. file))("MSUF_Suite_Modules", fixture.P)
 end
 Load("ObjectivesData.lua")
+Load("ObjectivesQuestLog.lua")
 Load("ObjectivesRows.lua")
 local O, secret = fixture.P.Objectives, fixture.secret
 
@@ -142,5 +144,37 @@ do
     ProjectZone()
     assert(rows[3].height == 48 and rows[4].height == 52 and rows[4].key == "line:quests:74:2",
         "ordinary heights or pooled row keys did not reflect a changed setting and entry")
+end
+do
+    local full = 0
+    local getInfo = C_QuestLog.GetInfo
+    C_QuestLog.GetInfo = function(index) full = full + 1; return getInfo(index) end
+    local allowed = true
+    issecurevariable = function() return allowed end
+    canaccesstable = function(value) return not rawequal(value, secret) end
+    QuestCache = { objects = {}, Get = function() error("populated the native quest cache") end }
+    for id = 1, questCount do
+        completion[id] = id % 2 == 0
+        logInfo[id].isAutoComplete = id % 4 == 0
+        QuestCache.objects[id] = { questID = id, hasQuestLogInfo = true, isAutoComplete = logInfo[id].isAutoComplete }
+    end
+    local rows = Collect()
+    assert(full == 0 and rows[4].lines.count == 3, "reread native rows for already loaded completion flags")
+    assert(O.CanCompleteQuest(4) and full == 1, "the actual click skipped native validation")
+    QuestCache.objects[2], QuestCache.objects[4].isAutoComplete = nil, secret
+    QuestCache.objects[6].questID, QuestCache.objects[8].hasQuestLogInfo = 999, false
+    full = 0
+    rows = Collect()
+    assert(full == 4 and rows[4].lines.count == 3, "missing, partial, restricted or recycled rows skipped fresh data")
+    full = 0
+    issecurevariable = function(owner, key)
+        return owner ~= QuestCache.objects[10] or key ~= "hasQuestLogInfo"
+    end
+    Collect()
+    assert(full == 5, "a modified quest-ready flag was trusted")
+    full, allowed = 0, false
+    issecurevariable = function() return allowed end
+    Collect()
+    assert(full == math.floor(questCount / 2), "a modified native quest record was trusted")
 end
 print("objective refresh budget, native action state and row reuse passed")

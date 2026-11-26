@@ -90,6 +90,32 @@ local function Collection(forever)
         "turning the filter off must restore lines without another API scan per collection")
 end
 
+local function ProgressReuse(forever)
+    local fixture, owner = New(forever)
+    local objective = { text = "Wolf: 1/3", numFulfilled = 1, numRequired = 3, type = "monster" }
+    C_QuestLog.GetQuestObjectives = function() return { objective } end
+    owner.config.questProgressColumn = true
+    local splits = 0
+    debug.sethook(function()
+        if debug.getinfo(2, "n").name == "gsub" and debug.getinfo(3, "n").name == "SplitQuestProgress" then splits = splits + 1 end
+    end, "c")
+    local quest = fixture.Collect(false)
+    assert(quest.lines[1].text == "Wolf" and quest.lines[1].progressText == "1/3")
+    local first = splits
+    quest = fixture.Collect(false)
+    assert(first > 0 and splits == first, "unchanged public quest progress was parsed again")
+    objective.text, objective.numFulfilled = "Wolf: 2/3", 2
+    quest = fixture.Collect(false)
+    assert(quest.lines[1].text == "Wolf" and quest.lines[1].progressText == "2/3")
+    objective.text = "Wolf：2/3"
+    quest = fixture.Collect(false)
+    assert(quest.lines[1].text == "Wolf" and quest.lines[1].progressText == "2/3", "fullwidth progress separator lost")
+    objective.numFulfilled = fixture.secret
+    quest = fixture.Collect(false)
+    assert(quest.lines[1].text == objective.text and quest.lines[1].progressText == nil)
+    debug.sethook()
+end
+
 local function Colors(forever)
     local fixture, owner = New(forever)
     local O = fixture.P.Objectives
@@ -159,7 +185,7 @@ local function Signature(forever)
 end
 
 for _, forever in ipairs({ false, true }) do
-    for name, run in pairs({ collection = Collection, colors = Colors, preview = Preview, signature = Signature }) do
+    for name, run in pairs({ collection = Collection, progressReuse = ProgressReuse, colors = Colors, preview = Preview, signature = Signature }) do
         if not selected or selected == name then
             run(forever)
             print("objective-details " .. name .. " " .. (forever and "Forever" or "Retail") .. ": passed")

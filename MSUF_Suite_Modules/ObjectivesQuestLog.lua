@@ -5,6 +5,27 @@ local Read = O.Read
 local MIN = math.min
 local DUNGEON = S.BlizzardText("DUNGEON", "Dungeon")
 
+-- Blizzard's tracker uses the static flag on a fully populated QuestMixin.
+-- Read an existing record without creating one from addon code.
+local function ReadableTable(value)
+    return Public(value) and type(value) == "table" and canaccesstable(value)
+end
+
+function O.CachedAutoComplete(questID)
+    local cache = QuestCache
+    if not ReadableTable(cache) or not issecurevariable or not issecurevariable("QuestCache")
+        or not issecurevariable(cache, "objects") then return end
+    local objects = rawget(cache, "objects")
+    if not ReadableTable(objects) then return end
+    local row = rawget(objects, questID)
+    if not ReadableTable(row) or not issecurevariable(row, "questID") or not issecurevariable(row, "hasQuestLogInfo")
+        or not issecurevariable(row, "isAutoComplete") then return end
+    local id, loaded = rawget(row, "questID"), rawget(row, "hasQuestLogInfo")
+    if not Public(id) or id ~= questID or not Public(loaded) or loaded ~= true then return end
+    local auto = rawget(row, "isAutoComplete")
+    if Public(auto) and type(auto) == "boolean" then return auto end
+end
+
 -- Snapshots keep the quest log's actual headers. A collapsed section can omit
 -- its quests, so those entries can fall back to the quest's own map.
 function O.ReadQuestLog(list, c)
@@ -21,6 +42,7 @@ function O.ReadQuestLog(list, c)
         end
     end
     if not c.groupQuestsByHeader then return end
+    list.localZone = c.questCurrentZoneFirst and O.QuestZoneMap(Read(C_Map.GetBestMapForUnit, "player")) or nil
     list.namedSections, list.sectionByName = {}, {}
     if not Finite(count) then return end
     headers = headers or {}
@@ -54,15 +76,20 @@ local function DifficultyColor(level)
     return ("|cff%02x%02x%02x"):format(floor(color.r * 255 + .5), floor(color.g * 255 + .5), floor(color.b * 255 + .5))
 end
 
-local function AddToSection(list, entry)
+local function AddToSection(list, entry, level)
     local header = Header(list, entry.id)
     if not header or header == "" then return end
     local section = list.sectionByName[header]
     if not section then
         local key = "questLog:" .. header
-        section = { key = key, rowKey = "section:" .. key, title = header, entries = {} }
+        section = { key = key, rowKey = "section:" .. key, title = header, entries = {},
+            level = math.huge, ordinal = #list.namedSections + 1, localZone = false }
         list.sectionByName[header] = section
         list.namedSections[#list.namedSections + 1] = section
+    end
+    if Finite(level) and level > 0 and level < section.level then section.level = level end
+    if list.localZone and not section.localZone then
+        section.localZone = O.QuestZoneMap(Read(GetQuestUiMapID, entry.id, true)) == list.localZone
     end
     entry.questHeader = header
     section.entries[#section.entries + 1] = entry
@@ -70,9 +97,10 @@ end
 
 function O.ApplyQuestLog(list, entry, c)
     local id = entry.id
-    if c.groupQuestsByHeader and not (c.groupReadyQuests and entry.group == "complete") then AddToSection(list, entry) end
+    local readLevel = c.showQuestLevel or c.questDifficultyColor or c.groupQuestsByHeader and c.questZoneSort == 3
+    local level = readLevel and Read(C_QuestLog.GetQuestDifficultyLevel, id)
+    if c.groupQuestsByHeader and not (c.groupReadyQuests and entry.group == "complete") then AddToSection(list, entry, level) end
     if c.showQuestLevel or c.questDifficultyColor then
-        local level = Read(C_QuestLog.GetQuestDifficultyLevel, id)
         if Finite(level) and level > 0 then
             local label = c.showQuestLevel and ("[%d] %s"):format(level, entry.title) or entry.title
             local color = c.questDifficultyColor and DifficultyColor(level)

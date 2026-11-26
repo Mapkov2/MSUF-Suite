@@ -275,7 +275,8 @@ local function Event(self, event, ...)
     end
     -- A subzone change collects the watched quests again unless their list is
     -- known to be whole and its zone groups still hold (O.CollectDirty).
-    if self.config.groupQuestsByZone and (event == "ZONE_CHANGED" or event == "ZONE_CHANGED_INDOORS") then
+    if (self.config.groupQuestsByZone or self.config.questCurrentZoneFirst)
+        and (event == "ZONE_CHANGED" or event == "ZONE_CHANGED_INDOORS") then
         Request(self, "questZones")
     end
     RequestEventSources(self, event, ...)
@@ -393,6 +394,7 @@ local function ContentSignature(c)
         .. tostring(c.showTravelersLog) .. ":" .. tostring(c.showEndeavors) .. ":" .. tostring(c.showRecipes)
         .. ":" .. tostring(c.groupQuestsByZone) .. ":" .. tostring(c.hideCompletedObjectives)
         .. ":" .. tostring(c.groupQuestsByHeader) .. ":" .. tostring(c.showQuestLevel)
+        .. ":" .. tostring(c.questZoneSort) .. ":" .. tostring(c.questCurrentZoneFirst) .. ":" .. (c.questZoneOrder or "")
         .. ":" .. tostring(c.questDifficultyColor) .. ":" .. tostring(c.showDungeonBadge)
         .. ":" .. tostring(c.showQuestLogCount) .. ":" .. tostring(c.questProgressColumn)
         .. ":" .. tostring(c.groupReadyQuests) .. ":" .. tostring(c.showQuestObjectiveIcons)
@@ -505,12 +507,15 @@ UpdateRaidCombatPause = function(self, event)
 end
 
 local function RaidCombatEvent(self, event)
-    UpdateRaidCombatPause(self, event)
+    self.focusCombat = NS.InCombat(event)
+    local paused = UpdateRaidCombatPause(self, event)
     if event == "PLAYER_REGEN_DISABLED" then
-        if O.StopQuestMotion(self) then Render(self) end
+        local moving = O.StopQuestMotion(self)
+        if not paused and (moving or self.config.focusQuestInCombat) then Render(self) end
     elseif event == "PLAYER_REGEN_ENABLED" then
         self:SuppressNative()
         O.UpdateQuestItem(self)
+        if not paused and self.config.focusQuestInCombat then Render(self) end
     end
 end
 
@@ -573,6 +578,7 @@ function M:Enable()
 end
 
 function M:Refresh()
+    self.focusCombat = NS.InCombat()
     if Raid then Raid.PrepareClock(self) end
     UpdateMinimapDock(self)
     self.retheme = true

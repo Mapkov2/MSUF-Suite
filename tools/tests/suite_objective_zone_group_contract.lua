@@ -58,6 +58,10 @@ do
     quests = Refresh()
     assert(quests[1].group == "localQuests" and quests[2].group == "otherQuests", "zone grouping lost the player's parent zone")
     assert(quests[3].group == "quests" and quests[4].group == "focused", "unreadable maps and focused quests must remain visible")
+    maps[20].parentMapID = 3
+    assert(Refresh()[1].group == "otherQuests", "a later collection retained old map ancestry")
+    maps[20].parentMapID = 2
+    assert(Refresh()[1].group == "localQuests", "a second ancestry change was missed")
     current = 3
     assert(Refresh()[1].group == "otherQuests" and quests[2].group == "localQuests", "zone changes must update existing rows")
 end
@@ -232,6 +236,9 @@ local function Run(forever)
     module:Enable()
     assert(Scans() == 1 and renders == 1, flavor .. ": enabling did not collect the quests once")
     CheckGroups("enabled")
+    local ancestryReads = Count("GetMapInfo")
+    print(flavor .. ": first collection of 25 watched quests used " .. ancestryReads .. " map hierarchy queries")
+    Budget(ancestryReads <= 5, flavor .. ": repeated public map ancestry within the same collection")
     local quests = module.sources.quests
     assert(quests[1].group == "localQuests" and quests[2].group == "otherQuests" and quests[3].group == "quests"
         and quests[4].group == "focused" and quests[5].group == "otherQuests" and quests[6].group == "otherQuests"

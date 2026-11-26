@@ -114,6 +114,7 @@ local function OnRowClick(button, mouseButton)
             button.secureWindow = nil
             return
         end
+        if O.QuestGroupMenu and O.QuestGroupMenu(M, button) then return end
         ShowContextMenu(button)
         return
     end
@@ -628,6 +629,7 @@ local function PaintRow(self, row, item, c, width, y)
         row.cachedText = item.text
     end
     row.kind, row.group, row.collapseKey = item.kind, item.group, item.collapseKey
+    if O.BindQuestGroupDrag then O.BindQuestGroupDrag(self, row) end
     row.altCollapse = item.kind == "entry" and item.hasLines and Finite(item.questID) or nil
     local rightInset = O.PaintQuestVoice(row, item, PaintRowWidgets(self, row, item, color, size), color)
     if item.dungeonBadge or row.questBadge then rightInset = O.PaintQuestBadge(self, row, item, rightInset) end
@@ -681,6 +683,13 @@ local function BuildFlat(self, c, grouped, closingKey)
     local flat, flatCount, totalEntries = self.flatWork or {}, 0, 0
     local questSource = self.sources.quests
     local named = questSource and questSource.namedSections
+    local focus = O.CombatFocus and O.CombatFocus(self, questSource, c)
+    if focus then
+        flatCount = AddFlat(flat, flatCount, "focused", focus, c, self.collapsedGroups,
+            self.collapsedEntries, GROUP, SECTION_KEYS, closingKey)
+        for i = #flat, flatCount + 1, -1 do flat[i] = nil end
+        return flat, flatCount, 1
+    end
     for i = 1, #ORDER do
         local group = ORDER[i]
         if named and group == "quests" then
