@@ -167,6 +167,9 @@ B.Section(id, "tracking", "What to remind", {
         "Set Cast next missing self-buff in Keybindings > MSUF Suite. Each press casts one missing self-buff outside combat."),
     Bool("classBuff", "Remind me of my known class raid buff", true),
     Bool("groupBuff", "Remind me when others need my group buff", false),
+    B.Tooltip(Bool("castGroupBuffs", "Cast missing group buffs", false),
+        "Outside combat, click a group buff reminder or use Cast next missing self-buff in Keybindings > MSUF Suite. "
+            .. "The key works even with group reminders off."),
     Bool("otherClassBuffs", "Remind me of missing buffs from classes in my group", false),
     B.Tooltip(Bool("raidBuffOverview", "Show raid buff coverage", false),
         "Shows buffed/total players for raid buffs supplied by classes in your group. Unreadable players are marked with ?. Updates outside combat."),

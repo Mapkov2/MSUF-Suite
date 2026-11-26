@@ -26,7 +26,7 @@ R.STATE = {
     -- newAlert: a newly shown reminder still owes its sound; dismissed: the
     -- reminders the player hid until the next reload (Alerts).
     view = { "host", "buttons", "preview", "previewShown", "previewing", "mask", "layout", "newAlert",
-        "dismissed", "allowed", "afterUpdate", "selfBuffButton" },
+        "dismissed", "allowed", "afterUpdate", "selfBuffButton", "buffKeyEnabled" },
     -- Following the cursor (Cursor): the OnUpdate driver (it runs while the
     -- host follows) and whether the host left its saved anchor.
     cursor = { "driver", "displaced" },

@@ -24,6 +24,7 @@ local function Widget()
         attributeWrites = attributeWrites + 1
         self.attributes[key] = value
     end
+    function w:GetAttribute(key) return self.attributes[key] end
     function w:SetShown(value) self.shown = value end
     function w:Show() self.shown = true end
     function w:Hide() self.shown = false end
@@ -61,9 +62,9 @@ local function Widget()
 end
 
 UIParent = Widget()
-CreateFrame = function(kind)
+CreateFrame = function(kind, name, parent, template)
     local frame = Widget()
-    frame.kind = kind
+    frame.kind, frame.name, frame.parent, frame.template = kind, name, parent, template
     frames[#frames + 1] = frame
     return frame
 end
@@ -1990,3 +1991,8 @@ knownSpell, auras, inventory, module.config = savedKnownSpell, savedAuras, saved
 NS.Client.isForever, NS.Client.modernEquipment = savedForever, savedModern
 
 print("Suite buff reminders: secure pool, targeted checks, Rogue spec poisons, advance warnings, restricted aura suppression, combat silence and cleanup passed")
+
+return {
+    namespace = private, module = module, events = eventFrame.events, runAfter = RunAfter,
+    fire = function(event, ...) eventFrame.OnEvent(eventFrame, event, ...) end,
+}

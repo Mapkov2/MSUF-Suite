@@ -34,17 +34,23 @@ local function NewRoster()
     return { units = {}, list = {} }
 end
 
+local function RosterTokens()
+    local raid = IsInRaid()
+    if not Public(raid) then return nil, 0 end
+    local count = raid and GetNumGroupMembers() or GetNumSubgroupMembers()
+    if not Public(count) or type(count) ~= "number" then return nil, 0 end
+    return raid and "raid" or "party", math.min(count, raid and 40 or 4)
+end
+
 -- The members are built into the idle one of two roster buffers, so a
 -- rebuild can tell a changed membership apart without allocating.
 local function FillRoster(roster)
     local units, list = roster.units, roster.list
     units.player = true
     list[1] = "player"
-    local raid = IsInRaid()
-    local count = raid and GetNumGroupMembers() or GetNumSubgroupMembers()
-    if not Public(count) or type(count) ~= "number" then return end
-    for i = 1, math.min(count, raid and 40 or 4) do
-        local unit = (raid and "raid" or "party") .. i
+    local prefix, count = RosterTokens()
+    for i = 1, count do
+        local unit = prefix .. i
         local player = UnitIsUnit(unit, "player")
         if Public(player) and player == false then
             units[unit] = true
@@ -250,8 +256,65 @@ local function BuffOn(unit, aliases, ranked)
     end
     return false
 end
-function R.GroupBuffOn(unit, aliases, ranked)
-    if not R.AurasRestricted() then return BuffOn(unit, aliases, ranked) end
+local function GroupBuffReadable(aliases, ranked, checkSpell)
+    -- Retail can expose a particular raid buff even with general aura
+    -- restrictions. Forever's name lookup can match any rank of the aura.
+    if not checkSpell or ranked then return not R.AurasRestricted() end
+    for _, spellID in ipairs(aliases) do
+        local secret = C_Secrets.ShouldSpellAuraBeSecret(spellID)
+        if not Public(secret) or secret ~= false then return false end
+    end
+    return true
+end
+
+function R.GroupBuffOn(unit, aliases, ranked, checkSpell)
+    if GroupBuffReadable(aliases, ranked, checkSpell) then return BuffOn(unit, aliases, ranked) end
+end
+
+local function CastInRange(unit, spellID, radiusSquared)
+    if not RangeEligible(unit) then return false end
+    local friendly = UnitCanAssist("player", unit)
+    if not Public(friendly) or friendly ~= true then return false end
+    if radiusSquared then
+        local distance, checked = UnitDistanceSquared(unit)
+        if Public(checked) and checked == true and Public(distance) and type(distance) == "number" then
+            return distance <= radiusSquared
+        end
+        -- Exact group distance can be withheld in instances. Trade distance
+        -- is a conservative check for Forever's 20-yard Battle Shout.
+        if radiusSquared == 400 then
+            local nearby = CheckInteractDistance(unit, 2)
+            return Public(nearby) and nearby == true
+        end
+        return ReadMemberRange(unit) == true
+    end
+    local inRange = C_Spell.IsSpellInRange(spellID, unit)
+    return Public(inRange) and inRange == true
+end
+
+-- Resolve the current roster and auras at the click. A coalesced reminder
+-- update may still describe the previous occupant of a party or raid slot.
+function R.MissingGroupCastUnit(buff, spellID, includePlayer)
+    local ranked = NS.Client.isForever
+    if not GroupBuffReadable(buff.auras, ranked, true) then return end
+    -- Forever's learned group ranks apply around the caster (SpellEffect
+    -- implicit target 56, radius 100), as do the spells with castRadius.
+    local radius = buff.castRadius or (buff.groupCasts and Listed(buff.groupCasts, spellID) and 100)
+    local radiusSquared = radius and radius * radius
+    local prefix, count = RosterTokens()
+    for i = 1, count do
+        local unit = prefix .. i
+        local isPlayer = UnitIsUnit(unit, "player")
+        if Public(isPlayer) and isPlayer == false then
+            local _, class
+            if buff.manaOnly then _, class = UnitClass(unit) end
+            if (not buff.manaOnly or Public(class) and R.ManaClass(class)) and CastInRange(unit, spellID, radiusSquared)
+                and BuffOn(unit, buff.auras, ranked) == false then
+                return radiusSquared and "player" or unit
+            end
+        end
+    end
+    if includePlayer and BuffOn("player", buff.auras, ranked) == false then return "player" end
 end
 
 -- Whether the player's own aura is on no member: true, false, or nil while
@@ -336,7 +399,8 @@ local function RefreshBuff(self, buff, states, changedUnit)
         if shared then return shared end
     end
     states = states or {}
-    local ranked, readable = NS.Client.isForever, not R.AurasRestricted()
+    local ranked = NS.Client.isForever
+    local readable = GroupBuffReadable(buff.auras, ranked, self.config.castGroupBuffs)
     if changedUnit then
         if readable then
             states[changedUnit] = BuffOn(changedUnit, buff.auras, ranked)

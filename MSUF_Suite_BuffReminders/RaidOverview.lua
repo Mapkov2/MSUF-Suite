@@ -67,13 +67,13 @@ function R.MarkRaidOverview(self, unit, event, info)
     return changed
 end
 
-local function ReadMember(row, unit)
+local function ReadMember(row, unit, checkSpell)
     local member = row.members[unit]
     if not member then
         member = { aliases = row.aliases, ranked = row.ranked }
         row.members[unit] = member
     end
-    local present, data = R.GroupBuffOn(unit, row.aliases, row.ranked)
+    local present, data = R.GroupBuffOn(unit, row.aliases, row.ranked, checkSpell)
     member.present, member.dirty, member.auraInstanceID = present, nil, nil
     if data then
         local id = data.auraInstanceID
@@ -91,7 +91,9 @@ function R.RefreshRaidOverview(self, unit)
     -- Hidden/first-show state owes a full snapshot. Do not apply a delta to
     -- uninitialized counts or spend native reads while that snapshot waits.
     if unit and self.list.needsFullRefresh then return end
+    local groupBuff = self.config.castGroupBuffs and self.group.buff
     for _, row in ipairs(self.raid.rows or {}) do
+        local checkSpell = groupBuff and groupBuff.auras == row.aliases
         if not unit then
             row.covered, row.unknown, row.total = 0, 0, 0
             local manaUnits = row.manaOnly and self.group.manaUnits
@@ -99,7 +101,7 @@ function R.RefreshRaidOverview(self, unit)
             for _, member in ipairs(self.group.unitList) do
                 if not manaUnits or manaUnits[member] then
                     row.total = row.total + 1
-                    ReadMember(row, member)
+                    ReadMember(row, member, checkSpell)
                 end
             end
         elseif not row.manaOnly or self.group.manaUnits[unit] then
@@ -110,7 +112,7 @@ function R.RefreshRaidOverview(self, unit)
                 elseif member.present == nil then
                     row.unknown = row.unknown - 1
                 end
-                ReadMember(row, unit)
+                ReadMember(row, unit, checkSpell)
             end
         end
     end

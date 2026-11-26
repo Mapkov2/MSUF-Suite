@@ -152,17 +152,21 @@ local function HideTooltip(button)
     if GameTooltip:IsOwned(button) then GameTooltip:Hide() end
 end
 
--- Secure action buttons stay raw CreateFrame: the template owns the click.
--- Their regions use the shared helpers like every other Suite region.
+-- Blizzard's out-of-combat template owns the action even if the
+-- visibility driver has not caught up to combat lockdown yet.
 local function MakeButton(self, index)
-    local button = CreateFrame("Button", nil, self.view.host, "SecureActionButtonTemplate")
+    local button = CreateFrame("Button", nil, self.view.host, "InsecureActionButtonTemplate")
     -- The left click is the secure cast or use (type1 in BindButton); a right or
     -- middle click has no secure action and only dismisses the reminder.
     button:RegisterForClicks("LeftButtonDown", "LeftButtonUp", "RightButtonUp", "MiddleButtonUp")
     R.CreateIcon(button)
     button:SetScript("OnEnter", Tooltip)
     button:SetScript("OnLeave", HideTooltip)
-    button:SetScript("PostClick", function(_, mouseButton) R.DismissClick(self, button, mouseButton) end)
+    button:SetScript("PreClick", function(_, mouseButton, down) R.PrepareGroupBuffClick(self, button, mouseButton, down) end)
+    button:SetScript("PostClick", function(_, mouseButton)
+        R.FinishGroupBuffClick(button, mouseButton)
+        R.DismissClick(self, button, mouseButton)
+    end)
     button:Hide()
     self.view.buttons[index] = button
     return button
@@ -272,7 +276,7 @@ end
 local function BindButton(button, entry)
     local action = (entry.kind == "spell" or entry.notice == "food") and "spell" or "item"
     local click = not entry.restock and not entry.notice
-    button:SetAttribute("type1", click and action or nil)
+    button:SetAttribute("type1", click and not entry.castBuff and action or nil)
     button:SetAttribute("spell1", click and action == "spell" and (entry.spellName or entry.id) or nil)
     button:SetAttribute("item1", click and action == "item" and ("item:" .. entry.id) or nil)
     button:SetAttribute("target-slot", entry.slot)
@@ -634,6 +638,7 @@ local function Resume(self)
     self.list.countsDirty = true
     RegisterEvents(self)
     SyncUnitEvents(self)
+    if self.view.buffKeyEnabled and not self.view.selfBuffButton then R.EnsureBuffKey(self) end
 end
 
 -- Only recompile at combat end when an input changed or item data was pending.

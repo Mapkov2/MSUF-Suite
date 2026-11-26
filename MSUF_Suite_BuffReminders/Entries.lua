@@ -148,7 +148,7 @@ local function Append(kind, id)
     entry.aliases, entry.poison, entry.poisonRank, entry.candidates = nil, nil, nil, nil
     entry.restock = false
     entry.category = buildingCategory
-    entry.group, entry.notice, entry.missingCount = nil, nil, nil
+    entry.group, entry.notice, entry.missingCount, entry.castBuff = nil, nil, nil, nil
     entry.ranked, entry.spellName, entry.ownAura = nil, nil, nil
     entry.remember, entry.memory, entry.rememberedAura, entry.missingOnly = nil, nil, nil, nil
     entry.ally, entry.allyMissing, entry.dismissed = nil, nil, nil
@@ -221,7 +221,7 @@ function R.SameEntries(left, right)
             or a.poisonRank ~= b.poisonRank or a.restock ~= b.restock or a.group ~= b.group or a.notice ~= b.notice
             or a.category ~= b.category or a.ranked ~= b.ranked or a.spellName ~= b.spellName
             or a.ally ~= b.ally or a.remember ~= b.remember or a.memory ~= b.memory or a.missingOnly ~= b.missingOnly
-            or a.requiredStacks ~= b.requiredStacks then
+            or a.requiredStacks ~= b.requiredStacks or a.castBuff ~= b.castBuff then
             return false
         end
         if forever and (a.ownAura ~= b.ownAura or a.tracking ~= b.tracking or a.unit ~= b.unit
@@ -747,10 +747,11 @@ local function AddRaidBuff(c, buff)
     local entry = cast and AddSpell(cast, buff.auras[1], buff.auras)
     if entry then
         entry.group = c.groupBuff == true
+        entry.castBuff = c.castGroupBuffs and buff or nil
         entry.ranked = NS.Client.isForever == true
         if entry.ranked then
             entry.spellName = R.RankName(cast)
-            entry.groupTarget = entry.group and not (groupCast or buff.selfCast)
+            entry.groupTarget = entry.group and not (entry.castBuff or groupCast or buff.selfCast)
             entry.manaOnly = buff.manaOnly
         end
     end

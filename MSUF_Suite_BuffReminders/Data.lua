@@ -40,9 +40,9 @@ local CLASS_BUFF = {
     MAGE = { cast = 1459, auras = { 1459, 432778 } },
     PRIEST = { cast = 21562, auras = { 21562 } },
     SHAMAN = { cast = 462854, auras = { 462854 } },
-    WARRIOR = { cast = 6673, auras = { 6673 } },
+    WARRIOR = { cast = 6673, castRadius = 100, auras = { 6673 } },
     EVOKER = {
-        cast = 364342,
+        cast = 364342, castRadius = 100,
         auras = { 381732, 381741, 381746, 381748, 381749,
             381750, 381751, 381752, 381753, 381754, 381756, 381757, 381758 }
     },
@@ -57,7 +57,7 @@ local FOREVER_CLASS_BUFF = {
     PRIEST = { cast = 1243, casts = { 10938, 10937, 2791, 1245, 1244, 1243 },
         groupCasts = { 21564, 21562 }, auras = { 1243, 21562 } },
     WARRIOR = { cast = 6673, casts = { 25289, 11551, 11550, 11549, 6192, 5242, 6673 },
-        selfCast = true, auras = { 6673 } },
+        selfCast = true, castRadius = 20, auras = { 6673 } },
 }
 R.DIVINE_SPIRIT = { cast = 14752, casts = { 27841, 14819, 14818, 14752 },
     groupCasts = { 27681 }, auras = { 14752, 27681 }, manaOnly = true }

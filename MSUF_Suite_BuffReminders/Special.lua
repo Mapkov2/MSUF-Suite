@@ -4,49 +4,109 @@ local R = P.BuffReminders
 local Public = S.Public
 local function NextSelfBuff(self)
     for _, entry in ipairs(self.list.entries or {}) do
-        if entry.kind == "spell" and entry.present == false and not entry.dismissed
-            and not entry.ally and not entry.group and not entry.slot and not entry.notice and not entry.unit then
-            return entry.spellName or entry.id
+        if entry.kind == "spell" and not entry.dismissed and not entry.ally
+            and not entry.slot and not entry.notice and not entry.unit then
+            if not entry.group and entry.present == false then return entry.spellName or entry.id end
+            if entry.castBuff and entry.group and self.config.classBuff
+                and R.GroupBuffOn("player", entry.aliases, entry.ranked, true) == false then
+                return entry.spellName or entry.id
+            end
         end
     end
 end
 
-local function SyncSelfBuffKey(self, allowed)
-    if NS.InCombat() then return end
-    local view = self.view
-    local spell = allowed and self.config.selfBuffKey and NextSelfBuff(self) or nil
-    local button = view.selfBuffButton
-    if not button then
-        if not self.config.selfBuffKey then return end
-        button = S.CreateFrame("Button", "MSUFSuiteSelfBuff", UIParent,
-            "SecureActionButtonTemplate,SecureHandlerStateTemplate")
-        button:RegisterForClicks("AnyUp")
-        button:SetAttribute("useOnKeyDown", false)
-        button:SetAttribute("unit", "player")
-        button:SetAttribute("_onstate-msufbuff", 'if newstate == "blocked" then self:SetAttribute("type1", nil) end')
-        RegisterStateDriver(button, "msufbuff", "[combat][petbattle][vehicleui] blocked; normal")
-        view.selfBuffButton = button
-    end
-    if button:GetAttribute("spell1") ~= spell then button:SetAttribute("spell1", spell) end
-    local action = spell and button:GetAttribute("state-msufbuff") ~= "blocked" and "spell" or nil
-    if button:GetAttribute("type1") ~= action then button:SetAttribute("type1", action) end
+local function ArmBuffClick(button, spell, unit)
+    button:SetAttribute("spell1", spell)
+    button:SetAttribute("unit", unit)
+    button:SetAttribute("type1", "spell")
 end
 
-local function UpdateCursorAndKey(self)
-    R.SyncCursor(self)
-    SyncSelfBuffKey(self, self.view.allowed and not S.editMode)
+local function DisarmBuffClick(button, mouseButton)
+    if mouseButton == "LeftButton" and button:GetAttribute("type1") and not NS.InCombat() then
+        button:SetAttribute("type1", nil)
+    end
+end
+
+local function GroupCastAllowed(self)
+    local instance = self.environment.instanceType
+    if not self.config.castGroupBuffs or not instance or instance == "arena" or instance == "pvp" then return false end
+    local dead, vehicle = UnitIsDeadOrGhost("player"), UnitInVehicle("player")
+    return Public(dead) and dead == false and Public(vehicle) and vehicle == false
+end
+
+function R.PrepareGroupBuffClick(self, button, mouseButton, down)
+    local entry = button.entry
+    if mouseButton ~= "LeftButton" or not entry or not entry.castBuff or NS.InCombat() then return end
+    if (down == true) ~= SecureActionButton_ShouldUseOnKeyDown(button) then return end
+    DisarmBuffClick(button, mouseButton)
+    if not self.active or S.editMode or not self.view.allowed or not GroupCastAllowed(self) then return end
+    local unit = R.MissingGroupCastUnit(entry.castBuff, entry.id, self.config.classBuff)
+    -- An advance warning for our own active buff remains a self cast.
+    if not unit and self.config.classBuff and entry.present == true and entry.expiresAt
+        and R.GroupBuffOn("player", entry.aliases, entry.ranked, true) == true then
+        unit = "player"
+    end
+    if unit then ArmBuffClick(button, entry.spellName or entry.id, unit) end
+end
+
+function R.FinishGroupBuffClick(button, mouseButton)
+    if button.entry and button.entry.castBuff then DisarmBuffClick(button, mouseButton) end
+end
+
+local function FindGroupCast(buff)
+    if not buff then return end
+    local cast = R.RaidBuffCast(buff)
+    if not cast then return end
+    local unit = R.MissingGroupCastUnit(buff, cast, false)
+    if unit then
+        local name = NS.Client.isForever and R.RankName(cast)
+        return name or cast, unit
+    end
+end
+
+local function NextGroupBuff()
+    local class = R.PlayerClass()
+    if not class then return end
+    local spell, unit = FindGroupCast(R.ClassBuff(class))
+    if spell then return spell, unit end
+    return FindGroupCast(R.ExtraClassBuff(class))
+end
+
+local function PrepareBuffKey(self, button, mouseButton, down)
+    if mouseButton ~= "LeftButton" or down or NS.InCombat() then return end
+    DisarmBuffClick(button, mouseButton)
+    if not self.active or not self.view.buffKeyEnabled or S.editMode then return end
+    if SecureCmdOptionParse("[petbattle][vehicleui] blocked") then return end
+    local spell, unit
+    if GroupCastAllowed(self) then spell, unit = NextGroupBuff() end
+    if not spell and self.config.selfBuffKey and self.view.allowed then spell, unit = NextSelfBuff(self), "player" end
+    if spell then ArmBuffClick(button, spell, unit) end
+end
+
+function R.EnsureBuffKey(self)
+    local view = self.view
+    if not view.buffKeyEnabled or view.selfBuffButton or NS.InCombat() then return end
+    -- Blizzard's template performs the bound action only outside lockdown.
+    -- Nothing needs to watch combat or refresh a target between key presses.
+    local button = S.CreateFrame("Button", "MSUFSuiteSelfBuff", UIParent, "InsecureActionButtonTemplate")
+    button:RegisterForClicks("AnyUp")
+    button:SetAttribute("useOnKeyDown", false)
+    button:SetScript("PreClick", function(_, mouseButton, down) PrepareBuffKey(self, button, mouseButton, down) end)
+    button:SetScript("PostClick", DisarmBuffClick)
+    view.selfBuffButton = button
 end
 
 function R.RefreshSpecialControls(self)
     R.StyleNotices(self)
-    self.view.afterUpdate = self.config.selfBuffKey and UpdateCursorAndKey or R.SyncCursor
-    if not self.config.selfBuffKey and self.view.selfBuffButton then SyncSelfBuffKey(self, false) end
+    self.view.afterUpdate = R.SyncCursor
+    self.view.buffKeyEnabled = self.config.selfBuffKey or self.config.castGroupBuffs
+    R.EnsureBuffKey(self)
 end
 
 function R.ReleaseSpecialControls(self)
     R.HideSpecialText(self)
     R.CloseReadyRaidBuffNames(self)
-    if self.view.selfBuffButton then SyncSelfBuffKey(self, false) end
+    self.view.buffKeyEnabled = false
 end
 
 local EVENTS = { "PET_BAR_UPDATE", "PET_UI_UPDATE", "UNIT_PET" }
