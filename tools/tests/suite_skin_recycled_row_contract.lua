@@ -266,6 +266,49 @@ end
 
 ------------------------------------------------------------------ gold text of a recycled row
 do
+    local regions, reads = {}, 0
+    for i = 1, 120 do
+        local region = Region()
+        function region:GetObjectType() reads = reads + 1 return "Texture" end
+        regions[i] = region
+    end
+    local text = FontString(1, 0.82, 0)
+    local getter = text.GetTextColor
+    text.GetTextColor = nil
+    regions[#regions + 1] = text
+    local node = Node(regions)
+    local coldVM = 0
+    debug.sethook(function() coldVM = coldVM + 100 end, "", 100)
+    Yellow.TrackFrame(node)
+    debug.sethook()
+    print(("cold artwork scan: %d instructions, %d texture type reads"):format(coldVM, reads))
+    Check(reads == 120, "first window scan failed to classify native artwork")
+    Check(coldVM <= 14700, "cold font classification repeats guarded type lookups")
+    text.GetTextColor = getter
+    Check(Yellow.TrackFrame(node) == 1 and text.writes == 1, "late native text getter missed")
+    local confirmed = reads
+    for _ = 1, 8 do Yellow.TrackFrame(node) end
+    Check(reads == confirmed and text.writes == 1, "repeated artwork scan reclassified known regions")
+
+    local label = FontString(1, 0.82, 0)
+    local pooled = { Node({ label }) }
+    function label:GetObjectType() return Secret() end
+    Check(Yellow.TrackFrames(pooled, 1) == 0, "restricted native type was used")
+    function label:GetObjectType() return "FontString" end
+    Check(Yellow.TrackFrames(pooled, 1) == 1 and label.writes == 1, "temporarily unreadable pooled font lost")
+    local forbidden = FontString(1, 0.82, 0)
+    function forbidden:IsForbidden() return true end
+    function forbidden:GetObjectType() error("read a forbidden native region") end
+    local guarded = { Node({ forbidden }) }
+    Check(Yellow.TrackFrames(guarded, 1) == 0, "forbidden region queried")
+    function forbidden:IsForbidden() return false end
+    function forbidden:GetObjectType() return "FontString" end
+    Check(Yellow.TrackFrames(guarded, 1) == 1, "font missed after restrictions lifted")
+    local imposter = Region()
+    imposter.GetTextColor = function() error("read color on a non-font region") end
+    Check(Yellow.TrackFrame(Node({ imposter })) == 0, "foreign region with a color getter claimed")
+end
+do
     local white, grey = FontString(1, 1, 1), FontString(0.5, 0.5, 0.5)
     local nodes = { Node({ Region(), white, Region() }), Node({ grey }), Node({ Region() }), Node({}) }
     Check(Yellow.TrackFrames(nodes, #nodes) == 0 and white.writes == 0 and grey.writes == 0
@@ -415,6 +458,55 @@ do
     texture.atlas = "checkmark-minimal"
     button.slots.GetPushedTexture = texture
     Check(Checkmarks.TrackButton(button, "snapshot"), "a previously restricted slot could no longer be skinned")
+end
+
+-- The talent tree's layout frames have no button art. Pooled frames may
+-- acquire a field or method after the first visit.
+do
+    local nodes = {}
+    for i = 1, 169 do nodes[i] = Node() end
+    local function TrackLayout()
+        for i = 1, #nodes do Checkmarks.TrackButton(nodes[i], "talents") end
+    end
+    local scans = RoleScans(TrackLayout)
+    Check(scans == 0, ("169 layout frames ran %d empty art classifications"):format(scans))
+    local buttons = {}
+    for i = 1, 67 do buttons[i] = ArtButton({ GetNormalTexture = ArtTexture("talent") }) end
+    local occupied = RoleScans(function()
+        for i = 1, #buttons do Checkmarks.TrackButton(buttons[i], "talents") end
+    end)
+    Check(occupied == #buttons, ("67 buttons with one texture ran %d classifications"):format(occupied))
+    local pooled, check = nodes[1], ArtTexture("checkmark-minimal")
+    pooled.Icon = check
+    Check(Checkmarks.TrackButton(pooled, "talents") and check.vertexWrites == 1, "added checkmark field skipped")
+    pooled.Icon = nil
+    Check(RoleScans(TrackLayout) == 0, "released layout frame still classified empty slots")
+    pooled.GetCheckedTexture = function() return check end
+    Check(Checkmarks.TrackButton(pooled, "talents") and check.vertexWrites == 2, "new getter missed after reuse")
+    pooled.GetCheckedTexture = nil
+    local previous = NS.WindowActionSkin.GetExplicitKind
+    NS.WindowActionSkin.GetExplicitKind = function(button) if button == pooled then return "close" end end
+    Check(Checkmarks.TrackButton(pooled, "talents") and actionTracks[pooled] == "close", "explicit action without art lost")
+    NS.WindowActionSkin.GetExplicitKind = previous
+    local actions = NS.WindowActionSkin
+    local owned, kind, applied, disable = actions.HasOwnedStates, actions.GetKind, actions.IsApplied, actions.Disable
+    actions.HasOwnedStates = function(button) return button == pooled end
+    actions.GetKind = function() return "minimize" end
+    Check(Checkmarks.TrackButton(pooled, "talents") and actionTracks[pooled] == "minimize", "owned action lost")
+    actions.HasOwnedStates, actions.GetKind = owned, kind
+    local released
+    actions.IsApplied = function(button) return button == pooled end
+    actions.Disable = function(button, owner) if button == pooled then released = owner end end
+    Check(not Checkmarks.TrackButton(pooled, "talents") and released == "talents", "removed action was not released")
+    actions.IsApplied, actions.Disable = applied, disable
+    pooled.GetNormalTexture, pooled.GetCheckedTexture, pooled.Icon = 17, Secret(), "pending"
+    Check(not Checkmarks.TrackButton(pooled, "talents"), "non-callable or restricted asset slot was invoked")
+    pooled.GetNormalTexture, pooled.GetCheckedTexture = nil, nil
+    pooled.Icon = Secret()
+    Check(not Checkmarks.TrackButton(pooled, "talents"), "restricted pooled field read")
+    pooled.Icon = check
+    function pooled:IsForbidden() return true end
+    Check(not Checkmarks.TrackButton(pooled, "talents") and check.vertexWrites == 2, "forbidden pooled art painted")
 end
 
 ------------------------------------------------------------------ button art of a recycled row

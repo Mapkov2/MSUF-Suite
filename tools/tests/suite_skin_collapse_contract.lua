@@ -697,6 +697,109 @@ local function CheckWarmReopenCapture()
 end
 CheckWarmReopenCapture()
 
+-- A provider can first become eligible for tree motion in its native layout
+-- callback. Count actual row enumerations, including motion's ghost artwork.
+do
+    local changing = List(UIParent, false)
+    local category = Node({ isCategory = true }, nil, 1)
+    local child = Node({ entryID = 1 }, category)
+    local header, entry = Row(changing, category, 100), Row(changing, child, 80, "before")
+    changing.rows = { header, entry }
+    local walks, visits = 0, 0
+    function changing:ForEachFrame(fn)
+        walks = walks + 1
+        for _, row in ipairs(self.rows) do visits = visits + 1; fn(row) end
+    end
+    NS.ResultMotion.Track(changing, "provider-adoption")
+    Check(walks == 0, "plain provider unexpectedly captured rows")
+    changing.provider = { GetRootNode = function(self) return self end }
+    changing:TriggerEvent("layout")
+    print(("First native tree layout: %d row walks, %d row visits"):format(walks, visits))
+    Check(walks == 1 and visits == 2, "adopting a result tree walked its rows twice in the same layout")
+    local state = NS.AddonListMotion.scrollStates[changing]
+    Check(state.hadSnapshot and NS.ContentMotion.records[changing].group:IsPlaying(),
+        "first eligible layout lost its motion baseline or provider fade")
+    entry.label.text, entry.top = "changed", 75
+    changing:TriggerEvent("initialized", entry, child)
+    changing:TriggerEvent("layout")
+    Check(walks == 2 and visits == 4 and state.previous[child] == 75 and state.records[entry].ghost.fonts[1].text == "changed",
+        "a later native layout missed the updated row text or position")
+    changing:Hide()
+    changing:TriggerEvent("layout")
+    Check(walks == 2, "hidden layout walked rows")
+    NS.ResultMotion.ReleaseOwner("provider-adoption")
+    local eager = List(UIParent, true)
+    eager.rows = { Row(eager, category, 100) }
+    NS.ResultMotion.Track(eager, "eager-result")
+    Check(NS.AddonListMotion.scrollStates[eager].hadSnapshot, "explicit adoption postponed a visible prepared tree")
+    NS.ResultMotion.ReleaseOwner("eager-result")
+end
+
+local function CheckCopyGeometry()
+    local list, parent = List(UIParent, true), Node({}, nil, 12)
+    list.rows = { Row(list, parent, 300) }
+    local rects, scalar, fileReads, deepWalks = 0, 0, 0, 0
+    local secret, secretResult = {}, false
+    local function NativeRect(region)
+        region.left, region.top, region.width, region.height = 3.25, 221.75, 80.25, 14.5
+        function region:GetRect()
+            rects = rects + 1
+            if self.noRect then return end
+            if secretResult and self.withSecret then return self.left, secret, self.width, self.height end
+            return self.left, self.top - self.height, self.width, self.height
+        end
+        for _, method in ipairs({ "GetLeft", "GetTop", "GetWidth", "GetHeight" }) do
+            local old = region[method]
+            region[method] = function(self) scalar = scalar + 1; return old(self) end
+        end
+    end
+    for i = 1, 12 do
+        local row = Row(list, Node({}, parent), 250)
+        local tex = row:CreateTexture()
+        tex.kind, tex.atlas = "Texture", "native-atlas"
+        function tex:GetTexture() fileReads = fileReads + 1; return self.texture end
+        NativeRect(row.label); NativeRect(tex)
+        function row:GetRegions() return self.label, tex end
+        local branch, edge = Frame(row), Frame(row)
+        branch.children, row.children = { edge }, { branch }
+        function edge:GetChildren() deepWalks = deepWalks + 1 end
+        list.rows[#list.rows + 1] = row
+    end
+    local instructions = 0
+    debug.sethook(function() instructions = instructions + 100 end, "", 100)
+    NS.ResultMotion.Track(list, "row-copy-geometry")
+    debug.sethook()
+    print(("12 text/atlas rows: %d rectangles, %d geometry single reads, %d file reads, %d depth-limit child queries, %d VM")
+        :format(rects, scalar, fileReads, deepWalks, instructions))
+    Check(rects == 24 and scalar == 0 and fileReads == 0 and deepWalks == 0,
+        "capturing visible row artwork used redundant geometry, atlas or child lookups")
+    local row = list.rows[2]
+    local copy = NS.AddonListMotion.scrollStates[list].records[row].ghost
+    local saved = copy.regions[copy.fonts[1]]
+    Check(saved.left == 3.25 and saved.top == -28.25 and saved.width == 80.25 and saved.height == 14.5
+        and copy.textures[1].atlas == "native-atlas", "row snapshot changed fractional UI-unit geometry or atlas")
+    local tex = select(2, row:GetRegions())
+    tex.atlas, tex.texture = nil, 472
+    row.label.left, row.label.top = 9.75, 220.5
+    list:TriggerEvent("initialized", row, row.node)
+    list:TriggerEvent("layout")
+    Check(saved.left == 9.75 and saved.top == -29.5 and copy.textures[1].texture == 472 and fileReads == 1,
+        "row snapshot missed new geometry or transition from atlas to file")
+    row.label.noRect, row.label.left = true, 7.25
+    list:TriggerEvent("initialized", row, row.node)
+    list:TriggerEvent("layout")
+    Check(scalar == 4 and saved.left == 7.25, "missing native rectangle lost individually readable geometry")
+    local public = NS.Safety.Public
+    NS.Safety.Public = function(value) return value ~= secret and public(value) end
+    row.label.noRect, row.label.withSecret, secretResult = false, true, true
+    list:TriggerEvent("initialized", row, row.node)
+    list:TriggerEvent("layout")
+    NS.Safety.Public = public
+    Check(scalar == 4 and saved.shown == false, "restricted native geometry was reused or re-read piece by piece")
+    NS.ResultMotion.ReleaseOwner("row-copy-geometry")
+end
+CheckCopyGeometry()
+
 Check(H.ForeignWrites() == 0, "extended collapse paths changed native anchors or alpha")
 
 print("Suite Blizzard collapse (" .. (arg[2] or "Mainline") .. "): " .. checks .. " checks passed")

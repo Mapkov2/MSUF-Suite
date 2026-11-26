@@ -215,6 +215,11 @@ local NS = {
     Surface = { SkinOwnedButton = function() return true end },
     Registry = {
         AddListener = function(owner, callback) listeners[owner] = callback end,
+        CancelJob = function(job)
+            for index, pending in ipairs(queued) do
+                if pending == job then table.remove(queued, index) return end
+            end
+        end,
         QueueJob = function(job)
             for _, pending in ipairs(queued) do if pending == job then return end end
             queued[#queued + 1] = job
@@ -240,7 +245,8 @@ NS.WindowActionSkin = NS.WindowActionSkin or { Yield = function() end }
 assert(loadfile(root .. "/MSUF_Suite/Core/HostBridgeMenu.lua"))("MSUF_Suite", core)
 NS.SuiteCore = function() return core end
 for _, file in ipairs({ "../MSUF_Suite/Appearance/Safety.lua", "Core/Defaults.lua", "Core/DefaultsLooks.lua",
-    "Rendering/WindowControlPolicy.lua", "Rendering/WindowControlChrome.lua", "Rendering/WindowControlDelegate.lua",
+    "Rendering/WindowControlPolicy.lua", "Rendering/WindowControlNativeArt.lua", "Rendering/WindowControlChrome.lua",
+    "Rendering/WindowControlDelegate.lua",
     "Rendering/WindowControls.lua" }) do
     assert(loadfile(root .. "/MSUF_Suite_Skin/" .. file))("MSUF_Suite_Skin", NS)
 end

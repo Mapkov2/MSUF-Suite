@@ -329,6 +329,7 @@ end
 do
     local queued = {}
     C_Timer = { After = function(_, callback) queued[#queued + 1] = callback end }
+    dofile(root .. "/tools/tests/skin_registry_timer_fixture.lua")(C_Timer)
     local NS = { IsCombatLocked = function() return false end }
     assert(loadfile(root .. "/MSUF_Suite_Skin/Core/Registry.lua"))("MSUF_Suite_Skin", NS)
     NS.Safety = { Dispatch = function(callback, ...) return callback(...) end }

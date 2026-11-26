@@ -13,6 +13,56 @@ local body = [======[
     local other = Native("ProfessionsFrame", 1100, 50, 400, 600)
     local bank = Native("BankFrame", 1600, 50, 300, 600)
     W.TrackFocus(merchant, "merchant")
+    do
+        W.TrackFocus(bag, "clear-group")
+        local rootReads, layerReads = 0, 0
+        local bagRect, merchantRect = bag.GetRect, merchant.GetRect
+        local bagLayer, merchantLayer = bag.GetFrameLevel, merchant.GetFrameLevel
+        function bag:GetRect() rootReads = rootReads + 1; return bagRect(self) end
+        function merchant:GetRect() rootReads = rootReads + 1; return merchantRect(self) end
+        function bag:GetFrameLevel() layerReads = layerReads + 1; return bagLayer(self) end
+        function merchant:GetFrameLevel() layerReads = layerReads + 1; return merchantLayer(self) end
+        for _ = 1, 20 do
+            bag.left = bag.left + 1
+            F.RefreshChrome(bag)
+            Tick()
+        end
+        print(("20 clear-group layouts: %d native root rectangles, %d native root levels"):format(rootReads, layerReads))
+        Check(rootReads == 0 and layerReads == 0, "a clear shopping pair measured native geometry without a veil")
+        -- A late tab and a move during shopping must be seen on the first dimmed frame.
+        local tab = Native("ClearGroupTab", bag.left - 25, 300, 25, 50)
+        tab.parent, tab.kind = bag, "Button"
+        local children = bag.GetChildren
+        function bag:GetChildren() return tab end
+        local overlap = Native("CharacterFrame", 450, 100, 125, 400)
+        W.TrackFocus(overlap, "overlap")
+        Click(merchant)
+        local clear = F.records[bag]
+        Check(Dimmed(overlap) and clear.rect.left == bag.left and clear.extentCount == 1,
+            "first dim after shopping missed new bag position or tab")
+        for _, veil in ipairs(F.records[overlap].veils) do
+            Check(not veil.dim or not Intersects(veil.rect, tab), "first painted frame overlaps a late bag tab")
+        end
+        F.ReleaseOwner("overlap")
+        -- A previously painted slice may still be fading. An unreadable clear
+        -- frame must finish hiding it immediately, as on the normal paint path.
+        local fading = NS.WindowFocusVisual.Create()
+        fading.visible = true
+        clear.veils[1] = fading
+        local hide, immediate = NS.WindowFocusVisual.Hide, false
+        NS.WindowFocusVisual.Hide = function(record, now)
+            if record == fading and now then immediate = true end
+            return hide(record, now)
+        end
+        function bag:GetRect() return nil end
+        F.RefreshChrome(bag); Tick()
+        Check(immediate, "an unreadable clear window left a fading slice visible")
+        NS.WindowFocusVisual.Hide = hide
+        clear.veils[1] = nil
+        bag.GetChildren, bag.GetRect, merchant.GetRect = children, bagRect, merchantRect
+        bag.GetFrameLevel, merchant.GetFrameLevel, bag.left = bagLayer, merchantLayer, 500
+        F.ReleaseOwner("clear-group")
+    end
     W.TrackFocus(other, "other")
     Check(Dimmed(merchant), "a merchant without bags became exempt")
     W.TrackFocus(bank, "bank")

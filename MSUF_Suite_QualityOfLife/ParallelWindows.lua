@@ -231,13 +231,20 @@ local function ApplyPendingLayout()
     if not M.active and ownedCount == 0 then watcher:UnregisterAllEvents() end
 end
 
+local function ClosePendingWindows(frame, cap)
+    local combat = NS.InCombat()
+    if frame and EscapeAllowed() and CanClose(frame, false, combat) then CloseWindow(frame, combat) end
+    ApplyWindowLimit(cap)
+end
+
 flush = function()
     local frame, cap = pendingClose, pendingCap
     pendingClose, pendingCap = nil, nil
     ForgetClosedWindows()
-    local combat = NS.InCombat()
-    if frame and EscapeAllowed() and CanClose(frame, false, combat) then CloseWindow(frame, combat) end
-    ApplyWindowLimit(cap)
+    if frame or cap then
+        if S.WithWindowFocusBatch then S.WithWindowFocusBatch(ClosePendingWindows, frame, cap)
+        else ClosePendingWindows(frame, cap) end
+    end
     if not NS.InCombat() then ApplyPendingLayout() end
     queued = false
     SyncEscape()

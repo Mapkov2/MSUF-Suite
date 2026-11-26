@@ -153,6 +153,20 @@ for _, flavor in ipairs({ "Mainline", "Forever" }) do
     for _, record in ipairs(F.records[a].veils) do
         Check(not record.dim or not Intersects(record.rect, F.records[b].rect), "inactive veil crosses active window")
     end
+    local withFocusBatch = assert(F.WithBatch, "missing synchronous multi-window focus batch")
+    local relayouts, layout = 0, NS.WindowFocusChrome.UpdateWindows
+    NS.WindowFocusChrome.UpdateWindows = function(...)
+        relayouts = relayouts + 1
+        return layout(...)
+    end
+    withFocusBatch(function()
+        b:Hide()
+        Check(not F.records[b].focusVisible, "batch retained hidden window in focus inventory")
+        withFocusBatch(function() b:Show() end)
+        Check(relayouts == 0, "nested native close sequence repainted before it finished")
+    end)
+    Check(relayouts == 1 and F.active.frame == b and Dimmed(a), "focus failed to settle synchronously once")
+    NS.WindowFocusChrome.UpdateWindows = layout
     local shell = Frame(nil, a)
     shell.left, shell.bottom, shell.width, shell.height = 100, 80, 940, 552
     function shell:GetBottom() return self.bottom end

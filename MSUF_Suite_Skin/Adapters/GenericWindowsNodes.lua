@@ -26,8 +26,7 @@ local FadeAtlasRegions = Shared.FadeAtlasRegions
 local EnsureThemeListener = Shared.EnsureThemeListener
 local GlyphColor = Shared.GlyphColor
 
-local staticPopupButtons = Kit.WeakSet()
-local legacyPanelButtons = Kit.WeakSet()
+local nativeArtButtons = Kit.WeakSet()
 
 local separatorFields = {
     "Divider", "Divider1", "Divider2", "HorizontalDivider", "VerticalDivider",
@@ -171,6 +170,7 @@ local function NormalizedPath(value)
 end
 
 local function TexturePath(texture)
+    if not Safety.Public(texture) or type(texture) ~= "table" then return nil end
     for index = 1, #texturePathGetters do
         local value = Safety.Read(texture, texturePathGetters[index])
         if type(value) == "string" then return NormalizedPath(value) end
@@ -178,22 +178,19 @@ local function TexturePath(texture)
     return nil
 end
 
-local function MatchesStateButtonArt(button, art)
-    for getterName, expected in pairs(art) do
-        local texture = Call(button, getterName)
-        -- A few exact Blizzard dialog templates omit a disabled state.
-        if not (getterName == "GetDisabledTexture" and not texture)
-            and TexturePath(texture) ~= expected then
-            return false
-        end
-    end
-    return true
-end
-
-local function IsNativeArtButton(button, cache, art)
-    if cache[button] then return true end
-    if not MatchesStateButtonArt(button, art) then return false end
-    cache[button] = true
+local function IsNativeArtButton(button)
+    if nativeArtButtons[button] then return true end
+    local normal = TexturePath(Call(button, "GetNormalTexture"))
+    local art
+    if normal == staticPopupButtonArt.GetNormalTexture then art = staticPopupButtonArt
+    elseif normal == legacyPanelButtonArt.GetNormalTexture then art = legacyPanelButtonArt
+    else return false end
+    if TexturePath(Call(button, "GetPushedTexture")) ~= art.GetPushedTexture
+        or TexturePath(Call(button, "GetHighlightTexture")) ~= art.GetHighlightTexture then return false end
+    -- Both native templates allow an absent disabled texture.
+    local disabled = Call(button, "GetDisabledTexture")
+    if not Safety.Public(disabled) or disabled and TexturePath(disabled) ~= art.GetDisabledTexture then return false end
+    nativeArtButtons[button] = true
     return true
 end
 
@@ -227,10 +224,7 @@ local buttonFamilies = {
         -- StaticPopup/Dialog and a few legacy panel templates do not inherit
         -- UIPanelButtonTemplate and use one full native normal texture.
         -- Replace their states reversibly, then suppress only verified art.
-        matches = function(button)
-            return IsNativeArtButton(button, staticPopupButtons, staticPopupButtonArt)
-                or IsNativeArtButton(button, legacyPanelButtons, legacyPanelButtonArt)
-        end,
+        matches = IsNativeArtButton,
         apply = "ApplyButton",
         specs = SpecPair({
             role = "button", activeRole = "buttonPrimary",
@@ -299,10 +293,10 @@ local buttonFamilies = {
     },
 }
 
-local function SkinButton(button, owner, metrics)
+local function SkinButton(button, owner, metrics, name)
     local allowImplicitProtected = metrics.allowImplicitProtected
     if not CanSkin(button, allowImplicitProtected) then return false end
-    local name = ObjectName(button)
+    name = name or ObjectName(button)
     for index = 1, #buttonFamilies do
         local family = buttonFamilies[index]
         if family.matches(button, name) then
@@ -331,8 +325,8 @@ local function LooksLikeInput(editBox, name)
         or name:find("EditBox", 1, true) ~= nil
 end
 
-local function SkinInput(editBox, owner, metrics)
-    if not LooksLikeInput(editBox, ObjectName(editBox))
+local function SkinInput(editBox, owner, metrics, name)
+    if not LooksLikeInput(editBox, name or ObjectName(editBox))
         or not NS.ControlSkin.ApplySearchBox(editBox, owner, inputSpecs[metrics.allowImplicitProtected]) then
         return false
     end
@@ -511,12 +505,11 @@ local function SkinDialogBorder(frame, owner, metrics)
     end
 end
 
-local function SkinPanel(frame, owner, metrics)
+local function SkinPanel(frame, owner, metrics, name)
     if HasDialogBorderChrome(frame) then
         SkinDialogBorder(frame, owner, metrics)
         return true
     end
-    local name = ObjectName(frame)
     local translucentFrame = HasTranslucentFrameChrome(frame)
     if not HasChrome(frame)
         or (not translucentFrame and not ContainsNameToken(name, panelNameTokens)) then
@@ -605,20 +598,20 @@ local function SkinNode(frame, owner, metrics, isRoot, buttonTracked)
 
     FadeFields(owner, frame, separatorFields)
     if objectType == "Button" or IsDropdown(frame) then
-        if not SkinButton(frame, owner, metrics) then
+        if not SkinButton(frame, owner, metrics, name) then
             SkinUnknownButton(frame, owner, metrics, name, objectType)
         end
         if objectType == "Button" then
             SkinItemIconButton(frame, owner, metrics, name)
         end
     elseif objectType == "EditBox" then
-        SkinInput(frame, owner, metrics)
+        SkinInput(frame, owner, metrics, name)
     elseif objectType == "CheckButton" then
         SkinIconButtonBase(frame, owner, metrics)
     elseif LooksLikeScrollBar(frame, objectType, name) then
         SkinScrollBar(frame, owner, metrics)
     elseif objectType == "Frame" or objectType == "ScrollFrame" or objectType == "ScrollBox" then
-        SkinPanel(frame, owner, metrics)
+        SkinPanel(frame, owner, metrics, name)
     end
 end
 

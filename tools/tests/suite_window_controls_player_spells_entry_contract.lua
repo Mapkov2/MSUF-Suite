@@ -25,11 +25,15 @@ for _, flavor in ipairs({ "Mainline", "Forever" }) do
         EventUtil = { ContinueOnAddOnLoaded = function(_, callback) continuation = callback end }
         local function Heavy() traversals = traversals + 1; error("heavy spell skin ran during combat") end
         NS.Surface.Attach, NS.Surface.Ensure = Heavy, Heavy
+        -- ApplyAll also initializes these independent catalog owners.
+        NS.CommonArt = { Apply = function() return true end }
         NS.GenericWindows = {
+            PrepareInteractionWindows = function() return true end,
             ApplyFrame = Heavy, Apply = Heavy, Disable = function() end,
             IsCategoryEnabled = function(category) return category ~= "social" end,
         }
         NS.Cosmetics = { Fade = Heavy }
+        NS.ControlSkin = { MarkFixedButtonSpec = function(spec) return spec end }
         local function Load(path, override)
             assert(loadfile(override or root .. "/MSUF_Suite_Skin/" .. path))("MSUF_Suite_Skin", NS)
         end

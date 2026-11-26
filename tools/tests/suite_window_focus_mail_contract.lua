@@ -46,7 +46,7 @@ local body = [======[
         Check(not F.records[split].extents and #mailJobs == 1,
             "bags opened by the mailbox ran a synchronous focus pass or queued another pass")
         FlushMailFocus()
-        Check(F.active.frame == split and F.records[mail].extents and F.records[split].extents,
+        Check(F.active.frame == split and F.records[mail].footprintCount == 1 and F.records[split].footprintCount,
             "mail and bag focus did not settle together while combat was still active")
     else
         Check(F.active.frame == mail and #mailJobs == 0, "Retail mailbox focus was deferred")

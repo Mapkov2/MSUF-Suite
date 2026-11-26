@@ -8,12 +8,14 @@ local Safety, Geometry, Visual = NS.Safety, NS.WindowFocusGeometry, NS.WindowFoc
 local visible, generations = {}, {}
 local presentations = setmetatable({}, { __mode = "k" })
 local count, serial = 0, 0
+local batchDepth, batchPending = 0, false
 local driver = CreateFrame("Frame")
 driver:Hide()
 local mouseListening, geometryPending, scaleListening = false, false, false
+local geometryArmed = false
 local moving = {}
 local movingCount = 0
-local inputWindow
+local inputWindow, inputControl
 local Reconcile, UpdateListeners, QueueGeometry, GamepadChanged
 local gamepadRegistry
 local GAMEPAD_FOCUS_EVENT = "Gamepad.RefreshFrameFocus"
@@ -79,12 +81,15 @@ local function Hide(state, immediate)
 end
 
 local function StopDriver()
-    geometryPending, inputWindow = false, nil
+    geometryPending, inputWindow, inputControl = false, nil, nil
     for state in pairs(moving) do moving[state] = nil end
     movingCount = 0
     driver:UnregisterEvent("GLOBAL_MOUSE_UP")
-    driver:SetScript("OnUpdate", nil)
-    driver:Hide()
+    if geometryArmed then
+        geometryArmed = false
+        driver:SetScript("OnUpdate", nil)
+        driver:Hide()
+    end
 end
 
 local function ChooseActive()
@@ -98,9 +103,9 @@ end
 
 local function Paint(state)
     if state.keepClear or not state.readable then Hide(state, false) return end
-    if not Geometry.Begin(state) then Hide(state, true) return end
+    if state.covered or not Geometry.Begin(state) then Hide(state, true) return end
     for _, other in pairs(visible) do
-        if other ~= state and other.readable and (other.keepClear or Geometry.Above(other, state))
+        if other ~= state and other.readable and not other.covered and (other.keepClear or Geometry.Above(other, state))
             and not Geometry.SubtractWindow(state, other) then Hide(state, true) return end
     end
     if not NS.WindowFocusPopups.Subtract(state) then Hide(state, true) return end
@@ -115,30 +120,15 @@ local function Paint(state)
     for index = state.sliceCount + 1, #state.veils do Visual.Hide(state.veils[index], true) end
 end
 
-Reconcile = function()
-    if mailFocusQueued then return end
-    local active = ChooseActive()
-    if not Enabled() or count < 2 or not active then
-        for _, state in pairs(visible) do Hide(state, true) end
-        UpdateListeners()
-        return
-    end
+local function AssignFocusRoles(active)
     local merchant = visible[Safety.Field(_G, "MerchantFrame")]
     local auction = visible[Safety.Field(_G, "AuctionHouseFrame")]
     local bank = visible[Safety.Field(_G, "BankFrame")]
     local mail = visible[Safety.Field(_G, "MailFrame")]
     local openMail = visible[Safety.Field(_G, "OpenMailFrame")]
     local bagsOpen = false
-    for frame, state in pairs(visible) do
-        local surface = presentations[frame]
-        state.presentation = IsVisible(surface) and surface or nil
-        state.readable = IsVisible(frame) and Geometry.Read(state.presentation or frame, state.rect)
-            and Geometry.Layer(state)
-        if state.readable then
-            NS.WindowFocusChrome.Update(state)
-            NS.WindowFocusLayers.Prepare(state)
-        end
-        if tradingBags[state.name] then bagsOpen = true end
+    for _, state in pairs(visible) do
+        if tradingBags[state.name] then bagsOpen = true break end
     end
     -- These workflows use multiple windows together. Keep their participants
     -- clear even when another window receives input.
@@ -151,20 +141,74 @@ Reconcile = function()
     local character = visible[Safety.Field(_G, "CharacterFrame")]
     local upgrade = visible[Safety.Field(_G, "ItemUpgradeFrame")]
     local upgrading = character and upgrade
-    local clearBounds = active.readable
+    local needsVeil, hasSlices = false, false
     for _, state in pairs(visible) do
         state.keepClear = state == active or upgrading and (state == character or state == upgrade)
             or shopping and (state == merchant or state == auction or tradingBags[state.name])
             or banking and (state == bank or tradingBags[state.name])
             or mailing and (state == mail or state == openMail or tradingBags[state.name])
             or bagPair and (state == backpack or state == reagent)
+        needsVeil = needsVeil or not state.keepClear
+        hasSlices = hasSlices or #state.veils > 0
+    end
+    return needsVeil, hasSlices
+end
+
+Reconcile = function()
+    if batchDepth > 0 then batchPending = true return end
+    if mailFocusQueued then return end
+    local active = ChooseActive()
+    -- All bounds in this synchronous layout share UIParent's coordinate space.
+    local uiScale = count >= 2 and active and Enabled() and Safety.Read(UIParent, "GetEffectiveScale")
+    if type(uiScale) ~= "number" or uiScale <= 0 then
+        for _, state in pairs(visible) do Hide(state, true) end
+        UpdateListeners()
+        return
+    end
+    local needsVeil, hasSlices = AssignFocusRoles(active)
+    if not needsVeil and not hasSlices then
+        -- Nothing has ever painted these clear windows. Leave their chrome
+        -- dirty so the first real veil sees current bounds and late children.
+        NS.WindowFocusChrome.UpdateWindows(visible, false, uiScale)
+        UpdateListeners()
+        return
+    end
+    local clearBounds = true
+    for frame, state in pairs(visible) do
+        local surface = presentations[frame]
+        local presentation = surface and IsVisible(surface) and surface or nil
+        if state.presentation ~= presentation then state.chromeDirty = true end
+        state.presentation = presentation
+        state.readable = IsVisible(frame) and Geometry.Read(state.presentation or frame, state.rect, uiScale)
+            and Geometry.Layer(state)
         if state.keepClear and not state.readable then clearBounds = false end
+    end
+    NS.WindowFocusChrome.UpdateWindows(visible, needsVeil and clearBounds, uiScale)
+    -- Native callbacks may relayout the UI while discovering descendants. Drop
+    -- those footprints and let the existing geometry worker settle them once.
+    if needsVeil and Safety.Read(UIParent, "GetEffectiveScale") ~= uiScale then
+        clearBounds = false
+        for _, state in pairs(visible) do state.chromeDirty = true end
+        QueueGeometry()
     end
     for _, state in pairs(visible) do
         if clearBounds then Paint(state) else Hide(state, true) end
     end
     UpdateListeners()
 end
+
+-- Native panel hides may synchronously reopen other windows. Inventory and
+-- outlines follow each event; remaining veils see the final native ordering.
+function Focus.WithBatch(run, ...)
+    batchDepth = batchDepth + 1
+    Safety.Dispatch(run, ...)
+    batchDepth = batchDepth - 1
+    if batchDepth == 0 and batchPending then
+        batchPending = false
+        Reconcile()
+    end
+end
+if not NS.migrationOnly then NS.SuiteCore().Suite.WithWindowFocusBatch = Focus.WithBatch end
 
 local function SettleMailFocus()
     mailFocusQueued = false
@@ -198,7 +242,8 @@ local function Step()
         if not inputWindow then driver:UnregisterEvent("GLOBAL_MOUSE_UP") end
     end
     Reconcile()
-    if movingCount == 0 and not geometryPending then
+    if geometryArmed and movingCount == 0 and not geometryPending then
+        geometryArmed = false
         driver:SetScript("OnUpdate", nil)
         driver:Hide()
     end
@@ -207,8 +252,11 @@ end
 QueueGeometry = function()
     if count < 2 or not Enabled() then return end
     geometryPending = true
-    driver:SetScript("OnUpdate", Step)
-    driver:Show()
+    if not geometryArmed then
+        geometryArmed = true
+        driver:SetScript("OnUpdate", Step)
+        driver:Show()
+    end
 end
 
 UpdateListeners = function()
@@ -250,8 +298,13 @@ UpdateListeners = function()
     if not listen then StopDriver() end
 end
 
-local function Promote(state)
-    state.chromeDirty = true
+local function Promote(state, opening)
+    -- Raising focus changes the order. Native layout notifications separately
+    -- invalidate contours; an unannounced new or reparented child is checked
+    -- against the last discovery before its geometry is reused.
+    if not opening then
+        for _, window in pairs(visible) do window.verifyTopology = true end
+    end
     serial = serial + 1
     state.order = serial
     Reconcile()
@@ -278,8 +331,9 @@ local function MouseDown()
     if not Safety.Public(foci) or type(foci) ~= "table" then return end
     local state = FindMouseWindow(foci[1])
     if state then
+        inputWindow, inputControl = state, foci[1] ~= state.frame
+        if inputControl then state.chromeDirty = true else state.verifyTopology = true end
         if state ~= Focus.active then Promote(state) end
-        state.chromeDirty, inputWindow = true, state
         driver:RegisterEvent("GLOBAL_MOUSE_UP")
         QueueGeometry()
     end
@@ -291,15 +345,18 @@ driver:SetScript("OnEvent", function(_, event)
         for _, state in pairs(visible) do UpdateOutline(state) end
     elseif event == "GLOBAL_MOUSE_DOWN" then MouseDown()
     elseif event == "GLOBAL_MOUSE_UP" then
-        local state = inputWindow
+        local state, control = inputWindow, inputControl
         StopDriver()
-        Reconcile()
         if state and state.focusVisible then
-            state.chromeDirty = true
-            QueueGeometry()
+            if control then state.chromeDirty = true else state.verifyTopology = true end
         end
+        Reconcile()
+        if control and state and state.focusVisible then QueueGeometry() end
     else
-        for _, state in pairs(visible) do UpdateOutline(state) end
+        for _, state in pairs(visible) do
+            state.chromeDirty = true
+            UpdateOutline(state)
+        end
         QueueGeometry()
     end
 end)
@@ -307,10 +364,16 @@ end)
 local function Shown(frame)
     local state = Focus.records[frame]
     if not state or not Owned(state) or not IsVisible(frame) then return end
-    if not visible[frame] then visible[frame], count = state, count + 1 end
+    if not visible[frame] then
+        visible[frame], count = state, count + 1
+        -- Validate the previous visible contour on demand. Hidden roots never
+        -- poll their descendants or prepare a frame for the next show.
+        state.checkAfterShow = state.reopenCache ~= nil
+        state.chromeDirty = true
+    end
     state.focusVisible = true
     UpdateOpeningOutline(state)
-    Promote(state)
+    Promote(state, true)
 end
 
 local function Hidden(frame)

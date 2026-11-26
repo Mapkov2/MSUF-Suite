@@ -1826,14 +1826,14 @@ end
 -- tools/tests/suite_skin_generic_windows_contract.lua until this review and
 -- its classification are updated deliberately; in game, CatalogGlass.lua
 -- (loads next) closes only an entry whose roots it cannot classify.
-local REVIEWED_CATALOG_FINGERPRINT = "7ca91e10-3bf0467c"
-local REVIEWED_CATALOG_ENTRIES = 242
-local REVIEWED_CATALOG_ROOTS = 466
+local REVIEWED_CATALOG_FINGERPRINT = "625fbd06-5f697a21"
+local REVIEWED_CATALOG_ENTRIES = 222
+local REVIEWED_CATALOG_ROOTS = 425
 local REVIEWED_SOURCE_REVISION = "297d7aaaa736f346b3e036f38ee088eaf7f8c07f"
 if NS.Client.isForever then
-    REVIEWED_CATALOG_FINGERPRINT = "3f3ff4e6-7a326ab0"
-    REVIEWED_CATALOG_ENTRIES = 243
-    REVIEWED_CATALOG_ROOTS = 467
+    REVIEWED_CATALOG_FINGERPRINT = "3cc51e0e-78040e79"
+    REVIEWED_CATALOG_ENTRIES = 223
+    REVIEWED_CATALOG_ROOTS = 426
     REVIEWED_SOURCE_REVISION = "bebcb6bf309cf41b41bd74f8ca651e6a105b2676"
 end
 
@@ -1884,7 +1884,7 @@ local homogeneousGlassKinds = {
             "islands-party-pose", "match-celebration-party-pose",
             "warfronts-party-pose", "spectate", "perks-program", "catalog-shop",
             "character-customization", "barbershop", "splash-frame",
-            "wow-survey", "housing-controls",
+            "wow-survey", "housing-controls", "item-reference-tooltips",
         },
     },
     {

@@ -36,6 +36,10 @@ local body=[======[
     local ok,err=pcall(EnterWindow)
     Check(ok and continued, "merchant focus prevented the rest of the window paint: "..tostring(err))
     Tick()
+    Check(scanned==0, "merchant and inventory stay clear together; their children cannot contribute to a veil")
+    local other=Native("CharacterFrame",450,150,360,500)
+    Check(W.TrackFocus(other,"character"),"could not open a third window")
+    Click(merchant); Tick()
     Check(F.records[merchant] and next(animation.hooks)==nil,"incompatible animation was hooked")
     Check(mixed.hooks.OnShow and mixed.hooks.OnSizeChanged and not mixed.hooks.OnHide,
         "partially supported descendant lost its valid layout hooks")
@@ -44,7 +48,7 @@ local body=[======[
     local before=scanned
     sibling:Hide(); Tick()
     Check(scanned>before,"normal child's hide no longer updates the visible native tree")
-    F.ReleaseOwner("blizzardWindows"); F.ReleaseOwner("inventory")
+    F.ReleaseOwner("blizzardWindows"); F.ReleaseOwner("inventory"); F.ReleaseOwner("character")
 end
 print("suite_window_focus_script_capabilities_contract: "..checks.." checks passed")
 ]======]

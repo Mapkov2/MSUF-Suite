@@ -9,12 +9,19 @@ local ranks = { BACKGROUND = 1, LOW = 2, MEDIUM = 3, HIGH = 4, DIALOG = 5,
     FULLSCREEN = 6, FULLSCREEN_DIALOG = 7, TOOLTIP = 8 }
 local MAX_SLICES = 32
 
-function Geometry.Read(frame, rect)
-    local left, bottom = Safety.Read(frame, "GetLeft"), Safety.Read(frame, "GetBottom")
-    local width, height = Safety.Read(frame, "GetWidth"), Safety.Read(frame, "GetHeight")
-    local scale, uiScale = Safety.Read(frame, "GetEffectiveScale"), Safety.Read(UIParent, "GetEffectiveScale")
+function Geometry.Read(frame, rect, uiScale, boundsMethod, nativeSample)
+    -- GetRect returns the same four local coordinates together on both
+    -- clients. An unanchored or restricted region has no usable rectangle.
+    local left, bottom, width, height = Safety.Call(frame, boundsMethod or "GetRect")
+    if not (Safety.Public(left) and Safety.Public(bottom) and Safety.Public(width) and Safety.Public(height)) then return false end
+    local scale = Safety.Read(frame, "GetEffectiveScale")
+    uiScale = uiScale or Safety.Read(UIParent, "GetEffectiveScale")
     if type(left) ~= "number" or type(bottom) ~= "number" or type(width) ~= "number" or type(height) ~= "number"
         or type(scale) ~= "number" or type(uiScale) ~= "number" or width <= 0 or height <= 0 or uiScale <= 0 then return false end
+    if nativeSample then
+        nativeSample.left, nativeSample.bottom, nativeSample.width, nativeSample.height, nativeSample.unitScale =
+            left, bottom, width, height, scale
+    end
     local ratio = scale / uiScale
     rect.unitScale = ratio
     rect.left, rect.bottom, rect.width, rect.height = left * ratio, bottom * ratio, width * ratio, height * ratio

@@ -327,6 +327,7 @@ local function StoreFrameState(frame, owner, mode, metrics, previousState, rootS
     local state = previousState or {}
     state.owner = owner
     state.mode = mode
+    state.bagPass, state.preparedShell = nil, nil
     state.rootSurfaceAttached = rootSurfaceAttached
     state.childSurfaceTargets = metrics.childSurfaceTargets
     state.rootChromeTargets = metrics.rootChromeTargets
@@ -343,7 +344,7 @@ end
 -- including any art an earlier pass of this owner faded.
 local function ResolveRootArt(frame, owner, metrics, wantsRootSurface, previous)
     metrics.fullscreenGuarded = wantsRootSurface and not metrics.accentOnly
-        and IsFullscreenRoot(frame) or false
+        and (previous and previous.preparedShell and Kit.WindowShellFits(frame) ~= true or IsFullscreenRoot(frame)) or false
     if metrics.fullscreenGuarded then
         metrics.preserveRootArt = true
     end
@@ -554,7 +555,7 @@ local function ApplyFrameNow(frame, owner, mode)
 
     local rootSurfaceAttached = false
     if wantsRootSurface and not metrics.fullscreenGuarded then
-        if not Attach(owner, frame, RootSpec(mode, allowImplicitProtected), metrics) then
+        if not Attach(owner, frame, RootSpec(mode, allowImplicitProtected), metrics, NS.Surface.Ensure) then
             return false, "surface", metrics
         end
         rootSurfaceAttached = true
@@ -601,7 +602,7 @@ local function ApplyFrameNow(frame, owner, mode)
     if not nativeListChrome and ModeValue(mode, "listItem", false) ~= true then GenericWindows.TrackCollapseMotion(frame, owner) end
     if not nativeListChrome and wantsRootSurface and not metrics.accentOnly and not metrics.fullscreenGuarded then
         local role = RootRole(mode)
-        GenericWindows.TrackMenuMotion(frame, owner, role == "shell" or role == "panel")
+        GenericWindows.TrackMenuMotion(frame, owner, role == "shell" or role == "panel", ModeValue(mode, "contentOnlyMotion", false))
     end
     metrics.windowControls = NS.WindowControls.Attach(frame, owner) == true
     return true, "applied", metrics
@@ -802,6 +803,7 @@ function GenericWindows.ApplyFrame(frame, owner, mode, deferToOwner)
 end
 
 Shared.CatalogMode = CatalogMode
+Shared.OwnedMode, Shared.RootSpec = OwnedMode, RootSpec
 Shared.ApplyFrameNow = ApplyFrameNow
 
 return GenericWindows

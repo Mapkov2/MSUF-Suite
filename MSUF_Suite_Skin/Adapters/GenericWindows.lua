@@ -29,8 +29,8 @@ local TrackMenuMotion, ReleaseMenuMotion, PrepareWindowMotion = function() end, 
 function GenericWindows.SetMenuMotionProvider(track, release, prepare)
     TrackMenuMotion, ReleaseMenuMotion, PrepareWindowMotion = track, release, prepare
 end
-function GenericWindows.TrackMenuMotion(target, owner, window)
-    return TrackMenuMotion(target, owner, false, window)
+function GenericWindows.TrackMenuMotion(target, owner, window, contentOnly)
+    return TrackMenuMotion(target, owner, contentOnly == true, window)
 end
 function GenericWindows.PrepareWindowMotion(target, owner) PrepareWindowMotion(target, owner) end
 local TrackContentMotion, ReleaseContentMotion = function() end, function() end
@@ -172,11 +172,11 @@ local function CountControl(owner, control, metrics)
     end
 end
 
-local function Attach(owner, target, spec, metrics)
+local function Attach(owner, target, spec, metrics, apply)
     if not target or not CanSkin(target, spec.allowImplicitProtected) then
         return false
     end
-    if not NS.Surface.Attach(target, spec) then
+    if not (apply or NS.Surface.Attach)(target, spec) then
         metrics.errors = metrics.errors + 1
         return false
     end

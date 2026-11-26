@@ -636,6 +636,11 @@ end
 local function OnPanelHide(frame)
     local state = WindowControls.states[frame]
     if not state then return end
+    -- A parked window restores its native anchors after close. Minimized and
+    -- clamped windows can also owe a release when their controls were disabled.
+    if not state.park and not state.minimized and not state.positionClamp then
+        NS.Registry.CancelJob(state.replayShow)
+    end
     if state.park and not frame:IsShown() then Policy.ParkClosed(state) end
     activeInventory[frame] = nil
     if not state.minimized then activeStates[frame] = nil end

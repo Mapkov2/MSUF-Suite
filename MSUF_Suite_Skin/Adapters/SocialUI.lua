@@ -128,6 +128,24 @@ local function SkinContent(state, content)
     Kit.SkinControl(state, Field(content, "ActionButton"), ACTION_SPEC)
 end
 
+-- Blizzard creates the side dialogs and supported tab pages hidden, then
+-- SetActiveContentFrame shows the selected page. Re-read the published field
+-- on wake so a replaced child never acquires the old child's skin.
+local function ApplyPart(state, key, rootPass)
+    local frame = state.frame
+    local part = Field(frame, key)
+    if not part or Kit.DeferHidden(part, state, ApplyPart, state, key) then return end
+    if not rootPass and NS.IsCombatLocked() then
+        Owners.RunOrDefer(state, key, ApplyPart, key)
+        if not Safety.CanCreateRegions(frame, false) then return end
+    end
+    if key == "BattleNetBroadcastFrame" or key == "BattleNetUnavailableNoticeFrame" then
+        SkinBattleNetDialog(state, part, key == "BattleNetBroadcastFrame")
+    else
+        SkinContent(state, part)
+    end
+end
+
 -- Selection is mirrored later by the SetSelected hook (OnCardSelected).
 SkinSocialCard = function(state, card)
     if not state.active or not Safety.Public(card) or Safety.IsForbidden(card)
@@ -283,11 +301,11 @@ local function ApplyState(state)
 
     Kit.SkinControl(state, Field(frame, "CloseButton"), CLOSE_SPEC)
     SkinBattleNetBar(state, frame)
-    SkinBattleNetDialog(state, Field(frame, "BattleNetUnavailableNoticeFrame"), false)
-    SkinBattleNetDialog(state, Field(frame, "BattleNetBroadcastFrame"), true)
+    ApplyPart(state, "BattleNetUnavailableNoticeFrame", true)
+    ApplyPart(state, "BattleNetBroadcastFrame", true)
 
     for index = 1, #CONTENT_KEYS do
-        SkinContent(state, Field(frame, CONTENT_KEYS[index]))
+        ApplyPart(state, CONTENT_KEYS[index], true)
     end
     InstallLifecycleHooks(frame)
     RegisterFriendCards(state)

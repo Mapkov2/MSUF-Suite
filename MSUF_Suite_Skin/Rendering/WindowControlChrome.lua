@@ -190,19 +190,36 @@ function Chrome.Title(state)
     return (state.name:gsub("Frame$", ""):gsub("(%l)(%u)", "%1 %2"))
 end
 local captionArt = setmetatable({}, { __mode = "k" })
+local function NewCaptionBars()
+    local caption = NS.SuiteCore().WindowCaption
+    return caption.NewBars and caption.NewBars() or {}
+end
 local function PaintCaption(button, refreshGlyph)
     local art = captionArt[button]
-    if refreshGlyph then NS.SuiteCore().WindowCaption.UpdateGlyph(button, art) end
+    local caption = NS.SuiteCore().WindowCaption
+    if refreshGlyph then caption.UpdateGlyph(button, art) end
     local active = not art.disabled and (art.hover or art.down)
     local r, g, b, a = NS.Theme.GetColor(art.disabled and "disabled" or "text")
     -- Windows' close cell turns red under the pointer, its cross white.
     if art.kind == "close" and active then r, g, b, a = 1, 1, 1, 1 end
-    for _, texture in ipairs(art.bars) do texture:SetColorTexture(r, g, b, a) end
-    if art.kind == "close" then
-        local dr, dg, db = NS.Theme.GetColor("danger")
-        art.fill:SetColorTexture(dr, dg, db, active and (art.down and 1 or 0.85) or 0)
+    if caption.PaintGlyph then
+        caption.PaintGlyph(art.bars, r, g, b, a)
     else
-        art.fill:SetColorTexture(1, 1, 1, active and (art.down and 0.17 or 0.10) or 0)
+        for _, texture in ipairs(art.bars) do texture:SetColorTexture(r, g, b, a) end
+    end
+    if art.kind == "close" then
+        r, g, b = NS.Theme.GetColor("danger")
+        a = active and (art.down and 1 or 0.85) or 0
+    else
+        r, g, b = 1, 1, 1
+        a = active and (art.down and 0.17 or 0.10) or 0
+    end
+    if not (Safety.Public(r) and Safety.Public(g) and Safety.Public(b) and Safety.Public(a)) then
+        art.fillR = nil
+        art.fill:SetColorTexture(r, g, b, a)
+    elseif art.fillR ~= r or art.fillG ~= g or art.fillB ~= b or art.fillA ~= a then
+        art.fill:SetColorTexture(r, g, b, a)
+        art.fillR, art.fillG, art.fillB, art.fillA = r, g, b, a
     end
 end
 Chrome.PaintActionCell = PaintCaption
@@ -239,7 +256,7 @@ function Chrome.Control(button, kind, offset, disabled)
     button:SetFrameLevel(button:GetParent():GetFrameLevel() + offset)
     local fill = button:CreateTexture(nil, "BACKGROUND")
     fill:SetAllPoints(button)
-    captionArt[button] = { fill = fill, bars = {}, disabled = disabled }
+    captionArt[button] = { fill = fill, bars = NewCaptionBars(), disabled = disabled }
     LayoutCaption(button, kind)
     if disabled then
         button:EnableMouse(false)
@@ -266,14 +283,24 @@ local function TitleRight(frame, scale)
     return right * titleScale / scale
 end
 
+-- Widget type is fixed for a created frame. Remember only public non-buttons;
+-- every candidate obstacle still supplies live visibility, bounds and scale.
+local nonButtons = setmetatable({}, { __mode = "k" })
+local function IsObstacleButton(child)
+    if nonButtons[child] then return false end
+    local kind = Safety.Read(child, "GetObjectType")
+    if kind == "Button" or kind == "CheckButton" then return true end
+    if kind then nonButtons[child] = true end
+    return false
+end
+
 local function CaptionObstacle(state, scale, right, low, high, ...)
     local obstacle, titleLimit = 0, right
     for index = 1, select("#", ...) do
         local child = select(index, ...)
         if not Safety.Public(child) then return right, nil end
-        local kind = Safety.Read(child, "GetObjectType")
         if child ~= state.close and child ~= state.minimize and child ~= state.maximize
-            and (kind == "Button" or kind == "CheckButton") and Safety.Read(child, "IsShown") then
+            and IsObstacleButton(child) and Safety.Read(child, "IsShown") then
             local top, bottom = Safety.Read(child, "GetTop"), Safety.Read(child, "GetBottom")
             local x, left = Safety.Read(child, "GetRight"), Safety.Read(child, "GetLeft")
             local childScale = Safety.Read(child, "GetEffectiveScale")
@@ -372,114 +399,18 @@ local function DrawnCell(state, key)
     cell = Safety.CreateChildFrame("Frame", Chrome.Parent(state))
     local fill = cell:CreateTexture(nil, "BACKGROUND")
     fill:SetAllPoints(cell)
-    captionArt[cell] = { fill = fill, bars = {} }
+    captionArt[cell] = { fill = fill, bars = NewCaptionBars() }
     cellStates[cell] = state
     state[key] = cell
     return cell
 end
 
--- A native button or texture can acquire a secret alpha even after its public
--- alpha was captured. Keep its native value until its owner supplies a public one.
-local nativeAlphas = setmetatable({}, { __mode = "k" })
-local fadeOwners = setmetatable({}, { __mode = "k" }) -- false after release; the hook remains
+local NativeArt = NS.WindowControlNativeArt
+local FadeNative, RestoreNative, FadeSockets = NativeArt.Fade, NativeArt.Restore, NativeArt.FadeSockets
+local NativeShown, Report = NativeArt.Shown, NativeArt.Report
+Chrome.IsFaded = NativeArt.IsFaded
 local RefreshFocus = function() end
 function Chrome.SetFocusRefresh(callback) RefreshFocus = callback end
-function Chrome.IsFaded(region) return nativeAlphas[region] ~= nil end
-
-local function FadePublicAlpha(region)
-    local alpha = Safety.Read(region, "GetAlpha")
-    if alpha == nil then nativeAlphas[region] = nil return end
-    nativeAlphas[region] = nativeAlphas[region] or alpha
-    if alpha ~= 0 then region:SetAlpha(0) end
-end
-local function KeepFaded(region, alpha)
-    if not fadeOwners[region] then return end
-    if not Safety.Public(alpha) then nativeAlphas[region] = nil
-    elseif alpha ~= 0 or nativeAlphas[region] == nil then FadePublicAlpha(region) end
-end
-
--- Remove the old action skin while our cells cover Blizzard's buttons.
-local function Yield(target, yield)
-    NS.WindowActionSkin.Yield(target, yield)
-    for _, key in ipairs({ "MaximizeButton", "MinimizeButton" }) do
-        local child = Safety.Field(target, key)
-        if child then NS.WindowActionSkin.Yield(child, yield) end
-    end
-end
-
--- target, its art regions, and a size toggle's buttons with theirs.
-local function NativeParts(target)
-    local parts = { target, Safety.Call(target, "GetRegions") }
-    for _, key in ipairs({ "MaximizeButton", "MinimizeButton" }) do
-        local button = Safety.Field(target, key)
-        if Safety.Public(button) and button then
-            parts[#parts + 1] = button
-            for _, region in ipairs({ Safety.Call(button, "GetRegions") }) do parts[#parts + 1] = region end
-        end
-    end
-    return parts
-end
-
-local function Fade(state, region)
-    if not Safety.Public(region) or not Safety.HasMethod(region, "SetAlpha") then return end
-    if fadeOwners[region] == nil then hooksecurefunc(region, "SetAlpha", KeepFaded) end
-    fadeOwners[region] = state
-    FadePublicAlpha(region)
-end
-
--- Alpha only, so combat too; the old action skin lets go outside combat.
-local function FadeNative(state, target)
-    if type(target) ~= "table" or Safety.IsForbidden(target) then return false end
-    if Safety.CanDecorate(target, not NS.IsCombatLocked()) then Yield(target, true) end
-    state.nativeRoots = state.nativeRoots or setmetatable({}, { __mode = "k" })
-    state.nativeRoots[target] = true
-    for _, region in ipairs(NativeParts(target)) do Fade(state, region) end
-    return true
-end
-
--- Fade matching socket art on the native window and its overlaid panes.
-local function FadeSockets(state)
-    local frame = state.frame
-    local right, top = Safety.Read(frame, "GetRight"), Safety.Read(frame, "GetTop")
-    if not right or not top then return end
-    for _, owner in ipairs({ frame, Safety.Call(frame, "GetChildren") }) do
-        local corner = Safety.Field(Safety.Field(owner, "NineSlice"), "TopRightCorner")
-        local cornerRight, cornerTop = Safety.Read(owner, "GetRight"), Safety.Read(owner, "GetTop")
-        if corner and cornerRight and cornerTop and math.abs(cornerRight - right) < 6 and math.abs(cornerTop - top) < 6
-            and Safety.Read(owner, "IsShown") then
-            FadeNative(state, corner)
-        end
-    end
-end
-
-local function RestoreNative(state, target)
-    if not state.nativeRoots or not state.nativeRoots[target]
-        or not Safety.CanDecorate(target, not NS.IsCombatLocked()) then return end
-    state.nativeRoots[target] = nil
-    state.restores = (state.restores or 0) + 1
-    Yield(target, false)
-    for _, region in ipairs(NativeParts(target)) do
-        if Safety.Public(region) and fadeOwners[region] == state then
-            local alpha = nativeAlphas[region]
-            fadeOwners[region], nativeAlphas[region] = false, nil
-            if alpha ~= nil and Safety.Read(region, "GetAlpha") ~= nil then region:SetAlpha(alpha) end
-        end
-    end
-end
-
--- Field report: one chat line per window when Blizzard's X or size toggle
--- shows under our cells, before the caption fades it again.
-local function Report(state, moment)
-    local close, cell = state.close, state.closeCell
-    if state.reported or not cell or not cell:IsShown() then return end
-    local native = Safety.Read(close, "GetAlpha") == 0 and state.sizeToggle or close
-    local alpha = Safety.Read(native, "GetAlpha")
-    if not alpha or alpha == 0 or not Safety.Read(native, "IsShown") then return end
-    state.reported = true
-    NS.Print(("caption check: %s %s, %s alpha %.2f, faded %s, owned %s, path %s, restores %d"):format(state.name,
-        tostring(moment or "next frame"), native == close and "X" or "toggle", alpha, tostring(Chrome.IsFaded(native)),
-        tostring(state.nativeRoots and state.nativeRoots[native] == true), tostring(state.captionPath), state.restores or 0))
-end
 
 local CELLS = { "closeCell", "toggleCell", "maximize", "minimize" }
 function Chrome.HideCaption(state, keepMinimize)
@@ -491,13 +422,27 @@ function Chrome.HideCaption(state, keepMinimize)
     RefreshFocus(state.frame)
 end
 
-local function PlaceCell(cell, anchor, width, height, level, kind)
-    cell:SetSize(width, height)
-    cell:SetFrameLevel(level)
-    if anchor then
-        cell:ClearAllPoints()
-        cell:SetPoint("RIGHT", anchor, "LEFT", 0, 0)
+-- These Suite cells are explicitly anchored to one public sibling or parent.
+-- A hidden/recycled cell with a second or unreadable anchor is placed afresh.
+local function AnchorCell(cell, point, parent, other, x, y)
+    local restricted = cell.IsAnchoringRestricted and cell:IsAnchoringRestricted()
+    if Safety.Public(restricted) and not restricted and cell.GetNumPoints and cell.GetPoint then
+        local count = cell:GetNumPoints()
+        if Safety.Public(count) and count == 1 then
+            local p, target, relative, dx, dy = cell:GetPoint(1)
+            if Safety.Public(p) and Safety.Public(target) and Safety.Public(relative) and Safety.Public(dx) and Safety.Public(dy)
+                and p == point and target == parent and relative == other and dx == x and dy == y then return end
+        end
     end
+    cell:ClearAllPoints()
+    cell:SetPoint(point, parent, other, x, y)
+end
+
+local function PlaceCell(cell, anchor, width, height, level, kind)
+    local w, h, actualLevel = cell:GetWidth(), cell:GetHeight(), cell:GetFrameLevel()
+    if not Safety.Public(w) or not Safety.Public(h) or w ~= width or h ~= height then cell:SetSize(width, height) end
+    if not Safety.Public(actualLevel) or actualLevel ~= level then cell:SetFrameLevel(level) end
+    if anchor then AnchorCell(cell, "RIGHT", anchor, "LEFT", 0, 0) end
     LayoutCaption(cell, kind)
     cell:Show()
     if kind == "minimize" then NS.WindowControlDelegate.Refresh(cell) end
@@ -530,8 +475,7 @@ end
 
 local function PlaceCloseCell(state, width, height, level)
     local close = DrawnCell(state, "closeCell")
-    close:ClearAllPoints()
-    close:SetPoint("TOPRIGHT", state.frame, "TOPRIGHT", state.captionX, state.captionY)
+    AnchorCell(close, "TOPRIGHT", state.frame, "TOPRIGHT", state.captionX, state.captionY)
     PlaceCell(close, nil, width, height, level, "close")
     Drive(state.close, close)
     FadeSockets(state)
@@ -600,61 +544,89 @@ function Chrome.ShowCaption(state, level)
     end
 end
 
--- Windows finish their layout after OnShow (Guild sizes itself from its
--- display mode): the caption is laid out again on the next frame, and once
--- more three seconds later. Guild, the AddOn list and Settings show Blizzard's
--- caption buttons again while they open: until then, every frame looks at
--- them under shown cells, and the caption fades them at once. Combat, or the
--- window closing, ends the look; no update runs without an opening window.
+-- Ordinary windows need only their native hooks, next-frame layout and one late settle.
 local OPENING_SECONDS = 3
-local opening = {}
+local opening, finalTimers = {}, {}
 local watcher = CreateFrame("Frame")
 watcher:Hide()
 
 local function EndOpening(state)
-    opening[state] = nil
-    if next(opening) == nil then watcher:SetScript("OnUpdate", nil) watcher:Hide() end
-end
-
-local function NativeShown(state)
-    if (Safety.Read(state.close, "GetAlpha") or 0) ~= 0 then return true end
-    for target in pairs(state.nativeRoots or {}) do
-        if (Safety.Read(target, "GetAlpha") or 0) ~= 0 then return true end
+    local timer = finalTimers[state]
+    if timer then
+        finalTimers[state] = nil
+        timer:Cancel()
     end
-    return false
+    if opening[state] then
+        opening[state] = nil
+        if not next(opening) then
+            watcher:SetScript("OnUpdate", nil)
+            watcher:Hide()
+        end
+    end
+    if not next(opening) and not next(finalTimers) then watcher:UnregisterEvent("PLAYER_REGEN_DISABLED") end
 end
+watcher:SetScript("OnEvent", function()
+    for state in pairs(opening) do EndOpening(state) end
+    for state in pairs(finalTimers) do EndOpening(state) end
+end)
 
 local function Watch(_, elapsed)
-    local combat = NS.IsCombatLocked()
     for state, age in pairs(opening) do
         age = age + (elapsed or 0)
         opening[state] = age
         local cell = state.closeCell
-        if combat or age >= OPENING_SECONDS then
+        if age >= OPENING_SECONDS then
             EndOpening(state)
-            if not combat then state.settle(OPENING_SECONDS .. "s") end
+            if not NS.IsCombatLocked() then state.settle(OPENING_SECONDS .. "s") end
         elseif cell and cell:IsVisible() and NativeShown(state) then
-            state.settle(("%.2fs"):format(age))
+            -- The combat event disarms every opening. Check the edge again
+            -- before a repair, even when the native reset precedes that event.
+            if NS.IsCombatLocked() then EndOpening(state) else state.settle(("%.2fs"):format(age)) end
         end
     end
 end
+local function WatchOpening(state)
+    if not next(opening) then
+        watcher:SetScript("OnUpdate", Watch)
+        watcher:Show()
+    end
+    opening[state] = 0
+end
 
 function Chrome.Settle(state, level, allowed)
+    if Safety.Read(state.frame, "IsVisible") ~= true then return end
     state.settleLevel, state.settleAllowed = level, allowed
     state.settle = state.settle or function(moment)
         if not state.settleAllowed(state) then return end
         Report(state, moment)
+        if finalTimers[state] and state.reported and not opening[state] then WatchOpening(state) end
         Chrome.ShowCaption(state, state.settleLevel)
     end
-    NS.Registry.QueueJob(state.settle)
-    if NS.IsCombatLocked() or Safety.Read(state.frame, "IsVisible") ~= true then return end
     if not state.watchHooked then
         state.watchHooked = true
-        state.frame:HookScript("OnHide", function() EndOpening(state) end)
+        state.frame:HookScript("OnHide", function()
+            NS.Registry.CancelJob(state.settle)
+            if opening[state] or finalTimers[state] then EndOpening(state) end
+        end)
     end
-    opening[state] = 0
-    watcher:SetScript("OnUpdate", Watch)
-    watcher:Show()
+    NS.Registry.QueueJob(state.settle)
+    if NS.IsCombatLocked() then return end
+    if not next(opening) and not next(finalTimers) then watcher:RegisterEvent("PLAYER_REGEN_DISABLED") end
+    if not NativeArt.NeedsOpeningWatch(state) then
+        local previous = finalTimers[state]
+        if previous then previous:Cancel() end
+        local timer
+        timer = C_Timer.NewTimer(OPENING_SECONDS, function()
+            if finalTimers[state] ~= timer then return end
+            finalTimers[state] = nil
+            EndOpening(state)
+            if not NS.IsCombatLocked() and Safety.Read(state.frame, "IsVisible") == true then state.settle("3s") end
+        end)
+        finalTimers[state] = timer
+        return
+    end
+    if finalTimers[state] then finalTimers[state]:Cancel() finalTimers[state] = nil end
+    WatchOpening(state)
 end
 
 function Chrome.RecolorCaption(state)
@@ -769,17 +741,12 @@ function Chrome.FollowSizeToggle(state, toggle)
     state.sizeToggle = toggle
     local function Relayout()
         local close = state.closeCell
-        if close and close:IsShown() and Safety.CanDecorate(close, not NS.IsCombatLocked()) then
+        if close and Safety.Read(state.frame, "IsVisible") == true and Safety.Read(close, "IsVisible") == true
+            and Safety.CanDecorate(close, not NS.IsCombatLocked()) then
             Chrome.ShowCaption(state, state.captionLevel)
         end
     end
-    Relayout = NS.WindowControlPolicy.MapCaptionCallback(state, Relayout)
-    toggle:HookScript("OnShow", Relayout)
-    toggle:HookScript("OnHide", Relayout)
-    for _, key in ipairs({ "MaximizeButton", "MinimizeButton" }) do
-        local button = Safety.Field(toggle, key)
-        if Safety.HasMethod(button, "HookScript") then button:HookScript("OnShow", Relayout) end
-    end
+    NS.WindowControlPolicy.ObserveCaptionToggle(state, toggle, Relayout)
 end
 
 -- Caption buttons share the parent of the grip: the map's border, whose

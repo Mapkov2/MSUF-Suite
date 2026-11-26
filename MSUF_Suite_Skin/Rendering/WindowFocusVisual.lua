@@ -45,11 +45,20 @@ local function PaintFallback(record)
     end
 end
 
-local function Paint(record)
+local function Paint(record, refresh)
     if NS.SuiteCore().HostBridge.MenuFocusVeil(record.canvas, "dropdown") then
-        for index = 1, #record.layers do record.layers[index]:Hide() end
-    else
+        if record.fallbackVisible then
+            for index = 1, #record.layers do record.layers[index]:Hide() end
+            record.fallbackVisible = false
+        end
+    elseif refresh or record.fallbackVisible == nil then
         PaintFallback(record)
+        record.fallbackVisible = true
+    elseif not record.fallbackVisible then
+        -- The host only owns its named layers. Our local material retained
+        -- its anchors, assets and colors while those layers were displayed.
+        for index = 1, #record.layers do record.layers[index]:Show() end
+        record.fallbackVisible = true
     end
 end
 
@@ -168,8 +177,8 @@ end
 
 function Visual.Refresh(record)
     if not record.visible or not Safety.CanDecorate(record.overlay) then return end
-    Paint(record)
-    if not NS.WindowFocusContour.Apply(record, record.rect, record.fullRect) then
+    Paint(record, true)
+    if not NS.WindowFocusContour.Apply(record, record.rect, record.fullRect, true) then
         Visual.Hide(record, true)
         return
     end

@@ -23,6 +23,7 @@ local body = [======[
     NS.PlayerSpellsSkin = { AttachWindowControls = function() heavy = heavy + 1 end }
     local legacyApplies = 0
     NS.ForeverLegacyTree = { Apply = function() legacyApplies = legacyApplies + 1 return true end }
+    NS.WorldMapSkin = { AttachCombatQuestLog = function(frame) assert(frame == nil, "unexpected map in cold fixture") end }
     Load("Adapters/Blizzard.lua")
     local helper = io.open(root .. "/MSUF_Suite_Skin/Rendering/WindowFocusDiscovery.lua", "rb")
     local loader

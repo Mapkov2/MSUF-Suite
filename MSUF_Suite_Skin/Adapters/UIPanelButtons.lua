@@ -37,8 +37,6 @@ local OWNER = "uipanel-buttons"
 local DEFER_KEY = "uipanel-buttons:late"
 local ADOPT_KEY = "uipanel-buttons:adopt"
 local STATIC_POPUP_COUNT = 4
-local regions = { "Left", "Middle", "Right", "Center" }
-local sharedRegions = { "Left", "Center", "Right" }
 local sharedRedAtlases = {
     ["128-RedButton"] = true,
     ["128-GoldRedButton"] = true,
@@ -50,8 +48,10 @@ local STATIC_POPUP_SPEC = {
     role = "button", activeRole = "buttonPrimary", useControlShape = true,
     pillHeight = 20, inset = 1, allowImplicitProtected = true,
 }
-local LEGACY_SPEC = { role = "button", useControlShape = true, regions = regions }
-local SHARED_SPEC = { role = "button", useControlShape = true, regions = sharedRegions }
+-- ControlSkin owns the native slice lists for each button kind. Only the
+-- immutable visual spec is shared; each show still repairs the live regions.
+local PANEL_SPEC = NS.ControlSkin.MarkFixedButtonSpec({ role = "button", useControlShape = true })
+local BAG_ACTION_SPEC = NS.ControlSkin.MarkFixedButtonSpec({ role = "button", useControlShape = true }, true)
 
 -- Native handlers captured before hooking; an instance still holding one of
 -- them was created before this addon loaded.
@@ -95,7 +95,7 @@ local function SkinStaticPopupButton(button)
     return true
 end
 
-local function SkinButton(button, family)
+local function SkinButton(button, family, onShow)
     if not Enabled() or not button then
         return false, "disabled"
     end
@@ -121,9 +121,11 @@ local function SkinButton(button, family)
 
     local state, reason
     if family == "shared" then
-        state, reason = NS.ControlSkin.ApplyThreeSliceButton(button, OWNER, SHARED_SPEC)
+        state, reason = NS.ControlSkin.ApplyThreeSliceButton(button, OWNER, PANEL_SPEC)
     else
-        state, reason = NS.ControlSkin.ApplyUIPanelButton(button, OWNER, LEGACY_SPEC)
+        local actions = onShow and NS.SuiteCore().Suite.BagActionButtons
+        local spec = actions and actions[button] and BAG_ACTION_SPEC or PANEL_SPEC
+        state, reason = NS.ControlSkin.ApplyUIPanelButton(button, OWNER, spec)
     end
     return state ~= nil, reason
 end
@@ -236,7 +238,7 @@ local function OnUIPanelButtonShown(button)
     -- bounded adapter refresh) will capture it.
     if not button or NS.IsCombatLocked() or NativeListAction(button) then return end
     UIPanelButtons.tracked[button] = "legacy"
-    SkinButton(button, "legacy")
+    SkinButton(button, "legacy", true)
 end
 
 local function IsSharedRedButton(button)

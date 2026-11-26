@@ -30,6 +30,7 @@ for _, flavor in ipairs({ "Mainline", "Forever" }) do
         function frame:Fire(event) for _, callback in ipairs(self.hooks[event] or {}) do callback(self) end end
         function frame:Show() self.shown = true; self:Fire("OnShow") end
         function frame:Hide() self.shown = false; self:Fire("OnHide") end
+        function frame:GetRect() reads = reads + 1; return self.left, self.bottom, self.width, self.height end
         function frame:SetPoint() end
         function frame:SetScale() end
         function frame:Reset()

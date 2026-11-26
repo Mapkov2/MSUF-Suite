@@ -44,6 +44,7 @@ Rendering\FocusVeil.lua
 Rendering\WindowActionSettings.lua
 Rendering\WindowControlPolicy.lua
 Rendering\CaptionTitles.lua
+Rendering\WindowControlNativeArt.lua
 Rendering\WindowControlChrome.lua
 Rendering\WindowControlDelegate.lua
 Rendering\WindowControls.lua

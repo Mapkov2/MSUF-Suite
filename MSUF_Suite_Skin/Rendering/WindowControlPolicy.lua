@@ -588,15 +588,72 @@ end
 -- Settle the caption after that stack, also under forced combat restrictions.
 function Policy.MapCaptionCallback(state, repaint)
     if state.name ~= "WorldMapFrame" or not NS.Client.isForever then return repaint end
-    local queued = false
+    local timer
     local function Settle()
-        queued = false
+        timer = nil
         if Safety.Read(state.frame, "IsVisible") == true then repaint() end
     end
+    state.frame:HookScript("OnHide", function()
+        if timer then
+            timer:Cancel()
+            timer = nil
+        end
+    end)
     return function()
-        if queued then return end
-        queued = true
-        C_Timer.After(0, Settle)
+        -- A native child can inherit OnHide after its root stopped the timer.
+        if not timer and Safety.Read(state.frame, "IsVisible") == true then
+            timer = C_Timer.NewTimer(0, Settle)
+        end
+    end
+end
+
+-- An effectively hidden native child remains locally shown when its parent
+-- closes. On reopening both receive OnShow. If its own hook is still pending,
+-- the direct child paints once after the parent finishes its native layout.
+function Policy.ObserveCaptionToggle(state, toggle, repaint)
+    local hidden, queued = {}, false
+    local afterNative = Policy.MapCaptionCallback(state, repaint)
+    local function CatchUp()
+        queued = false
+        repaint()
+    end
+    local function Repaint()
+        if queued then
+            queued = false
+            NS.Registry.CancelJob(CatchUp)
+        end
+        afterNative()
+    end
+    local function ParentShown()
+        -- Forever's map already coalesces these hooks after the protected stack.
+        if afterNative == repaint and not NS.IsCombatLocked() and Safety.Read(state.frame, "IsVisible") == true
+            and not Safety.IsForbidden(toggle) then
+            for button, key in pairs(hidden) do
+                local current = Safety.Field(toggle, key)
+                if Safety.Public(current) and current == button and Safety.Read(button, "GetParent") == toggle
+                    and Safety.Read(button, "IsVisible") == true then
+                    -- A foreign hook can hide or replace the child mid-dispatch.
+                    queued = true
+                    NS.Registry.QueueJob(CatchUp)
+                    return
+                end
+            end
+        end
+        Repaint()
+    end
+    toggle:HookScript("OnShow", ParentShown)
+    toggle:HookScript("OnHide", Repaint)
+    for _, key in ipairs({ "MaximizeButton", "MinimizeButton" }) do
+        local button = Safety.Field(toggle, key)
+        if Safety.Public(button) and Safety.HasMethod(button, "HookScript") then
+            button:HookScript("OnHide", function()
+                hidden[button] = Safety.Read(button, "IsShown") == true and Safety.Read(toggle, "IsVisible") == false and key or nil
+            end)
+            button:HookScript("OnShow", function()
+                hidden[button] = nil
+                Repaint()
+            end)
+        end
     end
 end
 

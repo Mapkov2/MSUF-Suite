@@ -220,7 +220,7 @@ local NS = {
     DB = { enabled = true, skins = {} },
     IsCombatLocked = function() return locked end,
     GenericWindows = { IsCategoryEnabled = function() return true end },
-    ControlSkin = { DisableOwner = function() return true end, GetOwner = Noop },
+    ControlSkin = { DisableOwner = function() return true end, GetOwner = Noop, MarkFixedButtonSpec = function(spec) return spec end },
     WindowActionSkin = { GetOwner = Noop, IsApplied = function() return false end },
     Checkmarks = { TrackTexture = Noop, UntrackOwner = Noop, IsRedButtonArtKit = function() return false end },
 }
@@ -231,6 +231,7 @@ local NS = {
 local publicReads, secretReads = 0, 0
 local Suite = { OwnsBlizzardSurface = function() return false end }
 local SuiteRoot = { Suite = Suite }
+NS.SuiteCore = function() return SuiteRoot end
 function SuiteRoot.Public(value)
     publicReads = publicReads + 1
     local readable = issecretvalue == nil or not issecretvalue(value)

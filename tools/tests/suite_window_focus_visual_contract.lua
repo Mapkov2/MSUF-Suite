@@ -30,6 +30,17 @@ CreateFrame = function(...)
         texture.masks = {}
         function texture:AddMaskTexture(mask) self.masks[mask] = true end
         function texture:RemoveMaskTexture(mask) self.masks[mask] = nil end
+        function texture:GetNumMaskTextures()
+            local n = 0
+            for _ in pairs(self.masks) do n = n + 1 end
+            return n
+        end
+        function texture:GetMaskTexture(index)
+            for mask in pairs(self.masks) do
+                index = index - 1
+                if index == 0 then return mask end
+            end
+        end
         function texture:SetColorTexture(...) self.color = { ... }; self.asset = nil end
         function texture:SetVertexColor(...) self.color = { ... } end
         function texture:SetTexture(asset) self.asset = asset end
@@ -154,6 +165,22 @@ Check(writes == 0 and paints == 0, "cached hidden veil received idle paints or w
 NS.DB.theme.menuAnimations = false
 Show(record)
 Check(record.overlay.alpha == 1 and not record.group:IsPlaying(), "animation setting removed dimming instead of snapping")
+local textureWrites = 0
+for _, layer in ipairs(record.layers) do
+    for _, method in ipairs({ "ClearAllPoints", "SetPoint", "SetAllPoints", "SetTexture", "SetColorTexture", "SetVertexColor", "SetBlendMode" }) do
+        local original = layer[method]
+        layer[method] = function(self, ...)
+            textureWrites = textureWrites + 1
+            return original(self, ...)
+        end
+    end
+end
+for i = 1, 20 do Visual.Hide(record, true); Show(record) end
+print(("20 reused local veils: %d material writes"):format(textureWrites))
+Check(textureWrites == 0 and #Materials(record) == 6, "returning to an unchanged local veil repainted its private layers")
+Visual.Refresh(record)
+Check(textureWrites > 0, "an explicit material refresh failed to repair the private layers")
+
 Visual.Hide(record)
 Check(not record.overlay.shown, "animation-off focus recovery retained a veil")
 NS.DB.theme.menuAnimations = nil
@@ -170,25 +197,27 @@ NS.DB.theme.reduceMotion = nil
 
 -- Use the real painters and token definitions of both host versions. The
 -- small source slice excludes unrelated widget construction and boot code.
-local function HostTheme(hostRoot, surfaceFile, after)
-    local tokens = Read(hostRoot .. "/MidnightSimpleUnitFrames_Options/Shell/Menu2/MSUF_Menu2_Theme_Tokens.lua")
+local function HostTheme(host)
+    local tokens = Read(host[1] .. "/MSUF_Menu2_Theme_Tokens.lua")
     local first = assert(tokens:find("T.focusVeils =", 1, true))
-    local last = assert(tokens:find("-- Menu accent override", first, true))
-    local painter = Read(hostRoot .. "/MidnightSimpleUnitFrames_Options/Shell/Menu2/" .. surfaceFile)
+    local edit = assert(tokens:find("T.focusVeils.edit", first, true))
+    local last = assert(tokens:find("\n}", edit, true)) + 2
+    local painter = Read(host[1] .. "/" .. host[2])
     local paintFirst = assert(painter:find("local function ColorTexture", 1, true))
-    local paintLast = assert(painter:find(after, paintFirst, true))
+    local paintLast = assert(painter:find(host[3], paintFirst, true))
     local theme = { media = { bgSmooth = "host-smooth", bgCharcoal = "host-charcoal" } }
     assert(loadstring("local T, PixelLayoutLeaf = ...\nlocal PixelLayoutRegion = PixelLayoutLeaf\n" .. tokens:sub(first, last - 1)
         .. painter:sub(paintFirst, paintLast - 1), "@real_host_focus_painter"))(theme, function(value) return value end)
     theme.ApplyMaterial = function() error("focus veil was turned into a panel material") end
     return theme
 end
-local hosts = {
-    { "MidnightSimpleUnitFrames-7.0", "MSUF_Menu2_Theme.lua", "local function ClampMotionDuration" },
-    { "MidnightSimpleUnitFrames-7.0", "MSUF_Menu2_Theme_Surfaces.lua", "local function GlassTexture" },
-}
+local current = { root .. "/../MidnightSimpleUnitFrames-7.0/MidnightSimpleUnitFrames_Options/Shell/Menu2",
+    "MSUF_Menu2_Theme_Surfaces.lua", "local function GlassTexture" }
+local hosts = { current }
+-- An optional second argument points directly to the 6.5 checkout's Menu2 directory.
+if arg[2] then hosts[2] = { arg[2], "MSUF_Menu2_Theme.lua", "local function ClampMotionDuration" } end
 for _, host in ipairs(hosts) do
-    local theme = HostTheme(root .. "/../" .. host[1], host[2], host[3])
+    local theme = HostTheme(host)
     _G.MSUF2 = { Theme = theme }
     local focus = Visual.Create()
     Check(Show(focus), host[1] .. " host focus painter failed")
@@ -224,7 +253,7 @@ end
 _G.MSUF2, _G.MSUF_UI = nil, nil
 Show(record)
 local fallbackTextures = #record.canvas.textures
-_G.MSUF2 = { Theme = HostTheme(root .. "/../MidnightSimpleUnitFrames-7.0", hosts[2][2], hosts[2][3]) }
+_G.MSUF2 = { Theme = HostTheme(current) }
 Visual.Refresh(record)
 Check(#record.canvas.textures == fallbackTextures + 6, "late-loaded host painter was cached as unavailable")
 CheckStrength(record, "late host")
@@ -281,8 +310,22 @@ local function CheckMasks(focus, count, label)
         Check(attached == count, label .. " missed a strength/material layer or retained a stale mask")
     end
 end
+local function CountMaskWrites(mask)
+    local writes = { art = 0, layout = 0 }
+    for _, method in ipairs({ "ClearTextureSlice", "SetTexture", "SetAtlas", "SetTextureSliceMargins",
+        "SetTextureSliceMode", "SetTexCoord", "ClearAllPoints", "SetPoint", "SetSize", "Show" }) do
+        local original = mask[method]
+        local group = (method == "ClearAllPoints" or method == "SetPoint" or method == "SetSize" or method == "Show") and "layout" or "art"
+        mask[method] = function(self, ...)
+            writes[group] = writes[group] + 1
+            return original(self, ...)
+        end
+    end
+    return writes
+end
+
 for _, host in ipairs({ false, hosts[1], hosts[2] }) do
-    _G.MSUF2 = host and { Theme = HostTheme(root .. "/../" .. host[1], host[2], host[3]) } or nil
+    _G.MSUF2 = host and { Theme = HostTheme(host) } or nil
     local focus = Visual.Create()
     Check(Visual.Show(focus, clipped, material, "DIALOG", 91), "contoured veil failed to show")
     CheckMasks(focus, 1, host and host[1] or "fallback")
@@ -301,6 +344,46 @@ for _, host in ipairs({ false, hosts[1], hosts[2] }) do
     local masks = #focus.canvas.masks
     Visual.Show(focus, clipped, material, "DIALOG", 91)
     Check(#focus.canvas.masks == masks, "layout refresh recreated masks")
+    local writes = CountMaskWrites(mask)
+    for i = 1, 20 do Visual.Show(focus, clipped, material, "DIALOG", 91) end
+    print(("20 unchanged rounded masks: %d material and %d layout writes"):format(writes.art, writes.layout))
+    Check(writes.art == 0 and writes.layout == 0, "identical rounded masks rewrote native state")
+    local oldMargin = contour.geometry.margins[2]
+    contour.geometry.margins[2] = oldMargin + 1
+    Visual.Show(focus, clipped, material, "DIALOG", 91)
+    Check(writes.art > 0 and writes.layout == 0 and mask.margins[2] == oldMargin + 1,
+        "same geometry object with changed slice margins was ignored")
+    contour.geometry.margins[2] = oldMargin
+    Visual.Show(focus, clipped, material, "DIALOG", 91)
+    local beforeArt = writes.art
+    material.left = material.left + 6
+    Visual.Show(focus, clipped, material, "DIALOG", 91)
+    Check(writes.art == beforeArt and writes.layout > 0 and math.abs(mask.points[1][4] - 7 / 1.5) < 0.000001,
+        "mask translation repainted the asset or lost its scale")
+    material.left = material.left - 6
+    local setPoint, nested = mask.SetPoint, false
+    function mask:SetPoint(...)
+        setPoint(self, ...)
+        if not nested then
+            nested = true
+            material.left = material.left + 9
+            Visual.Show(focus, clipped, material, "DIALOG", 91)
+            material.left = material.left - 9
+        end
+    end
+    Visual.Show(focus, clipped, material, "DIALOG", 91)
+    mask.SetPoint = setPoint
+    Visual.Show(focus, clipped, material, "DIALOG", 91)
+    Check(nested and math.abs(mask.points[1][4] - 13 / 1.5) < .000001, "reentrant layout retained the inner mask position")
+    mask:Hide()
+    Visual.Show(focus, clipped, material, "DIALOG", 91)
+    Check(mask.shown, "a hidden owned mask was not shown again on reuse")
+    mask.asset, mask.shown = "foreign-shape", false
+    mask:ClearAllPoints(); mask:SetSize(3, 4)
+    Visual.Refresh(focus)
+    Check(mask.asset == contour.geometry.fill and mask.shown and mask.width == 596 and #mask.points == 1,
+        "explicit refresh failed to repair a changed mask texture, visibility, anchors or size")
+
     Visual.Hide(focus, true)
 end
 _G.MSUF2 = nil
@@ -312,7 +395,34 @@ Visual.Show(native, clipped, material, "DIALOG", 91)
 CheckMasks(native, 2, "native portrait")
 Check(native.masks[1].asset == "native-book" and native.masks[2].asset == "native-circle",
     "native portrait lost either its texture alpha or Blizzard circle mask")
-_G.MSUF2 = { Theme = HostTheme(root .. "/../MidnightSimpleUnitFrames-7.0", hosts[2][2], hosts[2][3]) }
+local portraitWrites, circleWrites = CountMaskWrites(native.masks[1]), CountMaskWrites(native.masks[2])
+for i = 1, 20 do Visual.Show(native, clipped, material, "DIALOG", 91) end
+print(("20 unchanged two-mask portraits: %d material and %d layout writes"):format(
+    portraitWrites.art + circleWrites.art, portraitWrites.layout + circleWrites.layout))
+Check(portraitWrites.art + circleWrites.art + portraitWrites.layout + circleWrites.layout == 0,
+    "unchanged portrait or its mask repeated native writes")
+nativeContour.art.uv[7] = .61
+nativeContour.circle.left = nativeContour.circle.left + .1
+Visual.Show(native, clipped, material, "DIALOG", 91)
+Check(native.masks[1].uv[7] == .61 and portraitWrites.art > 0 and portraitWrites.layout == 0
+    and circleWrites.art == 0 and circleWrites.layout > 0, "mutable UV or normalized circle offset was not independently refreshed")
+nativeContour.art.atlas = "new-atlas"
+Visual.Show(native, clipped, material, "DIALOG", 91)
+Check(native.masks[1].atlas == "new-atlas", "atlas replacement on a reused native descriptor was ignored")
+nativeContour.art.atlas, nativeContour.art.asset = nil, "new-book"
+Visual.Show(native, clipped, material, "DIALOG", 91)
+Check(native.masks[1].asset == "new-book", "return from atlas to a native texture used a stale asset")
+local hostTexture = native.canvas:CreateTexture(nil, "ARTWORK")
+Visual.Show(native, clipped, material, "DIALOG", 91)
+Check(hostTexture.masks[native.masks[1]] and hostTexture.masks[native.masks[2]], "new host texture missed both unchanged masks")
+local foreignMask = {}
+hostTexture:RemoveMaskTexture(native.masks[2])
+hostTexture:AddMaskTexture(foreignMask)
+Visual.Refresh(native)
+Check(hostTexture.masks[native.masks[2]] and hostTexture.masks[foreignMask], "refresh failed to repair an external removal cooperatively")
+hostTexture:RemoveMaskTexture(foreignMask)
+
+_G.MSUF2 = { Theme = HostTheme(current) }
 Visual.Refresh(native)
 CheckMasks(native, 2, "late host portrait")
 sourceRect.contour = nil

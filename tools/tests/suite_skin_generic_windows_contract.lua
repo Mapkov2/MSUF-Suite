@@ -254,6 +254,7 @@ NS = {
         GetOwner = function() return nil end,
     },
     ControlSkin = {
+        MarkFixedButtonSpec = function(spec) return spec end,
         DisableOwner = function() end,
         RefreshOwner = function() end,
         Refresh = function() return true end,
@@ -850,6 +851,22 @@ Section("selection indicator combat gate", function()
     locked = false
     Expect(shown == false and #createdFrames == created,
         "a selection indicator was created or moved in combat")
+end)
+
+Section("profiler pin HUD keeps its skin and content-only opening effect", function()
+    local pins, menu = Frame("PinDisplay"), Frame("ProfilerMenu")
+    local contentOnly, callbackCount = {}, 0
+    GenericWindows.SetMenuMotionProvider(function(frame, _, only)
+        contentOnly[frame], callbackCount = only, callbackCount + 1
+    end, function() end, function() end)
+    Expect(GenericWindows.ApplyFrame(pins, "pins", { role = "shell", contentOnlyMotion = true })
+        and GenericWindows.ApplyFrame(menu, "profiler", { role = "shell" }), "profiler surfaces failed to paint")
+    Expect(pins.surfaceSpec and menu.surfaceSpec and callbackCount == 2
+        and contentOnly[pins] == true and contentOnly[menu] == false,
+        "profiler skin did not limit menu-tree observation to the interactive window")
+    GenericWindows.Disable("pins")
+    GenericWindows.Disable("profiler")
+    GenericWindows.SetMenuMotionProvider(function() end, function() end, function() end)
 end)
 
 Section("native character stats stay outside generic skin registration", function()
@@ -1494,6 +1511,55 @@ Section("common menus", function()
     -- ContainerFrameMixin:UpdateItems sets each button's border through it.
     _G.SetItemButtonQuality = function(button, quality) button.IconBorder.quality = quality end
     NS.CommonMenus.Apply("menus")
+    -- Both the catalog's first reveal and the bag callback can run first.
+    -- Count actual descendant visits, including the catalog's private entry point.
+    local previousRoot = ContainerFrameCombinedBags
+    local entry = NS.BlizzardCatalog.FindByFrame("ContainerFrameCombinedBags")
+    local function OpenThroughBoth(catalogFirst)
+        local child = Frame("BagStaticControl", {Frame(nil)})
+        local root = Frame("ContainerFrameCombinedBags", {child})
+        ContainerFrameCombinedBags = root
+        local function CatalogPass() GenericWindows.ApplyEntry(entry, "menus") end
+        local function BagPass() NS.CommonMenus:OnBagOpened(root) end
+        local first, second = CatalogPass, BagPass
+        if not catalogFirst then first, second = BagPass, CatalogPass end
+        first()
+        local visited = child.childReads
+        second()
+        Expect(visited > 0 and child.childReads == visited,
+            "catalog and bag callbacks repeated the same static subtree on first reveal")
+        local _, status = GenericWindows.GetStatus("inventory")
+        Expect(status and status.metrics and status.metrics.nodes > 0, "shared bag pass lost catalog metrics")
+        for owner, callback in pairs(listeners) do callback(owner, "theme", "look") end
+        BagPass()
+        Expect(child.childReads == visited * 2, "a theme change did not repaint the shared bag shell")
+        CatalogPass()
+        Expect(child.childReads == visited * 2, "theme change repeated the shared bag shell")
+        GenericWindows.ApplyEntry(entry, "separate-bag-owner")
+        Expect(child.childReads == visited * 3, "a second owner reused another owner's bag shell")
+        GenericWindows.Disable("separate-bag-owner")
+        CatalogPass()
+        Expect(child.childReads == visited * 4, "a disabled owner left the bag marked as current")
+        suiteOwned.bagWindows = true
+        CatalogPass()
+        Expect(root.surfaceVisible == false, "the static bag pass did not release the Suite-owned shell")
+        root.surfaceSpec = nil
+        suiteOwned.bagWindows = false
+        CatalogPass()
+        Expect(root.surfaceSpec ~= nil, "the static bag pass did not restore the released shell")
+        local beforeCombat = child.childReads
+        locked = true
+        CatalogPass()
+        BagPass()
+        locked = false
+        local afterCombat = child.childReads
+        CatalogPass()
+        Expect(child.childReads > afterCombat and afterCombat >= beforeCombat,
+            "a partial combat traversal was recorded as a complete static bag skin")
+    end
+    OpenThroughBoth(true)
+    OpenThroughBoth(false)
+    ContainerFrameCombinedBags = previousRoot
     _G.ContainerFrame_GenerateFrame(bag, 16, 0)
     Expect(calls[bag] == 1 and itemSkins[items[1]] == 1,
         "one bag opening skinned the bag window or its items twice")
@@ -2013,6 +2079,18 @@ Section("player spells tab colors", function()
     Expect(#attached == 2 and attached[2].frame == spells and attached[2].owner == "spells",
         "native spellbook tab changes did not reapply its stored window controls")
     Expect(Near(label.color[1], 0.71), "the selected tab label was not themed")
+    local stableTabWrites, previousSetter = 0, label.SetTextColor
+    function label:SetTextColor(...)
+        stableTabWrites = stableTabWrites + 1
+        return previousSetter(self, ...)
+    end
+    NS.PlayerSpellsSkin:OnDisplayedSpellsChanged()
+    Expect(stableTabWrites == 0, "spell row notifications rewrote an unchanged tab label")
+    label:SetTextColor(1, .82, 0)
+    local writesAfterReset = stableTabWrites
+    NS.PlayerSpellsSkin:OnDisplayedSpellsChanged()
+    Expect(stableTabWrites == writesAfterReset + 1 and Near(label.color[1], .71),
+        "native tab color reset did not receive exactly one repair")
     local attachBefore, paintBefore = #attached, counters.attach
     spells.shown = false
     for _ = 1, 100 do
@@ -2031,9 +2109,13 @@ Section("player spells tab colors", function()
     Expect(#attached == attachBefore + 1, "show lost the coalesced page refresh")
     Expect(Near(label.color[1], 0.81), "show lost the hidden theme change")
     attachBefore, paintBefore = #attached, counters.attach
-    local readsBefore = themeReads
+    local readsBefore, visits, applyTab = themeReads, 0, NS.ControlSkin.ApplyTab
+    function NS.ControlSkin.ApplyTab(...)
+        visits = visits + 1
+        return applyTab(...)
+    end
     if spells.hooks.OnShow then spells.hooks.OnShow(spells) end
-    Expect(#attached == attachBefore and counters.attach == paintBefore and themeReads == readsBefore,
+    Expect(#attached == attachBefore and counters.attach == paintBefore and themeReads == readsBefore and visits == 0,
         "show without invalidation repeated visual work")
     local defer, deferred = NS.CombatGate.RunOrDefer, nil
     NS.CombatGate.RunOrDefer = function(_, callback) deferred = callback end
@@ -2050,9 +2132,10 @@ Section("player spells tab colors", function()
     NS.PlayerSpellsSkin:OnFrameTabSet(spells)
     locked = false
     NS.PlayerSpellsSkin:QueueRefresh(spells)
-    paintBefore, readsBefore = counters.attach, themeReads
+    paintBefore, readsBefore, visits = counters.attach, themeReads, 0
     if deferred then deferred() end
-    Expect(counters.attach == paintBefore and themeReads == readsBefore,
+    NS.ControlSkin.ApplyTab = applyTab
+    Expect(counters.attach == paintBefore and themeReads == readsBefore and visits == 0,
         "older combat job repeated an already completed refresh")
     NS.CombatGate.RunOrDefer = defer
     NS.PlayerSpellsSkin.Disable(spells, "spells")
@@ -4295,9 +4378,10 @@ Section("adapter file structure", function()
         "the shared search box skin did not restore the native text colors")
 end)
 
-Section("chat item reference closes through its Suite caption in combat", function()
-    local priorTooltip, priorLockdown, priorFade = ItemRefTooltip, InCombatLockdown, NS.Cosmetics.Fade
-    local priorRestore, priorCaption, priorCreate = NS.Cosmetics.RestoreOwner, MSUFSuite.WindowCaption, CreateFrame
+local function CheckItemReferenceCaption(isForever)
+    local priorTooltip, priorLockdown, priorFlavor = ItemRefTooltip, InCombatLockdown, NS.Client.isForever
+    local priorCaption, priorCreate = MSUFSuite.WindowCaption, CreateFrame
+    NS.Client.isForever = isForever
     local tooltip = Frame("ItemRefTooltip")
     function tooltip:IsVisible() return self.shown == true end
     function tooltip:HookScript() end
@@ -4335,21 +4419,47 @@ Section("chat item reference closes through its Suite caption in combat", functi
         return cell
     end
     MSUFSuite.WindowCaption = { SetKind = function() end, Dress = function(frame, kind) frame.kind = kind end }
-    local owner = "chat-item-reference"
-    NS.Cosmetics.Fade = function(target, source)
-        if target == close and source == owner then alpha = 0 end
-        return true
-    end
-    NS.Cosmetics.RestoreOwner = function(source) if source == owner then alpha = 1 end end
+    local function Ignore() end
+    local module, addonLoaded, captionOwner
+    local config = { configured = true }
+    -- The generic catalog retains window focus. Tooltip Appearance owns the X
+    -- through Enable / its native ADDON_LOADED handler / Disable.
+    local appearance = {
+        Client = NS.Client, Safety = NS.Safety, SuiteCore = function() return MSUFSuite end,
+        NS = { SharedMedia = Ignore, Registry = { AddListener = Ignore }, Skin = { TooltipAppearanceChanged = Ignore } },
+        Suite = { Config = function() return config end, Install = function(id, value)
+            assert(id == "tooltipAppearance"); module = value
+        end },
+        TooltipChrome = { Apply = function() return true end, DisableOwner = Ignore },
+        ItemTooltipCard = { Refresh = Ignore }, LootTooltipRows = { Apply = Ignore, Disable = Ignore },
+        TooltipPalette = { Title = Ignore }, Surface = { RefreshMedia = Ignore }, RefreshPalette = Ignore,
+        Cosmetics = {
+            Fade = function(target, source)
+                assert(target == close and source and (not captionOwner or source == captionOwner))
+                captionOwner, alpha = source, 0
+                return true
+            end,
+            Restore = function(target, source)
+                assert(target == close and source == captionOwner)
+                alpha = 1
+            end,
+        },
+    }
+    local folder = root .. "/MSUF_Suite_Tooltips/"
+    assert(loadfile(folder .. "ItemReference.lua"))("MSUF_Suite_Tooltips", appearance)
+    assert(loadfile(folder .. "Appearance.lua"))("MSUF_Suite_Tooltips", appearance)
+    module.context = { Event = function(_, name, callback)
+        assert(name == "ADDON_LOADED"); addonLoaded = callback
+    end }
     InCombatLockdown = function() return locked end
-    local entry = NS.BlizzardCatalog.FindByFrame("ItemRefTooltip")
     locked = true
     tooltip.shown = true
     function close:IsProtected() return true, true end
-    GenericWindows.ApplyEntry(entry, owner)
+    module.active = true
+    module:Enable()
     Expect(not cell and alpha == 1, "an explicitly protected item reference button was modified")
     function close:IsProtected() return false, false end
-    GenericWindows.ApplyEntry(entry, owner)
+    addonLoaded(nil, "ADDON_LOADED", "Blizzard_UIPanels_Game")
     Expect(cell and cell.kind == "close" and cell.relative == close and cell.level == 511 and cell.shown
         and cell.mouseEnabled == true and cell.clickButton == "LeftButtonUp" and alpha == 0,
         "the first combat item link did not get a clickable caption")
@@ -4375,7 +4485,8 @@ Section("chat item reference closes through its Suite caption in combat", functi
         Expect(hides == 2 and not tooltip.shown and panelCalls == 0, "the Suite X did not close the tooltip out of combat")
     end
     locked = false
-    GenericWindows.Disable(owner)
+    module.active = false
+    module:Disable()
     if cell then
         hooks.OnShow()
         tooltip.shown = true
@@ -4383,8 +4494,13 @@ Section("chat item reference closes through its Suite caption in combat", functi
         Expect(tooltip.shown and hides == 2, "a disabled caption closed the tooltip")
     end
     Expect(cell and not cell.shown and alpha == 1, "disabling the skin did not restore the native X")
-    ItemRefTooltip, InCombatLockdown, NS.Cosmetics.Fade = priorTooltip, priorLockdown, priorFade
-    NS.Cosmetics.RestoreOwner, MSUFSuite.WindowCaption, CreateFrame = priorRestore, priorCaption, priorCreate
+    ItemRefTooltip, InCombatLockdown, NS.Client.isForever = priorTooltip, priorLockdown, priorFlavor
+    MSUFSuite.WindowCaption, CreateFrame = priorCaption, priorCreate
+end
+
+Section("chat item reference closes through its Suite caption in combat", function()
+    CheckItemReferenceCaption(false)
+    CheckItemReferenceCaption(true)
 end)
 
 
@@ -4408,6 +4524,113 @@ Section("hidden windows defer cosmetic work until visible", function()
         return frame
     end
     local function Paints() return counters.attach + counters.yellow end
+    do
+        local oldGossip, oldMail, oldUI = GossipFrame, MailFrame, UIParent
+        local previousLoaded, loaded = NS.Client.IsAddOnLoaded, false
+        local ensure, attach = NS.Surface.Ensure, NS.Surface.Attach
+        UIParent = { GetWidth = function() return 1280 end, GetHeight = function() return 720 end }
+        local function Sized(name, width)
+            local window = Window(name)
+            window.width = width
+            function window:GetWidth() return self.width end
+            function window:GetHeight() return 420 end
+            function window:GetParent() return UIParent end
+            return window
+        end
+        GossipFrame, MailFrame = Sized("GossipFrame", 380), Sized("MailFrame", 400)
+        local paints = {}
+        NS.Surface.Attach = function(frame, spec)
+            paints[frame] = (paints[frame] or 0) + 1
+            return attach(frame, spec)
+        end
+        NS.Surface.Ensure = function(frame, spec, prepare)
+            if frame.surfaceSpec == spec and (frame.surfaceVisible ~= false or frame.prepared) then
+                if not prepare and frame.prepared then frame.surfaceVisible, frame.prepared = true, nil end
+                return {}
+            end
+            local surface = NS.Surface.Attach(frame, spec)
+            if prepare then frame.surfaceVisible, frame.prepared = false, true end
+            return surface
+        end
+        NS.Client.IsAddOnLoaded = function(addon) return addon ~= "Blizzard_MailFrame" or loaded end
+        GenericWindows.ApplyAll("initialized-shells")
+        Expect(paints[GossipFrame] == 1 and not paints[MailFrame],
+            "ApplyAll did not prepare the loaded hidden shell independently of LoD")
+        loaded = true
+        genericLoadFrame.scripts.OnEvent(genericLoadFrame, "ADDON_LOADED", "Blizzard_MailFrame")
+        Expect(paints[MailFrame] == 1 and MailFrame.childReads == 0,
+            "an available LoD shell waited for first show or traversed unpopulated children")
+        local child = Frame("NewGossipChild", {Frame(nil)})
+        GossipFrame.children = {child}
+        GossipFrame:Display(true)
+        local visited = child.childReads
+        Expect(paints[GossipFrame] == 1 and visited > 0,
+            "first show repeated shell painting or missed newly created content")
+        GossipFrame:Display(false)
+        GossipFrame:Display(true)
+        Expect(paints[GossipFrame] == 1 and child.childReads == visited,
+            "a warm reopen repeated a completed shell or content traversal")
+        local tiny, full, protected = Sized("TinyShell", 1), Sized("FullShell", 1280), Sized("ProtectedShell", 400)
+        function full:GetHeight() return 720 end
+        function protected:IsProtected() return true, true end
+        GenericWindows.ApplyEntry({id="unsafe-shells", category="quest", frames={tiny, full, protected}}, "initialized-shells")
+        Expect(not paints[tiny] and not paints[full] and not paints[protected], "cold pass decorated an unsafe root")
+        tiny.width = 300
+        tiny:Display(true)
+        Expect(paints[tiny] == 1, "deferred skin did not recover when usable geometry appeared")
+        local resized = Sized("ResizedShell", 400)
+        GenericWindows.ApplyEntry({id="resized-shell", category="quest", frames={resized}}, "initialized-shells")
+        resized.width = 1280
+        function resized:GetHeight() return 720 end
+        resized:Display(true)
+        Expect(resized.surfaceVisible == false, "first show did not suppress a hidden shell that grew to fullscreen")
+        resized.width = 420
+        for _, fn in ipairs(resized.hooks.OnSizeChanged or {}) do fn(resized) end
+        Expect(resized.surfaceVisible == true, "valid native resize failed to recover the prepared shell")
+        -- Native OnShow/protection ordering can keep the entire catalog entry
+        -- deferred until combat ends. No prepared artwork may leak meanwhile.
+        local unsafe = Sized("LateProtectedShell", 360)
+        GenericWindows.ApplyEntry({id="late-protected-shell", category="quest", frames={unsafe}}, "initialized-shells")
+        function unsafe:IsProtected() return self.secure == true, self.secure == true end
+        unsafe.width, unsafe.secure, locked = 1280, true, true
+        function unsafe:GetHeight() return 720 end
+        unsafe:Display(true)
+        Expect(unsafe.surfaceVisible == false and unsafe.childReads == 0,
+            "fullscreen protected reveal exposed prepared art before its validation")
+        locked = false
+        local scaled = Sized("ScaledShell", 400)
+        function UIParent:GetEffectiveScale() return 1 end
+        function scaled:GetEffectiveScale() return self.zoom or 1 end
+        GenericWindows.ApplyEntry({id="scaled-shell",category="quest",frames={scaled}}, "initialized-shells")
+        scaled.zoom, scaled.width = 2, 640
+        scaled:Display(true)
+        Expect(scaled.surfaceVisible == false, "a scaled full-screen shell was revealed")
+        scaled:Display(false)
+        scaled.zoom, scaled.width = 1, 400
+        scaled:Display(true)
+        Expect(scaled.surfaceVisible == true, "normal native reopen failed to recover the scaled shell")
+        UIParent.GetEffectiveScale = nil
+
+        local lateRoot, protectedChild = Sized("LateChildShell",380), Frame("ProtectedNewChild")
+        function protectedChild:IsProtected() return true, true end
+        GenericWindows.ApplyEntry({id="late-child-shell", category="quest", frames={lateRoot}}, "initialized-shells")
+        lateRoot.children = { protectedChild }
+        locked = true
+        lateRoot:Display(true)
+        Expect(lateRoot.surfaceVisible == true and protectedChild.childReads == 0 and not protectedChild.surfaceSpec,
+            "new protected child blocked valid shell or was painted in combat")
+        locked = false
+        local held = Sized("CombatShell", 360)
+        locked = true
+        GenericWindows.ApplyEntry({id="held-shell", category="quest", frames={held}}, "initialized-shells")
+        locked = false
+        Expect(not paints[held], "combat applied a cold shell")
+        GenericWindows.Disable("initialized-shells")
+        Expect(GossipFrame.surfaceVisible == false and MailFrame.surfaceVisible == false,
+            "disable left the prepared shell visible before its first reveal")
+        NS.Surface.Ensure, NS.Surface.Attach, NS.Client.IsAddOnLoaded = ensure, attach, previousLoaded
+        GossipFrame, MailFrame, UIParent = oldGossip, oldMail, oldUI
+    end
     do
         local previousMail, previousForever, timers = MailFrame, NS.Client.isForever, C_Timer
         local queued
@@ -5014,7 +5237,7 @@ Section("hidden windows defer cosmetic work until visible", function()
     local retained = setmetatable({}, { __mode = "v" })
     local metricOwner = { deferred = {} }
     local metricNS = setmetatable({ GenericWindows = { PrepareWindowMotion = function() end }, GenericWindowsShared = {
-        DEFAULT_OWNER = "metrics", OwnerState = function() return metricOwner end,
+        DEFAULT_OWNER = "metrics", frameStates = {}, OwnerState = function() return metricOwner end,
         OwnerKey = tostring, CatalogMode = function(mode) return type(mode) == "table" and mode or {} end,
         CanSkin = function() return true end, DeactivateOwner = function() end,
         ApplyFrameNow = function()

@@ -24,11 +24,6 @@ local DEFAULT_OWNER = "blizzardWindows"
 local BAG_OPEN_CALLBACK = "ContainerFrame.OpenBag"
 local BAG_ITEM_LIMIT = 256
 
-local BAG_MODE = {
-    role = "shell",
-    allowImplicitProtected = true,
-}
-
 local BAG_ITEM_SPEC = {
     role = "button",
     useControlShape = false,
@@ -156,7 +151,7 @@ local function ApplyBagFrame(state, frame, refreshItems)
     local owner = state.owner
     local generation = Kit.SkinGeneration()
     if state.frames[frame] ~= generation then
-        if not NS.GenericWindows.ApplyFrame(frame, owner, BAG_MODE) then return false end
+        if not NS.GenericWindows.ApplyBagShell(frame, owner) then return false end
         state.frames[frame] = generation
         SkinMoneyFrame(state, frame)
         local close = Field(frame, "CloseButton")

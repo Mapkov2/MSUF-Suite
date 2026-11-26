@@ -491,6 +491,11 @@ local function Limit(value)
     Flush()
 end
 
+local groupCalls = 0
+S.WithWindowFocusBatch = function(run, ...)
+    groupCalls = groupCalls + 1
+    return run(...)
+end
 ResetWindows()
 Limit(2)
 NativeOpen(bag1)
@@ -501,7 +506,9 @@ Flush()
 Check(auction:IsShown() and bag1:IsShown() and bag2:IsShown(), "separate bags counted as multiple windows")
 NativeOpen(encounter)
 Check(auction:IsShown() and encounter:IsShown() and bag1:IsShown(), "cap ran inside the native show")
+local beforeGroup = groupCalls
 Flush()
+Check(groupCalls == beforeGroup + 1, "native grouped closes did not share a focus batch")
 Check(not bag1:IsShown() and not bag2:IsShown() and auction:IsShown() and encounter:IsShown(),
     "the oldest bag group was counted but never closed")
 NativeOpen(map)

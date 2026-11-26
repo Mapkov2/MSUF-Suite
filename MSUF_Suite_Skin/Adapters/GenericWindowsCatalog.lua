@@ -18,6 +18,7 @@ local OwnerKey = Shared.OwnerKey
 local CanSkin = Shared.CanSkin
 local CatalogMode = Shared.CatalogMode
 local ApplyFrameNow = Shared.ApplyFrameNow
+local frameStates, OwnedMode, RootSpec = Shared.frameStates, Shared.OwnedMode, Shared.RootSpec
 local DeactivateOwner = Shared.DeactivateOwner
 
 local entryStatus = {}
@@ -174,6 +175,15 @@ local function EntryRequest(entry, owner)
     return request
 end
 
+local function CopyFrameMetrics(result, metrics)
+    for index = 1, #metricTotalKeys do
+        local key = metricTotalKeys[index]
+        result[key] = metrics and metrics[key] or 0
+    end
+    result.fullscreenGuarded = metrics and metrics.fullscreenGuarded == true or false
+    result.truncated = metrics and metrics.truncated == true or false
+end
+
 local function StoreFrameResult(request, index, applied, reason, metrics)
     local result = request.frames[index]
     if not result then
@@ -181,12 +191,36 @@ local function StoreFrameResult(request, index, applied, reason, metrics)
         request.frames[index] = result
     end
     result.applied, result.reason = applied, reason
-    for index = 1, #metricTotalKeys do
-        local key = metricTotalKeys[index]
-        result[key] = metrics and metrics[key] or 0
+    CopyFrameMetrics(result, metrics)
+end
+
+-- The catalog and ContainerFrame.OpenBag see the same native shell, in either
+-- order. Keep only its public metric counts. Pooled slots and shared controls
+-- are updated separately by CommonMenus after Blizzard generates the bag.
+local bagMode = CatalogMode(nil)
+function GenericWindows.ApplyBagShell(frame, owner)
+    if NS.IsCombatLocked() then return ApplyFrameNow(frame, owner, bagMode) end
+    local generation = Kit.SkinGeneration()
+    local state = frameStates[frame]
+    local pass = state and state.bagPass
+    if pass and pass.generation == generation and state.active and state.owner == owner
+        and state.mode == OwnedMode(frame, bagMode) then return true, "applied", pass end
+    local ok, reason, metrics = GenericWindows.ApplyFrame(frame, owner, bagMode)
+    if ok then
+        pass = pass or {}
+        CopyFrameMetrics(pass, metrics)
+        pass.generation = generation
+        frameStates[frame].bagPass = pass
     end
-    result.fullscreenGuarded = metrics and metrics.fullscreenGuarded == true or false
-    result.truncated = metrics and metrics.truncated == true or false
+    return ok, reason, metrics
+end
+
+local function ApplyCatalogFrame(entry, frameValue, frame, owner, mode)
+    if entry.id == "inventory" and mode == bagMode and type(frameValue) == "string"
+        and (frameValue == "ContainerFrameCombinedBags" or frameValue:match("^ContainerFrame%d+$")) then
+        return GenericWindows.ApplyBagShell(frame, owner)
+    end
+    return ApplyFrameNow(frame, owner, mode)
 end
 
 -- Entries whose own adapters run after the generic pass and keep combat
@@ -206,7 +240,32 @@ local function LeftForCombat(entry, mode, ok, metrics, refusals)
     return metrics.windowControls == true
 end
 
-local function PaintEntryFrame(request, index)
+-- A shell of known size uses only its existing root. Its native fields, LoD
+-- content, pooled rows and control geometry still resolve at first reveal.
+local function PrepareHiddenShell(frame, owner, mode)
+    if NS.IsCombatLocked() then return end
+    mode = OwnedMode(frame, mode)
+    if mode.rootSurface == false or mode.accentOnly or mode.preserveRootArt or mode.listItem
+        or mode.role and mode.role ~= "shell" and mode.role ~= "panel" and mode.role ~= "popup" then return end
+    if Kit.WindowShellFits(frame) ~= true then return end
+    local state = frameStates[frame]
+    if state and state.active and state.owner ~= owner then return end
+    if not NS.Surface.Ensure(frame, RootSpec(mode, mode.allowImplicitProtected == true), true) then return end
+    state = state or {}
+    state.owner, state.active, state.rootSurfaceAttached, state.preparedShell = owner, true, true, true
+    frameStates[frame] = state
+    local ownerState = OwnerState(owner)
+    ownerState.surfaces[frame], ownerState.frames[frame] = true, true
+end
+
+local function WindowSizeRecovered(request, index)
+    local result = request.frames[index]
+    if not result or not request.ownerState.active then return end
+    result.pending = true
+    DeferredEntryFrame(request, index)
+end
+
+local function PaintEntryFrame(request, index, prepareHidden)
     local entry, owner = request.entry, request.owner
     local frameValue = entry.frames[index]
     local frame = ResolveFrame(frameValue)
@@ -244,10 +303,20 @@ local function PaintEntryFrame(request, index)
     if entry.category ~= "hud" and CanSkin(frame)
         and Kit.DeferHidden(frame, request, entry.id == "mail"
             and QueueEntryFrame or DeferredEntryFrame, request, index) then
+        if prepareHidden then PrepareHiddenShell(frame, owner, mode) end
         StoreFrameResult(request, index, false, "waiting")
         return
     end
-    local ok, reason, metrics = ApplyFrameNow(frame, owner, mode)
+    local previous = frameStates[frame]
+    if previous and previous.preparedShell and previous.owner == owner and Kit.WindowShellFits(frame) ~= true then
+        if NS.IsCombatLocked() then
+            StoreFrameResult(request, index, false, "waiting")
+            DeferEntryFrame(request, index)
+            return
+        end
+        Kit.WaitForWindowSize(frame, request, WindowSizeRecovered, request, index)
+    end
+    local ok, reason, metrics = ApplyCatalogFrame(entry, frameValue, frame, owner, mode)
     StoreFrameResult(request, index, ok, reason, metrics)
     if ok and mode.nativeListChrome and NS.TrainerCollections.Apply(frame, owner, entry.id) then
         request.ownerState.nativeListChrome = true
@@ -355,7 +424,7 @@ function GenericWindows.ApplyEntry(entry, owner)
     if blocker then return false, blocker end
     local request = EntryRequest(entry, owner)
     local frames = type(entry.frames) == "table" and entry.frames or noEntries
-    for index = 1, #frames do PaintEntryFrame(request, index) end
+    for index = 1, #frames do PaintEntryFrame(request, index, true) end
     request.complete = true
     return SummarizeEntry(request)
 end

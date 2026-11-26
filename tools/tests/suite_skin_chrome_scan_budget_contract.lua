@@ -118,4 +118,53 @@ Check(typeCalls <= 900, "chrome scan repeats table type checks per key")
 Check(fieldCalls <= 200, "chrome scan repeats the field wrapper per key")
 Check(nativeCalls == nativeBeforeScan, "plain chrome scan introduced native work")
 Check(allocation <= 0.01, "chrome scan allocated storage per pass")
+-- Talent nodes use the same normal slot to distinguish both legacy art sets.
+-- Give unrecognized buttons another chance when Blizzard assigns new art.
+do
+    local shared = NS.GenericWindowsShared
+    local function Noop() end
+    shared.CanSkin = function() return true end
+    shared.CountControl, shared.Fade = Noop, Noop
+    NS.Checkmarks = { GetWindowAction = Noop, IsDropdown = Noop }
+    NS.ControlSkin = { ApplyButton = function() return true end }
+    local module = os.getenv("SUITE_NODE_SCAN_SOURCE") or root .. "/MSUF_Suite_Skin/Adapters/GenericWindowsNodes.lua"
+    assert(loadfile(module))("MSUF_Suite_Skin", NS)
+    local metrics = { allowImplicitProtected = false }
+    local reads, nameReads = 0, 0
+    local function Slot(path)
+        return { GetTextureFilePath = function() return path end }
+    end
+    local function Button(family, disabled)
+        local prefix = "Interface/Buttons/UI-" .. family .. "-Button-"
+        local b = { normal = Slot(prefix .. "Up"), pushed = Slot(prefix .. "Down"),
+            highlight = Slot(prefix .. "Highlight"), disabled = disabled and Slot(prefix .. "Disabled") }
+        function b:GetName() nameReads = nameReads + 1 return "" end
+        function b:GetNormalTexture() reads = reads + 1 return self.normal end
+        function b:GetPushedTexture() reads = reads + 1 return self.pushed end
+        function b:GetHighlightTexture() reads = reads + 1 return self.highlight end
+        function b:GetDisabledTexture() reads = reads + 1 return self.disabled or nil end
+        return b
+    end
+    for _ = 1, 67 do
+        Check(not shared.SkinButton(Button("Talent", true), "test", metrics, ""), "unrelated art claimed")
+    end
+    print(("67 unrelated buttons: %d state texture reads, %d repeated name reads"):format(reads, nameReads))
+    Check(reads == 67 and nameReads == 0, "talent buttons repeated family or native name lookup")
+    for _, family in ipairs({ "DialogBox", "Panel" }) do
+        for _, disabled in ipairs({ false, true }) do
+            Check(shared.SkinButton(Button(family, disabled), "test", metrics), "native button family missed")
+        end
+    end
+    local changed = Button("DialogBox", true)
+    local good = changed.highlight
+    changed.highlight = Slot("Other")
+    Check(not shared.SkinButton(changed, "test", metrics), "partial texture family matched")
+    changed.highlight = good
+    Check(shared.SkinButton(changed, "test", metrics), "corrected native highlight was ignored")
+    changed.normal = nil
+    Check(shared.SkinButton(changed, "test", metrics), "owned native button lost its identity")
+    local wrong = Button("Panel", true)
+    wrong.disabled = Slot("Other")
+    Check(not shared.SkinButton(wrong, "test", metrics), "unrelated disabled art matched")
+end
 print("Suite skin chrome scan: " .. checks .. " checks passed")

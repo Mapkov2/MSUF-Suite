@@ -54,6 +54,11 @@ local function Frame(name, parent, kind)
     function frame:GetAlpha() return self.alpha or 1 end
     function frame:SetAlpha(value) self.alpha = value end
     function frame:GetLeft() return self.left end
+    function frame:GetRect()
+        local bottom = self.bottom
+        if self.GetBottom then bottom = self:GetBottom() end
+        return self:GetLeft(), bottom, self:GetWidth(), self:GetHeight()
+    end
     function frame:GetTop() return self.top end
     function frame:GetNumPoints() return 1 end
     function frame:GetPoint() return self.anchorName or "CENTER", UIParent, "CENTER", 0, 0 end
@@ -226,12 +231,18 @@ local function QueueJob(job)
     for _, pending in ipairs(queuedJobs) do if pending == job then return end end
     queuedJobs[#queuedJobs + 1] = job
 end
+local function CancelJob(job)
+    for index, pending in ipairs(queuedJobs) do
+        if pending == job then table.remove(queuedJobs, index) return end
+    end
+end
 local function NextFrame()
     local jobs = queuedJobs
     queuedJobs = {}
     for _, job in ipairs(jobs) do job() end
 end
 C_Timer = { After = function(_, callback) QueueJob(callback) end }
+dofile(root .. "/tools/tests/skin_registry_timer_fixture.lua")(C_Timer)
 local printed = {}
 local NS = {
     Print = function(message) printed[#printed + 1] = message end,
@@ -242,7 +253,7 @@ local NS = {
         windowControls = { enabled = true, scales = {}, positions = {} } },
     Theme = { GetColor = function() return 0.2, 0.3, 0.4, 1 end },
     Surface = { SkinOwnedButton = function(button, spec) button.surfaceSpec = spec; return true end },
-    Registry = { AddListener = function() end, QueueJob = QueueJob, NotifyListeners = function() end },
+    Registry = { AddListener = function() end, QueueJob = QueueJob, CancelJob = CancelJob, NotifyListeners = function() end },
     SuiteOwnership = { OwnsWindowGeometry = function() return false end },
     BlizzardCatalog = { FindByFrame = function(name)
         if name == "CharacterFrame" or name == "InspectFrame" then return { category = "character" } end
@@ -278,6 +289,7 @@ assert(loadfile(root .. "/MSUF_Suite/Appearance/Safety.lua"))("MSUF_Suite_Skin",
 assert(loadfile(root .. "/MSUF_Suite_Skin/Core/Defaults.lua"))("MSUF_Suite_Skin", NS)
 assert(loadfile(root .. "/MSUF_Suite_Skin/Core/DefaultsLooks.lua"))("MSUF_Suite_Skin", NS)
 assert(loadfile(arg[5] or root .. "/MSUF_Suite_Skin/Rendering/WindowControlPolicy.lua"))("MSUF_Suite_Skin", NS)
+assert(loadfile(root .. "/MSUF_Suite_Skin/Rendering/WindowControlNativeArt.lua"))("MSUF_Suite_Skin", NS)
 local chromeFrames = #createdFrames
 assert(loadfile(arg[3] or root .. "/MSUF_Suite_Skin/Rendering/WindowControlChrome.lua"))("MSUF_Suite_Skin", NS)
 -- The frame that looks at opening windows (WindowControlChrome.lua); one frame passes.
@@ -1250,6 +1262,7 @@ do
     NS.Client.isForever = true
     local timers = 0
     C_Timer = { After = function(_, job) timers = timers + 1 QueueJob(job) end }
+    dofile(root .. "/tools/tests/skin_registry_timer_fixture.lua")(C_Timer)
     local nativeToggle = Frame(nil, border)
     nativeToggle.MaximizeButton = Frame(nil, nativeToggle, "Button")
     nativeToggle.MinimizeButton = Frame(nil, nativeToggle, "Button")

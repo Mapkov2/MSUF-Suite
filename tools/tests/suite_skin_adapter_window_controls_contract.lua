@@ -138,7 +138,72 @@ for _, flavor in ipairs({ "Mainline", "Forever" }) do
         local social = Native("SocialUIFrame")
         social.RefreshTabs, social.RefreshTabStates = Noop, Noop
         social.EnumerateTabs = function() return function() end end
-        Check(NS.SocialUISkin.Apply("social"), "social adapter did not paint")
+        local function Part(key, visible)
+            local part = Frame(nil, social)
+            part.ActionButton = Frame(nil, part, "Button")
+            social[key] = part
+            if not visible then part:Hide() end
+            return part
+        end
+        local broadcast = Part("BattleNetBroadcastFrame", false)
+        local notice = Part("BattleNetUnavailableNoticeFrame", false)
+        local shown = Part("FriendsList", true)
+        local tab = Part("QuickJoinFrame", false)
+        local otherPages = { Part("RecentAlliesList", false), Part("FriendRequestsList", false),
+            Part("RecruitAFriendFrame", false), Part("RaidFrame", false) }
+        local oldButton = NS.ControlSkin.ApplyButton
+        local paints = {}
+        NS.ControlSkin.ApplyButton = function(object, ...)
+            paints[object] = (paints[object] or 0) + 1
+            return oldButton(object, ...)
+        end
+        local instructions = 0
+        debug.sethook(function() instructions = instructions + 100 end, "", 100)
+        local applied = NS.SocialUISkin.Apply("social")
+        debug.sethook()
+        local hiddenPaints = (broadcast.surfaceSpec and 1 or 0) + (notice.surfaceSpec and 1 or 0)
+            + (paints[tab.ActionButton] or 0)
+        for _, page in ipairs(otherPages) do hiddenPaints = hiddenPaints + (paints[page.ActionButton] or 0) end
+        print(("%s cold social root: %d hidden paints, %d sampled instructions"):format(flavor, hiddenPaints, instructions))
+        Check(applied and hiddenPaints == 0, "cold social root painted hidden pages or dialogs")
+        Check(not broadcast.surfaceSpec and not notice.surfaceSpec and not paints[tab.ActionButton],
+            "hidden social dialogs or tab contents painted during root initialization")
+        Check(paints[shown.ActionButton] == 1, "visible social tab was deferred")
+        tab:Show()
+        Check(paints[tab.ActionButton] == 1 and not broadcast.surfaceSpec,
+            "social tab's first presentation missed its skin or woke a sibling")
+        tab:Hide(); tab:Show()
+        Check(paints[tab.ActionButton] == 1, "clean social tab reopen repeated its paint")
+        tab:Hide()
+        local replacement = Part("QuickJoinFrame", false)
+        NS.SocialUISkin.Apply("social")
+        tab:Show()
+        Check(not paints[replacement.ActionButton], "old tab painted a hidden replacement")
+        replacement:Show()
+        Check(paints[replacement.ActionButton] == 1, "replacement tab missed first visible paint")
+        notice:Show()
+        Check(notice.surfaceSpec and not broadcast.surfaceSpec, "showing the notice also built the broadcast dialog")
+        local replacedWhilePending = otherPages[1]
+        local current = Part("RecentAlliesList", false)
+        replacedWhilePending:Show()
+        Check(not paints[replacedWhilePending.ActionButton] and not paints[current.ActionButton],
+            "a pending skin ran against a detached tab")
+        current:Show()
+        Check(paints[current.ActionButton] == 1, "an old tab signal lost the new tab's pending skin")
+        _G.combatEdge = true
+        broadcast.protected = true
+        broadcast:Show()
+        Check(not broadcast.surfaceSpec and next(H.jobs), "a protected dialog shown during combat bypassed deferral")
+        _G.combatEdge = false
+        for key, callback in pairs(H.jobs) do H.jobs[key] = nil; callback() end
+        Check(broadcast.surfaceSpec, "a protected dialog still has no skin after combat")
+        local neverOpened = Part("FriendRequestsList", false)
+        NS.SocialUISkin.Apply("social")
+        NS.SocialUISkin.Disable("social")
+        neverOpened:Show()
+        Check(not paints[neverOpened.ActionButton], "disabled owner repainted a delayed social tab")
+        NS.ControlSkin.ApplyButton = oldButton
+        NS.SocialUISkin.Apply("social")
         local state = Controls(social, "social:social-ui")
         Exercise(social, state)
         local frameCount, hookCount = #H.frames, nativeHooks

@@ -6,7 +6,11 @@ local source = file:read("*a")
 file:close()
 local stop = assert(source:find('assert(loadfile(arg[2] or root .. "/MSUF_Suite_Skin/Rendering/WindowControls.lua"))', 1, true))
 local fixture = source:sub(1, stop - 1) .. [[
-return { NS = NS, Frame = Frame, frames = createdFrames, jobs = combatJobs }
+return { NS = NS, Frame = Frame, frames = createdFrames, jobs = combatJobs, watcher = watcher,
+    isQueued = function(fn)
+        for _, job in ipairs(queuedJobs) do if job == fn then return true end end
+        return false
+    end }
 ]]
 local checks = 0
 local function Check(value, message) assert(value, message); checks = checks + 1 end
@@ -44,6 +48,62 @@ for _, flavor in ipairs({ "Mainline", "Forever" }) do
     end
     assert(loadfile(arg[2] or root .. "/MSUF_Suite_Skin/Rendering/WindowControls.lua"))("MSUF_Suite_Skin", NS)
     local W = NS.WindowControls
+    if NS.Client.isForever then
+        local savedTimer, handles, fired = C_Timer, {}, 0
+        local function NewTimer(_, callback)
+            local handle = {}
+            handles[handle] = callback
+            function handle:Cancel() handles[self] = nil end
+            return handle
+        end
+        C_Timer = { NewTimer = NewTimer, After = NewTimer }
+        local function Tick()
+            for handle, callback in pairs(handles) do
+                handles[handle], fired = nil, fired + 1
+                callback(handle)
+            end
+        end
+        local first, second = Frame(nil, UIParent), Frame(nil, UIParent)
+        local paints, others = 0, 0
+        local repaint = NS.WindowControlPolicy.MapCaptionCallback({ name = "WorldMapFrame", frame = first },
+            function() paints = paints + 1 end)
+        local other = NS.WindowControlPolicy.MapCaptionCallback({ name = "WorldMapFrame", frame = second },
+            function() others = others + 1 end)
+        _G.combatEdge = true
+        repaint(); repaint(); other()
+        first:Hide()
+        repaint() -- a child's inherited OnHide can run after the root's.
+        Tick()
+        Check(fired == 1 and paints == 0 and others == 1,
+            "closed map fired a caption timer, rearmed from a child, or canceled another owner")
+        first:Show()
+        repaint(); repaint()
+        Tick()
+        Check(fired == 2 and paints == 1, "visible map did not repaint exactly once during combat")
+        _G.combatEdge, C_Timer = false, savedTimer
+    end
+    do
+        local panel = Frame("AddonList", UIParent)
+        panel.CloseButton = Frame(nil, panel, "Button")
+        _G.AddonList = panel
+        UIPanelWindows.AddonList = { area = "left" }
+        panel:Hide()
+        Check(W.Attach(panel, "last-close"), "closed test window could not be prepared")
+        local state = W.states[panel]
+        Check(not H.isQueued(state.settle) and not H.watcher.scripts.OnUpdate,
+            "preparing a closed window queued caption work")
+        panel:Show()
+        Check(H.isQueued(state.settle) and H.watcher.scripts.OnUpdate,
+            "visible window did not start its native layout settlement")
+        NS.Registry.QueueJob(state.replayShow)
+        panel:Hide()
+        Check(not H.isQueued(state.settle) and not H.isQueued(state.replayShow) and not H.watcher.scripts.OnUpdate,
+            "closing the last window before flush retained opening work")
+        panel:Show()
+        Check(H.isQueued(state.settle) and H.watcher.scripts.OnUpdate, "reopen lost caption settlement")
+        panel:Hide()
+        W.DisableOwner("last-close")
+    end
     local previousLoot, previousLootPanel = LootFrame, UIPanelWindows.LootFrame
     LootFrame = Frame("LootFrame", UIParent)
     LootFrame.ClosePanelButton = Frame(nil, LootFrame, "Button")

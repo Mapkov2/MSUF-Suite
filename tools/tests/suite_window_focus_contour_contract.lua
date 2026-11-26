@@ -91,6 +91,54 @@ local body = [======[
     map:Hide()
     for _ = 1, 100 do Tick() end
     Check(reads == 0, "closed-window contour discovery polled native artwork")
+    local function Noop() end
+    local binds, unbinds, typeReads, enumerations = 0, 0, 0, 0
+    local function NewTexture()
+        return { GetObjectType = function() typeReads = typeReads + 1; return "Texture" end,
+            AddMaskTexture = function() binds = binds + 1 end, RemoveMaskTexture = function() unbinds = unbinds + 1 end }
+    end
+    local regions = {}
+    for i = 1, 7 do regions[i] = NewTexture() end
+    local canvas = {
+        CreateMaskTexture = function()
+            return { SetTexture = Noop, SetTexCoord = Noop, ClearAllPoints = Noop, SetPoint = Noop, SetSize = Noop, Show = Noop }
+        end,
+        GetRegions = function() enumerations = enumerations + 1; return unpack(regions) end,
+    }
+    local veil = { canvas = canvas }
+    local box = { left = 0, bottom = 0, width = 100, height = 100, unitScale = 1 }
+    local function ApplyMask() Check(NS.WindowFocusContour.Apply(veil, box, box), "valid contour paint failed") end
+    for i = 1, 10 do ApplyMask() end
+    print(("10 unmasked paints: %d region enumerations, %d type queries"):format(enumerations, typeReads))
+    Check(enumerations == 0 and typeReads == 0, "unmasked paint scanned textures with no mask to apply or release")
+    box.contour = { art = { asset = "sample", uv = { 0, 1, 0, 1 } } }
+    for i = 1, 10 do ApplyMask() end
+    Check(binds == 7 and typeReads == 7, "an unchanged mask binding repeated widget queries")
+    local old = regions[7]
+    regions[7] = NewTexture()
+    ApplyMask()
+    Check(binds == 8 and typeReads == 8, "same-size region replacement missed its first mask")
+    box.contour = nil
+    ApplyMask()
+    Check(unbinds == 7, "returning to an unmasked shape left bound textures")
+    regions[7] = old
+    ApplyMask()
+    Check(unbinds == 8, "a returning detached texture retained its old mask")
+    local endScans = enumerations
+    ApplyMask()
+    Check(enumerations == endScans, "settled unmasked canvas kept scanning textures")
+    local waiting, secret = NewTexture(), { secret = true }
+    local publicType = waiting.GetObjectType
+    waiting.GetObjectType = function() return secret end
+    regions[8], regions[9] = secret, waiting
+    box.contour = { art = { asset = "sample", uv = { 0, 1, 0, 1 } } }
+    ApplyMask()
+    Check(binds == 15, "restricted texture or object type participated in a new mask binding")
+    waiting.GetObjectType = publicType
+    ApplyMask()
+    Check(binds == 16, "a previously unreadable object type was not retried")
+
+
 end
 ]======]
 assert(loadstring(source:sub(1, stop - 1) .. body .. '\nprint("suite_window_focus_contour_contract: " .. checks .. " checks passed")',

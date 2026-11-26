@@ -153,6 +153,11 @@ local function NewSession(forever, look)
         Registry = {
             AddListener = function(owner, callback) listeners[owner] = callback end,
             QueueJob = function(job) jobs[#jobs + 1] = job end,
+            CancelJob = function(job)
+                for index = #jobs, 1, -1 do
+                    if jobs[index] == job then table.remove(jobs, index) end
+                end
+            end,
         },
         BlizzardCatalog = { FindByFrame = function(name)
             if name == "CharacterFrame" then return { category = "character" } end
@@ -173,6 +178,7 @@ local function NewSession(forever, look)
     assert(loadfile(root .. "/MSUF_Suite_Skin/Core/DefaultsLooks.lua"))("MSUF_Suite_Skin", NS)
     -- The TOC loads the controls' chrome right before them.
     assert(loadfile(root .. "/MSUF_Suite_Skin/Rendering/WindowControlPolicy.lua"))("MSUF_Suite_Skin", NS)
+assert(loadfile(root .. "/MSUF_Suite_Skin/Rendering/WindowControlNativeArt.lua"))("MSUF_Suite_Skin", NS)
 assert(loadfile(root .. "/MSUF_Suite_Skin/Rendering/WindowControlChrome.lua"))("MSUF_Suite_Skin", NS)
     assert(loadfile(root .. "/MSUF_Suite_Skin/Rendering/WindowControlDelegate.lua"))("MSUF_Suite_Skin", NS)
     assert(loadfile(source))("MSUF_Suite_Skin", NS)
