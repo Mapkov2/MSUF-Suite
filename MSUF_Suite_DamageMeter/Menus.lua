@@ -300,8 +300,13 @@ local previewFights = { { sessionID = 1, durationSeconds = 43 }, { sessionID = 2
 -- The 20 most recent fights (oldest first), then Current and Overall.
 local function SessionMenu(_, root, win)
     if not win.menuPreview and win.meterType ~= D.THREAT then
+        local available = not M.inCombat and not NS.IsCombatLocked()
+        if D.OpenFightSummary then
+            local summary = root:CreateButton(S.Text("Fight summary"), D.OpenFightSummary, win)
+            summary:SetEnabled(available)
+        end
         local compare = root:CreateButton(S.Text("Compare pulls"), D.OpenPullCompare, win)
-        compare:SetEnabled(not M.inCombat and not NS.IsCombatLocked())
+        compare:SetEnabled(available)
         root:CreateDivider()
     end
     local list = win.menuPreview and previewFights or C_DamageMeter.GetAvailableCombatSessions()

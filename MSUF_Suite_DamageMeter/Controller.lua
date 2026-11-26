@@ -331,8 +331,13 @@ local function CurrentUpdated(self)
     end
     if dirty then D.RequestPaint() end
 end
-local function Reset()
+local function CloseAnalyses()
     D.ClosePullCompare()
+    if D.CloseFightSummary then D.CloseFightSummary() end
+end
+
+local function Reset()
+    CloseAnalyses()
     D.InvalidateTargets()
     for i = 1, D.MAX do
         local win = D.windows[i]
@@ -354,7 +359,7 @@ end
 local function CombatStart(self)
     D.InvalidateTargets()
     M.inCombat = true
-    D.ClosePullCompare()
+    CloseAnalyses()
     M.combatStart = GetTime()
     M.nextPaint = nil
     M.preview = false
@@ -418,7 +423,7 @@ end
 
 -- isInitialLogin: the first world entry of a session, when the role meters apply.
 local function World(self, _, isInitialLogin)
-    D.ClosePullCompare()
+    CloseAnalyses()
     D.ClearIdentities()
     D.InvalidateTargets()
     local combat = NS.IsCombatLocked()
@@ -658,7 +663,7 @@ end
 
 -- Frames are kept and reused by the next Enable.
 function M:Disable()
-    D.ClosePullCompare()
+    CloseAnalyses()
     D.UntrackUIVisibility()
     NS.HostBridge.WatchIconSkins("damageMeter", false)
     M.sessionHidden = nil

@@ -23,6 +23,7 @@ Breakdown.lua
 Menus.lua
 PullCompareData.lua
 PullCompare.lua
+FightSummary.lua
 Report.lua
 TimerStyle.lua
 Timer.lua
