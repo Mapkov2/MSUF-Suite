@@ -130,9 +130,32 @@ function QuestDetailScrollChildFrame:CreateFontString()
     offerXP = region
     return region
 end
+local eventFrames = {}
+local function DeliverQuestEvent(event)
+    local deliveries = 0
+    if QuestFrame.hooks.OnEvent then
+        deliveries = deliveries + 1
+        QuestFrame.hooks.OnEvent(QuestFrame, event)
+    end
+    for _, frame in ipairs(eventFrames) do
+        if frame.events[event] then
+            deliveries = deliveries + 1
+            frame.onEvent(frame, event)
+        end
+    end
+    return deliveries
+end
 function CreateFrame(kind, parent)
     assert(kind == "Frame" and parent == nil)
     local frame = NativeFrame()
+    function frame:SetScript(script, callback)
+        assert(script == "OnEvent")
+        self.onEvent = callback
+        self.events = {}
+        eventFrames[#eventFrames + 1] = self
+    end
+    function frame:RegisterEvent(event) self.events[event] = true end
+    function frame:UnregisterEvent(event) self.events[event] = nil end
     function frame:SetParent(owner) self.parent = owner end
     function frame:SetPoint(_, owner) self.anchor = owner end
     function frame:SetWidth(width) self.width = width end
@@ -315,6 +338,9 @@ for _, flavor in ipairs({ "Mainline", "Forever" }) do
     QuestFrameProgressPanel:Hide()
     QuestFrameRewardPanel:Hide()
     NS.QuestText.Activate(quest, "quest")
+    local closedDeliveries = 0
+    for _ = 1, 300 do closedDeliveries = closedDeliveries + DeliverQuestEvent("QUEST_LOG_UPDATE") end
+    Check(closedDeliveries == 0, "skin received quest log events without a visible quest offer")
     QuestFrameDetailPanel:Show()
     NextFrame()
     local expected = nativeFades and 0 or 1
@@ -455,15 +481,17 @@ for _, flavor in ipairs({ "Mainline", "Forever" }) do
         NextFrame()
         Check(not offerXP:IsShown() and preloads[questID] == 1, "cold offer inherited choices or did not preload reward data")
         local loaded = assert(loadCallbacks[questID], "cold offer did not request its quest data")
-        local questEvent = assert(QuestFrame.hooks.OnEvent, "missing late reward cache refresh")
-        for i = 1, 20 do questEvent(QuestFrame, "QUEST_LOG_UPDATE") end
+        for i = 1, 20 do
+            Check(DeliverQuestEvent("QUEST_LOG_UPDATE") == 1, "open cold offer missed or duplicated a quest log event")
+        end
+        Check(DeliverQuestEvent("QUEST_FINISHED") == 0, "open cold offer received unrelated native events")
         Check(#queuedJobs == 0, "unrelated log updates repeatedly repainted an offer with unavailable reward data")
         loaded()
         NextFrame()
         Check(preloads[questID] == 1, "an early quest data result repeatedly requested its reward payload")
         logData[questID] = { choice = { { name = "Cached Choice" } }, reward = { { name = "Cached Item" } },
             money = 1234, xp = 888 }
-        questEvent(QuestFrame, "QUEST_LOG_UPDATE")
+        DeliverQuestEvent("QUEST_LOG_UPDATE")
         NextFrame()
         Check(HasOfferText("Cached Choice") and HasOfferText("Cached Item") and HasOfferText("888")
             and HasOfferText("1234"), "explicit quest reward data did not hydrate a still-open cold offer")
@@ -587,7 +615,7 @@ for _, flavor in ipairs({ "Mainline", "Forever" }) do
         Check(offerXP.anchor == QuestInfoObjectivesText and HasOfferText("2000 coins\nExperience: 2936")
             and not HasOfferText("1494"), "second offer's cold rewards were misplaced or carried over")
         rewardXP, rewardMoney, mayShow = 2936, 2000, true
-        questEvent(quest, "QUEST_LOG_UPDATE")
+        DeliverQuestEvent("QUEST_LOG_UPDATE")
         NextFrame()
         NextFrame()
         Check(nativeOffers == before + 2 and rewards:IsVisible() and rewards.anchor == QuestInfoObjectivesText
@@ -603,7 +631,9 @@ for _, flavor in ipairs({ "Mainline", "Forever" }) do
                 and QuestInfoObjectivesHeader.color[4] == 1 and QuestInfoObjectivesText.color[4] == 1,
                 "native reading cleanup left an invisible gap before the XP and silver")
         end
-        for i = 1, 8 do questEvent(quest, "QUEST_LOG_UPDATE") end
+        for i = 1, 8 do
+            Check(DeliverQuestEvent("QUEST_LOG_UPDATE") == 0, "complete visible offer still receives quest log events")
+        end
         Check(nativeOffers == before + 2 and #queuedJobs == 0, "healthy XP and silver page kept painting")
         -- XP may be ready in the native UI while both the objective and the
         -- active money value are still missing from an already cached quest.
@@ -613,13 +643,13 @@ for _, flavor in ipairs({ "Mainline", "Forever" }) do
         callbacks.QuestInfo_Display()
         NextFrame()
         objectiveText = "Kill the remaining murlocs."
-        questEvent(quest, "QUEST_LOG_UPDATE")
+        DeliverQuestEvent("QUEST_LOG_UPDATE")
         NextFrame()
         NextFrame()
         Check(nativeOffers == before + 3 and QuestInfoObjectivesText.value == objectiveText
             and not rewards.MoneyFrame:IsShown(), "late objective text alone did not restore the native paragraph")
         rewardMoney = 2000
-        questEvent(quest, "QUEST_LOG_UPDATE")
+        DeliverQuestEvent("QUEST_LOG_UPDATE")
         NextFrame()
         NextFrame()
         Check(nativeOffers == before + 4 and QuestInfoObjectivesText.value == objectiveText
@@ -658,6 +688,8 @@ for _, flavor in ipairs({ "Mainline", "Forever" }) do
         questID, offerItems.choice, mayShow = 2846, {}, false
     end
     QuestFrameProgressPanel:Show()
+    Check(DeliverQuestEvent("QUEST_LOG_UPDATE") == 0, "hidden offer still receives quest log events")
+    Check(DeliverQuestEvent("QUEST_FINISHED") == 0, "inactive skin still receives native quest events")
     -- The fallback line hides with its parent page at once and is settled after the build.
     if nativeFades then Check(not offerXP:IsVisible(), "offer summary stayed visible on progress") end
     NextFrame()

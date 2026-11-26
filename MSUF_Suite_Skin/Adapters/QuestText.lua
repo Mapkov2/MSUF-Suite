@@ -18,6 +18,7 @@ local Safety = NS.Safety
 local MAX_PARENT_DEPTH = 20
 local MAX_OBJECTIVES = 40
 local MAX_OFFER_ITEMS = 40
+local COMPLETE_OFFER_READINESS = 7 -- objective, XP and money are all available
 local REPAINT_KEY = "quest-text:repaint"
 -- Forever fades the reward scroll child over 0.5 s. On quest 331 the shared
 -- contents were opaque on the next frame and transparent again at 0.651 s.
@@ -60,14 +61,34 @@ end
 local offerReward, offerLabel, offerAnchor, offerID, waitingForRewards, requestedQuest, fadeCheck, checkedOffer
 local requestedItems = {}
 local offerDisplays, offerReadiness
+local offerEvents, OfferEvent
+local listeningForOffer = false
 
 local function Positive(value)
     return Safety.Public(value) and type(value) == "number" and value > 0 and value
 end
 
+-- QuestFrame also receives quest events while closed. Only an unfinished
+-- offer needs to listen for newly available quest data.
+local function SyncOfferEvents()
+    local needed = waitingForRewards or offerReadiness ~= nil and offerReadiness < COMPLETE_OFFER_READINESS
+    if needed == listeningForOffer then return end
+    if needed then
+        if not offerEvents then
+            offerEvents = CreateFrame("Frame")
+            offerEvents:SetScript("OnEvent", OfferEvent)
+        end
+        offerEvents:RegisterEvent("QUEST_LOG_UPDATE")
+    else
+        offerEvents:UnregisterEvent("QUEST_LOG_UPDATE")
+    end
+    listeningForOffer = needed
+end
+
 local function ClearOffer()
     offerID, waitingForRewards, requestedQuest = nil, nil, nil
     offerDisplays, checkedOffer, offerReadiness = nil, nil, nil
+    SyncOfferEvents()
     for id in pairs(requestedItems) do requestedItems[id] = nil end
     if fadeCheck then
         fadeCheck:Cancel()
@@ -82,6 +103,7 @@ local function WatchOffer(id)
     end
     local cached = id and HaveQuestRewardData(id)
     waitingForRewards = id ~= nil and Safety.Public(cached) and not cached
+    SyncOfferEvents()
     if waitingForRewards and not requestedQuest then
         requestedQuest = true
         QuestEventListener:AddCallback(id, RequestPaint)
@@ -307,6 +329,7 @@ local function OfferRewardText(settled)
     AppendOfferItems(lines, nativeNames, "choice", GetNumQuestChoices, GetNumQuestLogChoices)
     AppendOfferItems(lines, nativeNames, "reward", GetNumQuestRewards, GetNumQuestLogRewards)
     offerReadiness = offerID and OfferReadiness() or nil
+    SyncOfferEvents()
     if RestoreOfferLayout(nativeNames, #lines > 0, xp, money, settled) then return OfferRewardText(false) end
     if #lines == 0 and not rewards and (coins or experience) then lines[1] = REWARD_ITEMS_ONLY end
     if coins then lines[#lines + 1] = coins end
@@ -663,13 +686,12 @@ local function OfferHidden()
     RequestPaint()
 end
 
-local function OfferEvent(_, event)
-    if event ~= "QUEST_LOG_UPDATE" or not offerID then return end
+OfferEvent = function()
     if waitingForRewards then
         local cached = HaveQuestRewardData(offerID)
         if Safety.Public(cached) and cached == true then RequestPaint() end
     end
-    if offerReadiness and offerReadiness < 7 and IsDetailReady() and Positive(GetQuestID()) == offerID
+    if offerReadiness and offerReadiness < COMPLETE_OFFER_READINESS and IsDetailReady() and Positive(GetQuestID()) == offerID
         and OfferReadiness() ~= offerReadiness then RequestPaint() end
 end
 
@@ -686,7 +708,6 @@ local function EnsurePanelShowHooks()
         end
     end
     if not offerHooks and Safety.HasMethod(QuestFrameDetailPanel, "HookScript") then
-        if Safety.HasMethod(QuestFrame, "HookScript") then QuestFrame:HookScript("OnEvent", OfferEvent) end
         if Safety.HasMethod(QuestFrameRewardPanel, "HookScript") then
             QuestFrameRewardPanel:HookScript("OnHide", Isolated(CancelTurnInCheck))
         end
