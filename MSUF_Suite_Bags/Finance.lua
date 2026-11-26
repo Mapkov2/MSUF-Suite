@@ -161,7 +161,7 @@ local function Tooltip(button)
 end
 
 local function WindowRows()
-    if not Finance.window or not Finance.window:IsShown() then return end
+    if not Finance.window or not Finance.window:IsVisible() then return end
     local rows, font = Finance.BuildRows(), S.ResolveFont(M.config.font) or S.GlobalFontPath()
     for i = 1, #rows do
         local label = Finance.labels[i]
@@ -198,8 +198,44 @@ local function WindowRows()
     Finance.content:SetHeight(math.max(24, #rows * 24))
 end
 
-function Finance.Show()
+-- The history records each money change independently of whether it has a
+-- window. Only visible surfaces need currencies. A closed combat interval
+-- keeps its last balance so the next journal read can recover the net change.
+local function SyncEvents()
+    if not Finance.enabled then return end
+    local visible = M.frame:IsVisible() or Finance.window and Finance.window:IsVisible()
+    local history = M.config.showGoldHistory and (not Finance.paused or visible) or false
+    if history ~= Finance.recording then
+        Finance.recording = history
+        if history then
+            Finance.events:RegisterEvent("PLAYER_MONEY")
+            Finance.events:RegisterEvent("PLAYER_ENTERING_WORLD")
+            Finance.Record()
+        else
+            Finance.events:UnregisterEvent("PLAYER_MONEY")
+            Finance.events:UnregisterEvent("PLAYER_ENTERING_WORLD")
+        end
+    end
+    local currency = visible and (M.config.currencyIDs or "") ~= "" or false
+    if currency ~= Finance.watchingCurrency then
+        Finance.watchingCurrency = currency
+        if currency then
+            Finance.events:RegisterEvent("CURRENCY_DISPLAY_UPDATE")
+        else
+            Finance.events:UnregisterEvent("CURRENCY_DISPLAY_UPDATE")
+        end
+    end
+    if not visible and Finance.flushJob then Finance.flushJob:Cancel() end
+end
+
+local function HistoryShown()
+    SyncEvents()
+    if not Finance.window:IsVisible() then return end
     ReadCurrencies()
+    WindowRows()
+end
+
+function Finance.Show()
     if not Finance.window then
         Finance.window = P.GridView.Window("MSUFSuiteBagGoldHistory", 610, 510, "Gold and currencies")
         local scroll = S.CreateFrame("ScrollFrame", nil, Finance.window, "UIPanelScrollFrameTemplate")
@@ -208,9 +244,10 @@ function Finance.Show()
         Finance.content = S.CreateFrame("Frame", nil, scroll)
         Finance.content:SetSize(552, 24)
         scroll:SetScrollChild(Finance.content)
+        Finance.window:HookScript("OnShow", HistoryShown)
+        Finance.window:HookScript("OnHide", SyncEvents)
     end
-    Finance.window:Show()
-    WindowRows()
+    if Finance.window:IsVisible() then HistoryShown() else Finance.window:Show() end
 end
 
 -- The footer line stands above the Suite grid's footer. In the combat
@@ -237,10 +274,10 @@ end
 
 function Finance.Refresh()
     if not M.active or not M.frame then return end
-    if not M.frame:IsShown() and not (Finance.window and Finance.window:IsShown()) then return end
+    if not M.frame:IsVisible() and not (Finance.window and Finance.window:IsVisible()) then return end
     ReadCurrencies()
     WindowRows()
-    if not M.frame:IsShown() then return end
+    if not M.frame:IsVisible() then return end
     if not Finance.button then
         -- Above the inventory view's footer, which stands on Blizzard's money
         -- row (it moves up for tracked currencies); see Place.
@@ -286,11 +323,28 @@ end
 
 -- One repaint per frame (a ctx:Coalesce job): events in between ride along.
 function Finance.Event(_, event)
-    if event == "PLAYER_MONEY" or event == "PLAYER_ENTERING_WORLD" then Finance.Record() end
+    if event == "PLAYER_MONEY" or event == "PLAYER_ENTERING_WORLD" then
+        Finance.Record()
+        -- A money update only changes the balance rows in the history window.
+        if event == "PLAYER_MONEY" and not (Finance.window and Finance.window:IsVisible()) then return end
+    end
     if not M.active or not M.frame then return end
-    if not M.frame:IsShown() and not (Finance.window and Finance.window:IsShown()) then return end
+    if not M.frame:IsVisible() and not (Finance.window and Finance.window:IsVisible()) then return end
     Finance.flushJob = Finance.flushJob or M.context:Coalesce(0, Flush)
     Finance.flushJob:Request()
+end
+
+local function BagShown()
+    if not Finance.enabled then return end
+    SyncEvents()
+    M:ApplyGoldEvents()
+    Finance.Refresh()
+end
+
+local function BagHidden()
+    if not Finance.enabled then return end
+    M:PauseGoldEvents()
+    SyncEvents()
 end
 
 function Finance.Enable()
@@ -298,44 +352,27 @@ function Finance.Enable()
     if not Finance.events then
         Finance.events = S.CreateFrame("Frame")
         Finance.events:SetScript("OnEvent", Finance.Event)
+        M.frame:HookScript("OnShow", BagShown)
+        M.frame:HookScript("OnHide", BagHidden)
     end
-    Finance.events:UnregisterAllEvents()
-    if M.active then
-        if M.config.showGoldHistory then
-            Finance.events:RegisterEvent("PLAYER_MONEY")
-            Finance.events:RegisterEvent("PLAYER_ENTERING_WORLD")
-            Finance.Record()
-        end
-        Finance.events:RegisterEvent("CURRENCY_DISPLAY_UPDATE")
-        if not Finance.hooked then
-            M.frame:HookScript("OnShow", Finance.Refresh)
-            Finance.hooked = true
-        end
-        Finance.Refresh()
-    end
+    Finance.enabled = M.active
+    SyncEvents()
+    Finance.Refresh()
     Gold.SetHistoryRecording(M.active and M.config.showGoldHistory == true or false)
 end
 
--- A fight with every bag window closed (CombatIdle.lua): money and currency
--- changes wait. Resume records the balance once (Finance.observed is kept),
--- so the fight's net change lands in the history.
 function Finance.Pause()
-    if not Finance.events then return end
-    Finance.events:UnregisterEvent("PLAYER_MONEY")
-    Finance.events:UnregisterEvent("CURRENCY_DISPLAY_UPDATE")
+    Finance.paused = true
+    SyncEvents()
 end
 
 function Finance.Resume()
-    if not Finance.events or not M.active then return end
-    if M.config.showGoldHistory then
-        Finance.events:RegisterEvent("PLAYER_MONEY")
-        Finance.Record()
-    end
-    Finance.events:RegisterEvent("CURRENCY_DISPLAY_UPDATE")
-    Finance.Event(nil, "CURRENCY_DISPLAY_UPDATE")
+    Finance.paused = false
+    SyncEvents()
 end
 
 function Finance.Disable()
+    Finance.enabled, Finance.paused, Finance.recording, Finance.watchingCurrency = false, false, false, false
     Finance.observed = nil
     if Finance.events then Finance.events:UnregisterAllEvents() end
     if Finance.button then Finance.button:Hide() end

@@ -205,11 +205,12 @@ do
     local function Noop() end
     local function Frame()
         return { SetPoint = Noop, ClearAllPoints = Noop, SetSize = Noop, SetHeight = Noop, SetFrameStrata = Noop,
-            SetClampedToScreen = Noop, SetFrameLevel = Noop, SetScript = Noop,
+            SetClampedToScreen = Noop, SetFrameLevel = Noop, SetScript = Noop, HookScript = Noop,
             SetMovable = Noop, EnableMouse = Noop, RegisterForDrag = Noop, StartMoving = Noop,
             StopMovingOrSizing = Noop,
             RegisterForClicks = Noop, SetScrollChild = Noop, GetFrameLevel = function() return 1 end,
             IsShown = function(self) return self.shown ~= false end,
+            IsVisible = function(self) return self.shown ~= false end,
             Show = function(self) self.shown = true end, Hide = function(self) self.shown = false end,
             SetShown = function(self, value) self.shown = value end,
             SetParent = function(self, value) self.parent = value end,
@@ -267,7 +268,7 @@ do
     F.Disable()
 end
 local timers, shown, refreshes = {}, true, 0
-M.frame = { IsShown = function() return shown end }
+M.frame = { IsShown = function() return shown end, IsVisible = function() return shown end }
 C_Timer = { After = function(_, callback) timers[#timers + 1] = callback end }
 -- Repaints are one coalesced job on the Bags module's context.
 NS.Dispatch = function(callback, ...) return callback(...) end

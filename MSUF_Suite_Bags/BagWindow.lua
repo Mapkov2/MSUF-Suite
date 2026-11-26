@@ -212,8 +212,7 @@ function M:UpdatePresentation(closing, layout)
     -- Paint the appropriate surface when the frame actually shows again.
     if not closing and (t.panel ~= panel or t.rail ~= rail) then PaintWindow(t, self.config) end
     if t.presentation == panel and t.presentationRail == rail then return end
-    t.presentation, t.presentationRail, t.combat = panel, rail, combat
-    PaintWindow(t, self.config)
+    t.presentation, t.presentationRail = panel, rail
     local title = self.frame.TitleContainer
     if title and title.TitleText then
         if panel then
@@ -275,6 +274,8 @@ function M:StyleWindows()
 end
 
 local function PaintGold(label, format, delta)
+    if label.goldFormat == format and label.goldDelta == delta then return end
+    label.goldFormat, label.goldDelta = format, delta
     label:SetText(GoldDeltaText(format, delta))
     if delta and delta > 0 then
         label:SetTextColor(0.33, 0.86, 0.62)
@@ -301,15 +302,31 @@ local function UpdateTodayGold(self)
     PaintGold(label, TEXT.today, net)
 end
 
--- Follows the money for the configured period; returns which labels show.
-local function WatchGold(self)
+-- If login money was restricted, establish the session baseline at the first
+-- readable amount, even when the bag is still closed. No label is involved.
+local function CaptureHiddenGold(self)
+    if NS.SessionGoldBaseline(PublicMoney()) then
+        self.context:RemoveEvent("PLAYER_MONEY")
+        self.context:RemoveEvent("PLAYER_ENTERING_WORLD")
+    end
+end
+
+local function WatchGold(self, visible)
     local show, period = self.config.showSessionGold, self.config.goldPeriod
     local session = show and period ~= GOLD_PERIOD.TODAY
     local today = show and (period == GOLD_PERIOD.TODAY or period == GOLD_PERIOD.BOTH)
-    Gold.WatchToday(self, today and UpdateTodayGold or nil)
+    Gold.WatchToday(self, visible and today and UpdateTodayGold or nil)
+    local callback
     if session then
-        self.context:Event("PLAYER_MONEY", UpdateSessionGold, IN_COMBAT)
-        self.context:Event("PLAYER_ENTERING_WORLD", UpdateSessionGold, IN_COMBAT)
+        if visible then
+            callback = UpdateSessionGold
+        elseif not NS.SessionGoldBaseline(nil) and not NS.SessionGoldBaseline(PublicMoney()) then
+            callback = CaptureHiddenGold
+        end
+    end
+    if callback then
+        self.context:Event("PLAYER_MONEY", callback, IN_COMBAT)
+        self.context:Event("PLAYER_ENTERING_WORLD", callback, IN_COMBAT)
     else
         self.context:RemoveEvent("PLAYER_MONEY")
         self.context:RemoveEvent("PLAYER_ENTERING_WORLD")
@@ -317,21 +334,16 @@ local function WatchGold(self)
     return show, session, today
 end
 
--- A fight with every bag window closed (CombatIdle.lua): the labels stop
--- following the money; Resume paints them once.
 function M:PauseGoldEvents()
-    Gold.WatchToday(self, nil)
-    self.context:RemoveEvent("PLAYER_MONEY")
-end
-
-function M:ResumeGoldEvents()
-    local _, session, today = WatchGold(self)
-    if session then UpdateSessionGold(self) end
-    if today then UpdateTodayGold(self) end
+    WatchGold(self, false)
 end
 
 function M:ApplyGoldEvents()
-    local show, session, today = WatchGold(self)
+    if not self.frame:IsVisible() then
+        self:PauseGoldEvents()
+        return
+    end
+    local show, session, today = WatchGold(self, true)
     local style = self.windows and self.windows[self.frame]
     if not style then return end
     local both = session and today or false
