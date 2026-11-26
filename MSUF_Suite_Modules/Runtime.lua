@@ -289,9 +289,13 @@ local function SetOwnedProperty(self, frame, getter, setter, value)
         record = { getter = getter, before = current }
         properties[setter] = record
     end
-    if current ~= value then frame[setter](frame, value) end
-    local applied = frame[getter](frame)
-    record.applied = Public(applied) and applied or value
+    if current == value then
+        record.applied = current
+    else
+        frame[setter](frame, value)
+        local applied = frame[getter](frame)
+        record.applied = Public(applied) and applied or value
+    end
 end
 
 -- Protected frames refuse these writes in combat; the module applies again
@@ -505,16 +509,25 @@ local function SetOwnedAnchor(self, frame, point, relative, relativePoint, x, y)
     if not S.Number(count) then return end
     local record = self.points[frame]
     local before = not record and {}
+    local same
     for i = 1, count do
         local nativePoint, nativeRelative, nativeEdge, nativeX, nativeY = frame:GetPoint(i)
         if not PublicAnchor(nativePoint, nativeRelative, nativeEdge, nativeX, nativeY) then return end
         if before then
             before[i] = { nativePoint, nativeRelative, nativeEdge, nativeX, nativeY }
         end
+        if count == 1 and PublicAnchor(point, relative, relativePoint, x, y) then
+            same = nativePoint == point and nativeRelative == relative and nativeEdge == relativePoint
+                and nativeX == x and nativeY == y
+        end
     end
     if before then
         record = { before = before }
         self.points[frame] = record
+    end
+    if same then
+        record.point, record.relative, record.relativePoint, record.x, record.y = point, relative, relativePoint, x, y
+        return
     end
     frame:ClearAllPoints()
     frame:SetPoint(point, relative, relativePoint, x, y)
