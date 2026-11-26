@@ -1,8 +1,8 @@
 local _, NS = ...
 
--- Keep the native detail lines, widgets, comparison data, anchoring and fade.
+-- Keep the native detail lines, widgets, comparison data and fade.
 local Card, Vitals = NS.ItemTooltipCard, NS.TooltipVitals
-local Safety = NS.Safety
+local Safety, ComparisonLayout = NS.Safety, NS.TooltipComparisonLayout
 local Palette = NS.TooltipPalette
 local SPEC = { role = "popup", radius = 0, border = 0, opaqueFill = true, media = "header",
     resolveFill = Palette.Fill, appearanceToken = "tooltipPalette" }
@@ -20,7 +20,7 @@ local spellLabels = {
     [SPELL] = "Spell", [AURA] = "Buffs and debuffs", [dataTypes.PetAction] = "Pet",
     [dataTypes.Totem] = "Totems", [dataTypes.Flyout] = "Spell", [dataTypes.Macro] = "Macros",
 }
-local events, installed, active
+local events, installed, active, comparisonHooked
 local views = {}
 local appliedStyle = {}
 local corePanel, panelStyle, unifiedCard, cardBackingMode
@@ -516,15 +516,24 @@ local function FinishComparison(tip)
     end
 end
 
--- Native comparison rows and their anchors are finalized after the item
--- post-call. Restore the first-line alpha before presenting that rebuild.
-local function OnComparisonsAnchored(manager)
-    if not active or not appliedStyle[ITEM] then return end
+local function StyledHeader(tip)
+    local view = views[tip]
+    if view and view.header.frame:IsShown() then
+        return view.header.frame, view.nativeComparison and Caption.Height or 0
+    end
+end
+
+-- Native comparison rows and anchors are finalized after the item post-call.
+local function OnComparisonsAnchored(manager, primaryShown, secondaryShown)
+    if not NS.DB.enabled then return end
     local owner = Safety.Field(manager, "tooltip")
-    if not Safety.Public(owner) or Safety.IsForbidden(owner) then return end
+    if not Safety.Public(owner) or not owner or Safety.IsForbidden(owner) then return end
     local primary, secondary = ComparisonFrames(owner)
-    Safety.Dispatch(FinishComparison, primary)
-    Safety.Dispatch(FinishComparison, secondary)
+    if active and appliedStyle[ITEM] then
+        Safety.Dispatch(FinishComparison, primary)
+        Safety.Dispatch(FinishComparison, secondary)
+    end
+    ComparisonLayout.Update(manager, owner, primary, secondary, StyledHeader, primaryShown, secondaryShown)
 end
 
 function Card.HasVisibleHeader(tooltip)
@@ -647,9 +656,6 @@ local function Install()
     RegisterNative(ITEM)
     for kind in pairs(nativeNames) do RegisterNative(kind) end
     for kind in pairs(spellLabels) do RegisterNative(kind) end
-    if Safety.HasMethod(TooltipComparisonManager, "AnchorShoppingTooltips") then
-        hooksecurefunc(TooltipComparisonManager, "AnchorShoppingTooltips", OnComparisonsAnchored)
-    end
     events = CreateFrame("Frame")
     events:SetScript("OnEvent", PaintAll)
     installed = true
@@ -763,9 +769,15 @@ function Card.Refresh()
     if QUEST then appliedStyle[QUEST] = quest end
     local wanted = db.enabled and (appliedStyle[ITEM] or appliedStyle[SPELL] or appliedStyle[UNIT] or quest)
     local vitalsWanted = Vitals and Vitals.Refresh()
-    if (wanted or vitalsWanted) and not installed and NS.IsCombatLocked() then
+    local installComparisonHook = db.enabled and not comparisonHooked
+        and Safety.HasMethod(TooltipComparisonManager, "AnchorShoppingTooltips")
+    if (installComparisonHook or (wanted or vitalsWanted) and not installed) and NS.IsCombatLocked() then
         NS.CombatGate.RunOrDefer(Card, Card.Refresh)
         return
+    end
+    if installComparisonHook then
+        hooksecurefunc(TooltipComparisonManager, "AnchorShoppingTooltips", OnComparisonsAnchored)
+        comparisonHooked = true
     end
     if (wanted or vitalsWanted) and not installed then Install() end
     local previous = active

@@ -13,6 +13,7 @@ Surface.lua
 TooltipChrome.lua
 TooltipCardSettings.lua
 UnitTooltipVitals.lua
+TooltipComparisonLayout.lua
 ItemTooltipCard.lua
 LootTooltipRows.lua
 TooltipIDs.lua

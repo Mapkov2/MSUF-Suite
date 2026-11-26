@@ -1,6 +1,7 @@
 local root = assert(arg[1])
 local card, outline, buffCard, buffOutline, combatEvents, timer
 local callbacks = {}
+local comparisonUpdates = 0
 local queued, reads, combat, spells, actionTextures = 0, 0, false, 0, 0
 local function Noop() end
 local function Widget()
@@ -137,6 +138,12 @@ local textAPI = { Text = function(text) return text end, HostBridge = {
 local vitals = { Refresh = function() return false end }
 local NS = {
     TooltipVitals = vitals,
+    TooltipComparisonLayout = { Update = function(manager, owner, primary, secondary, _, firstShown, secondShown)
+        if not firstShown or not secondShown then return end
+        assert(manager == TooltipComparisonManager and owner == GameTooltip
+            and primary == ShoppingTooltip1 and secondary == ShoppingTooltip2)
+        comparisonUpdates = comparisonUpdates + 1
+    end },
     Client = { isForever = false, isMainline = true },
     DB = { enabled = true, theme = { itemTooltipStyle = "compact" } },
     SuiteCore = function() return textAPI end,
@@ -564,6 +571,11 @@ local first, firstTitle, firstBadge = Comparison("ShoppingTooltip1", "Equipped")
 local second, secondTitle, secondBadge = Comparison("ShoppingTooltip2", "If Equipped Together")
 local reference, refTitle, refBadge = Comparison("ItemRefShoppingTooltip2", "If Equipped Together")
 GameTooltip.shoppingTooltips = { first, second }
+local manager = TooltipComparisonManager
+manager.tooltip, manager.anchorFrame = GameTooltip, GameTooltip
+manager:AnchorShoppingTooltips(true, true)
+manager:AnchorShoppingTooltips(true, false)
+assert(comparisonUpdates == 1, "default tooltip styling missed the dual-comparison layout hook")
 local coverModes, originalAlphas = {}, {}
 NS.TooltipChrome.IsActive = function() return true end
 NS.TooltipChrome.SetCardBacking = function(tip, mode) coverModes[tip] = mode return true end
@@ -599,8 +611,6 @@ ShowComparison(reference, refTitle, refBadge)
 
 -- Rebuilds of the two equipped items retain the Suite card while the
 -- client's final layout can restore the original title after the item post-call.
-local manager = TooltipComparisonManager
-manager.tooltip = GameTooltip
 local priorReads = reads
 for _ = 1, 12 do
     callbacks[1](first, first.current)
