@@ -271,6 +271,28 @@ local function BuildPreview(ctx, parent, y, width, height, narrow)
     return find
 end
 
+local function SelectionHeight(ctx, body, controls, height)
+    local previewExtra, tabExtra = 0, 0
+    local function FitHeader()
+        local needed = height + previewExtra + tabExtra
+        if body:GetHeight() == needed then return end
+        HM.SetFixedPreviewHeight(body, needed)
+        body:SetHeight(needed)
+        if M.RelayoutPageHeaderHost then M.RelayoutPageHeaderHost() end
+    end
+    function ctx.LayoutActionBarTabs(extra)
+        if tabExtra == extra then return end
+        tabExtra = extra
+        controls:ClearAllPoints()
+        controls:SetPoint("TOPLEFT", body, "TOPLEFT", 0, -extra)
+        FitHeader()
+    end
+    return function(extra)
+        previewExtra = extra
+        FitHeader()
+    end
+end
+
 -- The selected bar stays above the scroller, so every topic keeps its scope.
 local function BuildSelection(ctx, b, attachCopy)
     local body, toolbar
@@ -288,9 +310,12 @@ local function BuildSelection(ctx, b, attachCopy)
     ctx._msufSuiteActionBarHeader, ctx._msufSuiteActionBarToolbar = body, toolbar
     if body.title then body.title:Hide() end
     local width = (HM.GetSectionWidth(body) or b.width or 720) - 32
+    local controls = CreateFrame("Frame", nil, body)
+    controls:SetPoint("TOPLEFT", body, "TOPLEFT", 0, 0)
+    controls:SetSize(width + 32, 1)
     local half, bars = math.floor((width - 12) / 2), {}
     for i = 1, COUNT do bars[i] = { value = i, text = BarTitle(i) } end
-    local picker = M.BindDropdownAt(ctx, body, Tr("Selected bar"), 16, -54, bars, narrow and width - 100 or half,
+    local picker = M.BindDropdownAt(ctx, controls, Tr("Selected bar"), 16, -54, bars, narrow and width - 100 or half,
         function() return selected end,
         function(value)
             selected = tonumber(value) or 1
@@ -298,7 +323,7 @@ local function BuildSelection(ctx, b, attachCopy)
         end,
         P.Meta(PAGE, ID, "editor.selected", "ephemeral", "suite_actionbars_editor"))
     local meta = P.Meta(PAGE, ID, "selected.enabled", "action", "suite_actionbars_bar_visibility")
-    local toggle = M.BindSwitchAt(ctx, body, Tr("Show this bar"), narrow and 16 or 28 + half,
+    local toggle = M.BindSwitchAt(ctx, controls, Tr("Show this bar"), narrow and 16 or 28 + half,
         narrow and -112 or -68, narrow and width or width - half - 106,
         function() return not BarOff(selected) end,
         function(value)
@@ -307,8 +332,8 @@ local function BuildSelection(ctx, b, attachCopy)
         end, meta)
     M.TrackRefresh(ctx, function() W.SetControlEnabled(toggle, Available(selected) and not P.Combat()) end)
     local toolbarY = narrow and -186 or -110
-    local copyTo, copyButton = attachCopy(ctx, body, toolbarY + 24)
-    BuildKeybind(ctx, body, toolbarY)
+    local copyTo, copyButton = attachCopy(ctx, controls, toolbarY + 24)
+    BuildKeybind(ctx, controls, toolbarY)
     if copyTo then M.TrackRefresh(ctx, function() copyTo.Refresh() end) end
     ctx._msufSuiteActionBarScopedControls = {
         suite_actionbars_bar_visibility = { widget = toggle, meta = meta,
@@ -318,7 +343,8 @@ local function BuildSelection(ctx, b, attachCopy)
             rule = { key = "editor.copyTo", label = "Copy To" } },
     }
     local previewHeight, flyoutRoom = 132, narrow and 48 or 64
-    local find = BuildPreview(ctx, body, narrow and -148 or -110, width, previewHeight, narrow)
+    local find = BuildPreview(ctx, controls, narrow and -148 or -110, width, previewHeight, narrow)
+    local FitHeader = SelectionHeight(ctx, body, controls, height)
     function ctx.RefreshActionBarScope()
         local shared = P.ActionBarMenu.IsShared(ctx)
         local title = HM.GetControlTitle(picker)
@@ -334,10 +360,8 @@ local function BuildSelection(ctx, b, attachCopy)
         if preview.height ~= previewHeight + extra then
             preview.height = previewHeight + extra
             preview.host:SetHeight(preview.height)
-            HM.SetFixedPreviewHeight(body, height + extra)
-            body:SetHeight(height + extra)
-            if M.RelayoutPageHeaderHost then M.RelayoutPageHeaderHost() end
         end
+        FitHeader(extra)
         P.ActionBarPreview.RefreshScope(preview)
     end
     M.TrackRefresh(ctx, ctx.RefreshActionBarScope)

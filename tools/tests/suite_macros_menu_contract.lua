@@ -110,6 +110,7 @@ NS.Client = { IsAddOnLoaded = function() return true end, isForever = arg[2] == 
 local color = { 1, 1, 1, 1 }
 local P = { Suite = NS, Tr = function(text) return text end, Combat = function() return combat end,
     Meta = function() return {} end, M = {}, S = {}, W = {}, T = { colors = { text = color, muted = color } }, HM = {} }
+assert(loadfile(root .. "/MSUF_Suite_Options/Menu/Workspace.lua"))("MSUF_Suite_Options", P)
 function P.Text(parent, text) local result = Frame(parent) result.text = text return result end
 function P.T.Button(parent, text) return P.Text(parent, text) end
 function P.SetButtonText(button, text) button:SetText(text) end
@@ -493,7 +494,7 @@ local stackedHeight = CheckScroll(ctx, page.ui.body)
 page.ui.body.width = 1400
 page.ui.body.scripts.OnSizeChanged(page.ui.body, 1400)
 assert(page.ui.width == 1400, "layout uses actual body width")
-assert(page.ui.pools.label["result-title"].point[2] > 700, "wide layout places results on the right")
+assert(page.ui.pools.label["result-title"].point[4] > 700, "wide layout places results on the right")
 assert(CheckScroll(ctx, page.ui.body) < stackedHeight, "side-by-side layout shrinks the scroll range")
 local scans, slotReads, cursorReads, clears = 0, 0, 0, 0
 local entries = {
@@ -734,7 +735,7 @@ page.helpers.New("spell", function(doc)
 end)
 local automaticRank = assert(page.ui.pools.toggle["highest-rank"])
 assert(automaticRank:IsShown() and not automaticRank.checked, "new macros start with automatic rank off")
-assert(automaticRank.caption.text == "Auto Rank Up" and automaticRank.point[5] > page.ui.publish.point[3],
+assert(automaticRank.caption.text == "Auto Rank Up" and automaticRank.point[5] > page.ui.publish.point[5],
     "Auto Rank Up must be a visible checkbox above the WoW macro action")
 automaticRank.scripts.OnClick(automaticRank)
 assert(automaticRank.checked and page.compiled:find("/cast Heal\n?$") and page.dirty,

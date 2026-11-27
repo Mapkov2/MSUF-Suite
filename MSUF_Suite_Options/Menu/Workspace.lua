@@ -193,7 +193,46 @@ local function LayoutSelector(row)
         item.button:SetSize(size, 26)
         x = x + size + 8
     end
-    row:SetSize(width, 26 - y)
+    local height = 26 - y
+    if row.layoutWidth == width and row.layoutHeight == height then return end
+    row.layoutWidth, row.layoutHeight = width, height
+    row:SetSize(width, height)
+end
+
+function Workspace.TabWidth(button, minimum)
+    local label = HM.GetControlLabel(button)
+    if label then
+        local measure = label.GetUnboundedStringWidth or label.GetStringWidth
+        local width = measure(label)
+        if width and width > 0 then
+            local _, leftOwner, _, left = label:GetPoint(1)
+            local _, rightOwner, _, right = label:GetPoint(2)
+            if leftOwner ~= button or rightOwner ~= button then
+                if P.T.MeasureButtonWidth then return P.T.MeasureButtonWidth(button, minimum) end
+                return math.max(minimum, math.ceil(width) + 26)
+            end
+            return math.max(minimum, math.ceil(width + (left or 12) - (right or -12)) + 2)
+        end
+    end
+    return P.T.MeasureTabWidth and P.T.MeasureTabWidth(button:GetText(), minimum) or minimum
+end
+
+local function MeasureSelector(row)
+    for _, item in ipairs(row.items) do item.width = Workspace.TabWidth(item.button, 56) end
+    LayoutSelector(row)
+end
+
+function Workspace.TrackZoomLayout(owner, refresh)
+    owner:HookScript("OnShow", refresh)
+    if P.T.TrackZoomTabLayout then
+        P.T.TrackZoomTabLayout(owner, refresh)
+        return
+    end
+    if P.T.TrackTabLayout then P.T.TrackTabLayout(owner, refresh) end
+    -- The UIParent span changes in menu-local coordinates on older hosts.
+    local probe = CreateFrame("Frame", nil, owner)
+    probe:SetAllPoints(UIParent)
+    probe:SetScript("OnSizeChanged", function() if owner:IsVisible() then refresh(owner) end end)
 end
 
 -- Both supported hosts get visible measured-label wrapping, including older
@@ -202,16 +241,6 @@ function Workspace.WrappingTabs(ui, values, apply)
     local row = CreateFrame("Frame", nil, ui.header)
     row.owner, row.items, row.widthHint = ui.header, {}, ui.width
     row:SetPoint("TOPLEFT", ui.header, "TOPLEFT", 16, -12)
-    local measureWidth = P.T.MeasureTabWidth
-    if not measureWidth then
-        local measure = P.PreviewCanvas.Text(row, "", 0, 0, 0)
-        measure:SetWordWrap(false)
-        measure:Hide()
-        measureWidth = function(text)
-            measure:SetText(text)
-            return math.max(56, math.ceil(measure:GetStringWidth()) + 26)
-        end
-    end
     local function RefreshSelected()
         for _, item in ipairs(row.items) do item.button:SetActive(ui.selected == item.id) end
     end
@@ -221,24 +250,19 @@ function Workspace.WrappingTabs(ui, values, apply)
         return selected
     end
     for _, value in ipairs(values) do
-        local width = measureWidth(value.text)
-        local button = P.T.Button(row, value.text, width, 26)
+        local button = P.T.Button(row, value.text, 56, 26)
         P.HM.MarkSegmentChoice(button)
-        row.items[#row.items + 1] = { id = value.value, button = button, width = width }
+        row.items[#row.items + 1] = { id = value.value, button = button }
         button:SetScript("OnClick", function() Choose(value.value) end)
         if P.M.RegisterControlMetadata then
-            P.M.RegisterControlMetadata(button, P.Meta(ui.spec.page, ui.spec.module, "view.topic." .. value.value, "ephemeral"), value.text, "button")
+            local meta = value.meta or P.Meta(ui.spec.page, ui.spec.module, "view.topic." .. value.value, "ephemeral")
+            P.M.RegisterControlMetadata(button, meta, value.text, "button")
         end
     end
-    if P.T.TrackTabLayout then
-        P.T.TrackTabLayout(row, function(self)
-            for _, item in ipairs(self.items) do item.width = measureWidth(item.button:GetText()) end
-            LayoutSelector(self)
-        end)
-    end
-    ui.header:HookScript("OnSizeChanged", function() LayoutSelector(row) end)
+    Workspace.TrackZoomLayout(row, MeasureSelector)
+    ui.header:HookScript("OnSizeChanged", function() MeasureSelector(row) end)
     P.M.TrackRefresh(ui.ctx, RefreshSelected)
-    LayoutSelector(row)
+    MeasureSelector(row)
     RefreshSelected()
     return row, Choose
 end
@@ -318,11 +342,13 @@ function Workspace.Finish(ui)
         })
         P.HideControlTitle(tabs)
         ui.tabs, ui.chooseTab = tabs, choose
-        local function FitTabsHeader()
-            Workspace.FitHeader(ui, (ui.spec.height or 62) + tabs:GetHeight() - 26)
+        if not ui.layoutTabContent then
+            local function FitTabsHeader()
+                Workspace.FitHeader(ui, (ui.spec.height or 62) + tabs:GetHeight() - 26)
+            end
+            tabs:HookScript("OnSizeChanged", FitTabsHeader)
+            FitTabsHeader()
         end
-        tabs:HookScript("OnSizeChanged", FitTabsHeader)
-        FitTabsHeader()
         refresh()
     else
         ui.selector = M.BindDropdownAt(ui.ctx, ui.header, ui.spec.title, 16, ui.spec.tabY or 12, values, ui.width - 32,
@@ -331,6 +357,10 @@ function Workspace.Finish(ui)
         P.HideControlTitle(ui.selector)
     end
     if ui.tabs or ui.selector then Workspace.PlaceTabDivider(ui.toolbar, ui.tabs or ui.selector) end
+    if ui.tabs and ui.layoutTabContent then
+        ui.tabs:HookScript("OnSizeChanged", ui.layoutTabContent)
+        ui.layoutTabContent()
+    end
     ui.finished = true
     Choose(ui, ui.selected)
     if M.RelayoutPageHeaderHost then M.RelayoutPageHeaderHost() end

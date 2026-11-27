@@ -47,6 +47,7 @@ local function BuildRail(host)
     guided:SetPoint("TOPLEFT", 12, -38)
     local expert = O.CreateButton(rail, L["Expert"], 70, 24, function() O.SetMode("expert") end)
     expert:SetPoint("LEFT", guided, "RIGHT", 8, 0)
+    host.guidedButton, host.expertButton = guided, expert
     O.TrackRefresh(function()
         O.SetButtonActive(guided, O.GetMode() == "guided")
         O.SetButtonActive(expert, O.GetMode() == "expert")
@@ -62,6 +63,25 @@ local function BuildRail(host)
             host.buttons[key] = button
         end
     end
+end
+
+local function LayoutHost(host)
+    local guidedWidth = O.SelectorButtonWidth(host.guidedButton, 70)
+    local expertWidth = O.SelectorButtonWidth(host.expertButton, 70)
+    local railWidth = math.max(RAIL_WIDTH, guidedWidth + expertWidth + 32)
+    for _, button in pairs(host.buttons) do
+        railWidth = math.max(railWidth, O.SelectorButtonWidth(button, 150) + 24)
+    end
+    if host.rail:GetWidth() ~= railWidth then
+        host.rail:SetWidth(railWidth)
+        for _, button in pairs(host.buttons) do button:SetWidth(railWidth - 24) end
+    end
+    host.guidedButton:SetWidth(guidedWidth)
+    host.expertButton:SetWidth(expertWidth)
+    local width = math.max(1, host:GetWidth() - railWidth - 10)
+    local scale = math.min(1, math.max(0.55, width / 820))
+    host.content:SetScale(scale)
+    host.content:SetSize(width / scale, math.max(1, host:GetHeight() - 54) / scale)
 end
 
 local function SearchRowClick(row)
@@ -130,6 +150,7 @@ local function CreateHost(parent)
         self.searchPopup:Hide()
         O.CloseDropdown()
     end)
+    O.TrackSelectorLayout(host, LayoutHost)
     return host
 end
 
@@ -140,11 +161,7 @@ function O.Mount(parent, width, height)
     host:ClearAllPoints()
     host:SetPoint("TOPLEFT", 0, 0)
     host:SetSize(width, height)
-    -- Pages are laid out for 820 px; narrower hosts scale the content down.
-    local contentWidth = width - RAIL_WIDTH - 10
-    local scale = math.min(1, math.max(0.55, contentWidth / 820))
-    host.content:SetScale(scale)
-    host.content:SetSize(contentWidth / scale, (height - 54) / scale)
+    LayoutHost(host)
     host:ShowPage(host.key or O.ui.lastPage or "dashboard")
     host:Show()
     return host

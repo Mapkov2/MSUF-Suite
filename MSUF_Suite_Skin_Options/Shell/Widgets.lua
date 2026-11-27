@@ -110,6 +110,27 @@ function O.AlignButtonLabel(button)
     return label
 end
 
+function O.SelectorButtonWidth(button, minimum)
+    local state = O.widgetStates[button]
+    local label = state and state.label
+    if not label then return minimum end
+    local measure = label.GetUnboundedStringWidth or label.GetStringWidth
+    return math.max(minimum, math.ceil(measure(label) or 0) + 22)
+end
+
+function O.TrackSelectorLayout(owner, layout)
+    owner:HookScript("OnShow", layout)
+    owner:HookScript("OnSizeChanged", layout)
+    local menu = _G.MSUF2
+    if menu and menu.Theme and menu.Theme.TrackZoomTabLayout then
+        menu.Theme.TrackZoomTabLayout(owner, layout)
+    elseif menu then
+        local probe = CreateFrame("Frame", nil, owner)
+        probe:SetAllPoints(UIParent)
+        probe:SetScript("OnSizeChanged", function() if owner:IsVisible() then layout(owner) end end)
+    end
+end
+
 local WINDOW_ACTION_ATLAS = {
     close = "RedButton-Exit",
     maximize = "RedButton-Expand",

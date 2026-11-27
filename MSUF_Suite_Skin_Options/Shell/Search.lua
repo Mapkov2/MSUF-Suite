@@ -94,6 +94,8 @@ local entries = {
     { "geometry", L["Window corner style"], "panel curve round continuous squircle" },
     { "geometry", L["Button corner style"], "control curve pill round continuous squircle" },
     { "geometry", L["Corner radius"], "4 6 8 12 px" },
+    { "geometry", L["Round all windows and menus"], "rounded window menu popup corners" },
+    { "geometry", L["Window corner radius"], "rounded window menu 8 12 16 20 24 px" },
     { "geometry", L["Outline thickness"], "border 0 1 2 px" },
     { "geometry", L["Hover highlight"], "hover style border only soft fill solid fill off" },
     { "geometry", L["Hover intensity"], "highlight strength" },

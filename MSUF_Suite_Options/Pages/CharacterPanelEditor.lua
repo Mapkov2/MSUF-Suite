@@ -265,9 +265,11 @@ end
 
 local function LayoutTabs(ui, width, top, shown)
     local order, fontRevision = ui.order, S.FontRevision
+    local scale = ui.host:GetEffectiveScale()
     local add = shown and (ui.mode == OWN or #ui.hiddenTabs > 0)
     if ui.tabOrder == order and ui.tabWidth == width and ui.tabTop == top and ui.addVisible == add
-        and ui.tabFontRevision == fontRevision and ui.tabsVisible == shown then return ui.tabRailHeight end
+        and ui.tabFontRevision == fontRevision and ui.tabScale == scale and ui.tabsVisible == shown then return ui.tabRailHeight end
+    ui.tabScale = scale
     ui.addVisible = add
     ui.tabOrder, ui.tabWidth, ui.tabTop, ui.tabFontRevision, ui.tabsVisible = order, width, top, fontRevision, shown
     local hasCustom = shown and ui.mode == OWN and #ui.customDefinitions > 0
@@ -282,9 +284,8 @@ local function LayoutTabs(ui, width, top, shown)
         for _, entry in ipairs(order) do
             local button = EnsureTab(ui, entry)
             painted[entry.id] = true
-            local label = HM.GetControlLabel(button)
-            local natural = math.max(57, math.ceil(label and label:GetUnboundedStringWidth() or 0) + 20)
-            local buttonWidth = math.min(right - inset, 180, natural)
+            local limit = entry.custom and 180 or right - inset
+            local buttonWidth = math.min(right - inset, limit, P.MenuWorkspace.TabWidth(button, 57))
             if x > inset and x + buttonWidth > right then x, row = inset, row + 1 end
             local dx, dy = Model.Position(entry)
             button.layoutX = x + dx * ui.scale
@@ -705,6 +706,9 @@ function Editor.Build(ctx, parent, heightChanged)
         else RefreshSelection(ui) end
     end
     host:SetScript("OnShow", function() Refresh(ui) end)
+    P.MenuWorkspace.TrackZoomLayout(host, function()
+        if host:IsVisible() and not P.Combat() then Repaint(ui) end
+    end)
     host:SetScript("OnHide", function()
         ui.kit:Release()
         ui.custom:Cancel()

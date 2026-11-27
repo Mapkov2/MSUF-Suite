@@ -52,6 +52,8 @@ local function Height(ui)
 end
 
 local function PreviewHeight(ui, height)
+    ui.previewBaseHeight = height
+    height = height + (ui.tabsExtra or 0)
     if ui.previewHeight == height then return end
     ui.previewHeight = height
     HM.SetFixedPreviewHeight(ui.header, height)
@@ -70,7 +72,7 @@ local function Choose(ui, id)
     ui.preview:Select(hasPreview and id or nil)
     local character = id == "characterPanel"
     if character and not ui.characterPreview then
-        ui.characterPreview = P.CharacterPanelEditor.Build(ui.ctx, ui.header, function(height)
+        ui.characterPreview = P.CharacterPanelEditor.Build(ui.ctx, ui.previewContent, function(height)
             ui.characterPreviewHeight = height
             if ui.selected == "characterPanel" then PreviewHeight(ui, height) end
         end)
@@ -204,17 +206,31 @@ function Page.Finish(ctx)
         end
     end
     PrepareSections(ui)
-    ui.preview = P.HUDPreview.Build(ctx, ui.header, ui.width - 32)
+    local content = CreateFrame("Frame", nil, ui.header)
+    content:SetPoint("TOPLEFT", ui.header, "TOPLEFT", 0, 0)
+    content:SetSize(ui.width, 1)
+    ui.previewContent = content
+    ui.preview = P.HUDPreview.Build(ctx, content, ui.width - 32)
     local selector
     if W.SegmentTabs and ui.width - 32 >= math.max(650, #values * 126) then
         local tabs, refresh, _, selectTab = W.SegmentTabs(ctx, ui.header, {
-            label = "", compact = true, values = values, width = ui.width - 32, frames = panels, defaultTab = selected,
+            label = "", compact = true, wrap = true, values = values, width = ui.width - 32, frames = panels, defaultTab = selected,
             get = function() return ui.selected end, set = function(id) Choose(ui, id) end,
             afterRefresh = function(id) Choose(ui, id) end, x = 16, y = 12,
         })
         P.HideControlTitle(tabs)
         selector = tabs
         ui.chooseTab = selectTab
+        local function Fit()
+            local extra = math.max(0, tabs:GetHeight() - 26)
+            if ui.tabsExtra == extra then return end
+            ui.tabsExtra = extra
+            content:ClearAllPoints()
+            content:SetPoint("TOPLEFT", ui.header, "TOPLEFT", 0, -extra)
+            PreviewHeight(ui, ui.previewBaseHeight or 326)
+        end
+        tabs:HookScript("OnSizeChanged", Fit)
+        Fit()
         refresh()
     else
         ui.selector = M.BindDropdownAt(ctx, ui.header, "HUD", 16, 12, values, ui.width - 32,

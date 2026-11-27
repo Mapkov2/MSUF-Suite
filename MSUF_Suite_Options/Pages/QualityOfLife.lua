@@ -226,7 +226,7 @@ end
 
 local function BuildFeatureDetails(ctx, details, group, sectionId, width, sections, allRules, keywords, resize)
     if group.id == "navigation" then
-        return P.BuildNavigationDetails(ctx, details, group, sectionId, width, sections, allRules, keywords, RegisterFeatureRuleSearch)
+        return P.BuildNavigationDetails(ctx, details, group, sectionId, width, sections, allRules, keywords, RegisterFeatureRuleSearch, resize)
     end
     if not V.HasDetails(group, allRules) then return nil, 0 end
     details._msufSuiteSkipSummary = true

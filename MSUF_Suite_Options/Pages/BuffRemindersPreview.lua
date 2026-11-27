@@ -19,11 +19,27 @@ local EVENTS = { "BAG_UPDATE_DELAYED", "SPELLS_CHANGED", "PLAYER_SPECIALIZATION_
     "ZONE_CHANGED_NEW_AREA", "ZONE_CHANGED", "ZONE_CHANGED_INDOORS", "ITEM_DATA_LOAD_RESULT",
     "PLAYER_REGEN_ENABLED", "PLAYER_LEVEL_UP" }
 
+local function PreviewLayout(ui, content, viewport, footer)
+    local extra = 0
+    return function()
+        local nextExtra = math.max(0, (ui.tabs and ui.tabs:GetHeight() or 26) - 26)
+        if nextExtra ~= extra then
+            extra = nextExtra
+            content:ClearAllPoints()
+            content:SetPoint("TOPLEFT", ui.header, "TOPLEFT", 0, -extra)
+        end
+        P.MenuWorkspace.FitHeader(ui, extra + 148 + viewport:GetHeight() + math.ceil(footer:GetStringHeight() or 14))
+    end
+end
+
 function P.MenuSamples.Reminders(ui)
     if not ui then return end
     local width = ui.width - 54
-    local title = P.Text(ui.header, "Preview", 16, -100, width)
-    local viewport = CreateFrame("ScrollFrame", nil, ui.header, "ScrollFrameTemplate")
+    local content = CreateFrame("Frame", nil, ui.header)
+    content:SetPoint("TOPLEFT", ui.header, "TOPLEFT", 0, 0)
+    content:SetSize(ui.width, 1)
+    local title = P.Text(content, "Preview", 16, -100, width)
+    local viewport = CreateFrame("ScrollFrame", nil, content, "ScrollFrameTemplate")
     viewport.ScrollBar:SetHideIfUnscrollable(true)
     viewport:SetPoint("TOPLEFT", 16, -124)
     viewport:SetSize(width, 76)
@@ -31,8 +47,9 @@ function P.MenuSamples.Reminders(ui)
     stage:SetSize(width, 76)
     viewport:SetScrollChild(stage)
     local status = P.Text(viewport, "", 0, 0, width)
-    local footer = P.Text(ui.header, "Sample values. Click an element to open its settings.", 16, -160, width)
+    local footer = P.Text(content, "Sample values. Click an element to open its settings.", 16, -160, width)
     local dirty, settings, previousScale = true, {}, nil
+    local Layout = PreviewLayout(ui, content, viewport, footer)
     local function OpenAppearance() ui:Focus("suite_buffReminders_appearance") end
     local function Refresh()
         if not viewport:IsVisible() then return end
@@ -63,11 +80,11 @@ function P.MenuSamples.Reminders(ui)
             viewport.previewHeight = height
             viewport:SetHeight(height)
             footer:ClearAllPoints()
-            footer:SetPoint("TOPLEFT", ui.header, "TOPLEFT", 16, -132 - height)
+            footer:SetPoint("TOPLEFT", content, "TOPLEFT", 16, -132 - height)
         end
-        P.MenuWorkspace.FitHeader(ui, 148 + height + math.ceil(footer:GetStringHeight() or 14))
+        Layout()
     end
-    ui.reminderClassPicker = P.PreviewClasses.Bind(ui, ui.header, 16, -42, math.min(220, width),
+    ui.reminderClassPicker = P.PreviewClasses.Bind(ui, content, 16, -42, math.min(220, width),
         "suite_buffReminders", "buffReminders", "suite_buffReminders_appearance", function() dirty = true
         Refresh() end)
     local function Activate()
@@ -83,6 +100,7 @@ function P.MenuSamples.Reminders(ui)
     viewport:SetScript("OnEvent", function() dirty = true
         M.RequestRefresh(ui.ctx, "suite-buff-preview") end)
     ui.reminderPreview = { stage = stage, viewport = viewport, title = title, status = status }
+    ui.layoutTabContent = Layout
     ui.refreshPreview = Refresh
     M.TrackRefresh(ui.ctx, Refresh)
     if viewport:IsVisible() then Activate() end

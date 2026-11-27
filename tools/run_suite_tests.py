@@ -88,6 +88,7 @@ EXTRA = {
     "suite_cdm_replacement_aura_contract.lua": [[flavor] for flavor in FLAVORS],
     "suite_menu_geometry_contract.lua": [[flavor, str(MSUF_70)] for flavor in FLAVORS],
     "suite_buff_reminders_layout_contract.lua": [[flavor, str(MSUF_70)] for flavor in FLAVORS],
+    "suite_zoom_tab_geometry_contract.lua": [[flavor, str(MSUF_70)] for flavor in FLAVORS],
     "suite_nameplates_lazy_tabs_contract.lua": [
         [flavor, str(MSUF_70)] + (["fallback"] if fallback else [])
         for flavor in FLAVORS for fallback in (False, True)],

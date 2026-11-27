@@ -125,13 +125,11 @@ end
 -- Expert mode browses colors by group; Guided mode shows the essentials.
 local function BuildGroupBar(page, view)
     view.groupButtons = {}
-    for index = 1, #GROUPS do
-        local group = GROUPS[index]
+    for _, group in ipairs(GROUPS) do
         local button = O.CreateButton(page, group.label, 118, 26, function()
             O.ui.colorGroup = group.key
             view.Refresh()
         end, "navigation")
-        button:SetPoint("TOPLEFT", 4 + (index - 1) * 124, -154)
         view.groupButtons[group.key] = button
     end
 
@@ -148,6 +146,7 @@ end
 
 local function BuildRows(page, view)
     local scrollHost = CreateFrame("Frame", nil, page)
+    view.scrollHost = scrollHost
     scrollHost:SetPoint("TOPLEFT", 4, -192)
     scrollHost:SetPoint("BOTTOMRIGHT", -4, 4)
     local _, content = O.CreateScrollContainer(scrollHost, #NS.ColorOrder * ROW_HEIGHT + 12)
@@ -163,6 +162,25 @@ local function BuildRows(page, view)
             search = SearchText(key, label),
         }
     end
+end
+
+local function LayoutGroups(page, view)
+    local edge = math.max(4, (page:GetWidth() > 8 and page:GetWidth() or 820) - 4)
+    local x, y = 4, -154
+    for _, group in ipairs(GROUPS) do
+        local button = view.groupButtons[group.key]
+        local width = math.min(edge - 4, O.SelectorButtonWidth(button, 118))
+        if x > 4 and x + width > edge then x, y = 4, y - 32 end
+        button:ClearAllPoints()
+        button:SetPoint("TOPLEFT", page, "TOPLEFT", x, y)
+        button:SetWidth(width)
+        x = x + width + 6
+    end
+    local scroll = view.scrollHost
+    local bottom = view.laidMode == "expert" and view.laidQuery == "" and y - 38 or -192
+    scroll:ClearAllPoints()
+    scroll:SetPoint("TOPLEFT", page, "TOPLEFT", 4, bottom)
+    scroll:SetPoint("BOTTOMRIGHT", page, "BOTTOMRIGHT", -4, 4)
 end
 
 -- The layout depends only on the mode, the query and the selected group. A
@@ -201,6 +219,7 @@ local function RefreshRows(view)
         button:SetShown(mode == "expert" and query == "")
         O.SetButtonActive(button, key == group)
     end
+    LayoutGroups(view.page, view)
 end
 
 O.RegisterPage("colors", NS.L.COLORS, function(page)
@@ -208,10 +227,11 @@ O.RegisterPage("colors", NS.L.COLORS, function(page)
         L["Clean Modern, Midnight Blue, Midnight Dark and MSUF Forever are complete looks in Style. Color palettes here change colors only; use Expert mode for every UI state."])
     if not GROUP_BY_KEY[O.ui.colorGroup] then O.ui.colorGroup = "surfaces" end
 
-    local view = { query = "" }
+    local view = { query = "", page = page }
     BuildHeader(page, view)
     BuildGroupBar(page, view)
     BuildRows(page, view)
+    O.TrackSelectorLayout(page, function() LayoutGroups(page, view) end)
     view.Refresh = function() RefreshRows(view) end
     -- The page refresher also runs after every mode switch while the page is
     -- shown; a hidden page lays its rows out when it is opened.

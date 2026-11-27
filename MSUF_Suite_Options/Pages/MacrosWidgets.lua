@@ -60,7 +60,7 @@ Page.initializers[#Page.initializers + 1] = function()
             return P.Text(ui.body, "", 0, 0, width, color or T.colors.text)
         end)
         label:ClearAllPoints()
-        label:SetPoint("TOPLEFT", x + (ui.offsetX or 0), y)
+        label:SetPoint("TOPLEFT", ui.origin, "TOPLEFT", x + (ui.offsetX or 0), y)
         label:SetWidth(width)
         label:SetText(text)
         label:SetTextColor(unpack(color or T.colors.text))
@@ -81,11 +81,12 @@ Page.initializers[#Page.initializers + 1] = function()
             return result
         end)
         button:ClearAllPoints()
-        button:SetPoint("TOPLEFT", x + (ui.offsetX or 0), y)
+        local isTab = key:match("^tab:")
+        button:SetPoint("TOPLEFT", isTab and ui.body or ui.origin, "TOPLEFT", x + (ui.offsetX or 0), y)
         button:SetWidth(width)
         button:SetText(Tr(text))
         local label = HM.GetControlLabel(button)
-        if label and not key:match("^tab:") then
+        if label and not isTab then
             local measure = label.GetUnboundedStringWidth or label.GetStringWidth
             local inset = math.max(2, math.min(12, math.floor((width - measure(label) - 2) * 0.5)))
             label:ClearAllPoints()
@@ -110,12 +111,12 @@ Page.initializers[#Page.initializers + 1] = function()
         local title = HM.GetControlTitle(control)
         if title then
             title:ClearAllPoints()
-            title:SetPoint("TOPLEFT", ui.body, "TOPLEFT", x + (ui.offsetX or 0), y)
+            title:SetPoint("TOPLEFT", ui.origin, "TOPLEFT", x + (ui.offsetX or 0), y)
             title:SetText(Tr(label))
             title:Show()
         end
         control:ClearAllPoints()
-        control:SetPoint("TOPLEFT", ui.body, "TOPLEFT", x + (ui.offsetX or 0), y - 23)
+        control:SetPoint("TOPLEFT", ui.origin, "TOPLEFT", x + (ui.offsetX or 0), y - 23)
         control:SetWidth(width)
         control:SetValues(values)
         control:SetValue(value)
@@ -146,7 +147,7 @@ Page.initializers[#Page.initializers + 1] = function()
             return result
         end)
         edit:ClearAllPoints()
-        edit:SetPoint("TOPLEFT", x + 4 + (ui.offsetX or 0), y - (label == "" and 0 or 23))
+        edit:SetPoint("TOPLEFT", ui.origin, "TOPLEFT", x + 4 + (ui.offsetX or 0), y - (label == "" and 0 or 23))
         edit:SetSize(width - 8, multiline and 150 or 25)
         edit.action = callback
         edit:SetText(value or "")
@@ -165,7 +166,7 @@ Page.initializers[#Page.initializers + 1] = function()
             return control
         end)
         button:ClearAllPoints()
-        button:SetPoint("TOPLEFT", ui.body, "TOPLEFT", x + (ui.offsetX or 0), y)
+        button:SetPoint("TOPLEFT", ui.origin, "TOPLEFT", x + (ui.offsetX or 0), y)
         button:SetChecked(value == true)
         button.macroValue, button.action = value == true, callback
         button:SetEnabled(not P.Combat())
@@ -208,7 +209,7 @@ Page.initializers[#Page.initializers + 1] = function()
             return T.Panel(ui.body)
         end)
         frame:ClearAllPoints()
-        frame:SetPoint("TOPLEFT", ui.body, "TOPLEFT", x + (ui.offsetX or 0), y)
+        frame:SetPoint("TOPLEFT", ui.origin, "TOPLEFT", x + (ui.offsetX or 0), y)
         frame:SetSize(width, math.max(40, height))
         frame:SetFrameLevel(ui.body:GetFrameLevel())
     end
@@ -230,7 +231,7 @@ Page.initializers[#Page.initializers + 1] = function()
             return control
         end)
         button:ClearAllPoints()
-        button:SetPoint("TOPLEFT", x + (ui.offsetX or 0), y)
+        button:SetPoint("TOPLEFT", ui.origin, "TOPLEFT", x + (ui.offsetX or 0), y)
         return button
     end
 

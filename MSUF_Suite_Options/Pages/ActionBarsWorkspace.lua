@@ -213,7 +213,8 @@ local function InstallSelector(workspace, values, panels)
     local selector
     if W.SegmentTabs and width >= 650 then
         local tabs, refresh, _, selectTab = W.SegmentTabs(ctx, body, {
-            label = "", compact = true, values = values, width = width, frames = panels, defaultTab = values[1].value,
+            label = "", compact = true, wrap = ctx.LayoutActionBarTabs ~= nil, values = values, width = width,
+            frames = panels, defaultTab = values[1].value,
             get = function() return workspace.selected end,
             set = function(key) Choose(workspace, key) end,
             afterRefresh = function(key) Choose(workspace, key) end,
@@ -224,6 +225,11 @@ local function InstallSelector(workspace, values, panels)
         P.HideControlTitle(tabs)
         selector = tabs
         workspace.chooseTab = selectTab
+        if ctx.LayoutActionBarTabs then
+            local function Fit() ctx.LayoutActionBarTabs(math.max(0, tabs:GetHeight() - 26)) end
+            tabs:HookScript("OnSizeChanged", Fit)
+            Fit()
+        end
         refresh()
     else
         workspace.selector = M.BindDropdownAt(ctx, body, "Settings", 16, 12, values, width,

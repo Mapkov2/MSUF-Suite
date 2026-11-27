@@ -100,6 +100,10 @@ Page.initializers[#Page.initializers + 1] = function()
         Page.tab = Page.tab or "rules"
         Page.ui = { ctx = ctx, builder = builder, body = body, pools = {},
             width = math.max(280, body:GetWidth() or P.HM.GetSectionWidth(body) or builder.width or ctx.width or 720) }
+        local ui = Page.ui
+        ui.origin = CreateFrame("Frame", nil, body)
+        ui.origin:SetSize(1, 1)
+        ui.origin:SetPoint("TOPLEFT", body, "TOPLEFT", 0, -54)
         body:SetScript("OnEvent", Helpers.Events)
         body:SetScript("OnSizeChanged", function(self, width)
             local ui = Page.ui
@@ -124,12 +128,14 @@ Page.initializers[#Page.initializers + 1] = function()
         end)
         body:RegisterEvent("PLAYER_REGEN_DISABLED")
         body:RegisterEvent("UPDATE_MACROS")
-        local ui = Page.ui
         if P.T.TrackTabLayout then
             P.T.TrackTabLayout(body, function()
                 if Page.ui == ui then Page.Render() end
             end)
         end
+        P.MenuWorkspace.TrackZoomLayout(ui.origin, function()
+            if Page.ui == ui and ui.tabButtons and not P.Combat() then Helpers.LayoutTabs(ui) end
+        end)
         P.M.TrackRefresh(ctx, function()
             if Page.ui == ui and not P.Combat() then ui.body:Show() end
         end)
@@ -163,24 +169,42 @@ end
 
 Page.initializers[#Page.initializers + 1] = function()
     local Page, Helpers, Tr, T, Macros = P.MacroPage, P.MacroPage.helpers, P.Tr, P.T, P.Suite.Macros
-    Helpers.Header = function(ui)
-        Helpers.EditorChoices()
-        local width = ui.width
-        local available = width - 32
-        local columns = width < 520 and 2 or 4
-        local fallbackWidth = math.floor((available - (columns - 1) * 8) / columns)
+    Helpers.LayoutTabs = function(ui)
         local x, y = 16, -16
-        for _, tab in ipairs(Page.tabs) do
-            local preferred = T.MeasureTabWidth and T.MeasureTabWidth(Tr(tab[2]), 68) or fallbackWidth
-            local tabWidth = math.min(available, preferred)
-            if x > 16 and x + tabWidth > width - 16 then x, y = 16, y - 34 end
-            local button = Page.Button(ui, "tab:" .. tab[1], tab[2], x, y, tabWidth,
+        for _, button in ipairs(ui.tabButtons) do
+            local width = math.min(ui.width - 32, P.MenuWorkspace.TabWidth(button, 68))
+            if x > 16 and x + width > ui.width - 16 then x, y = 16, y - 34 end
+            button:ClearAllPoints()
+            button:SetPoint("TOPLEFT", ui.body, "TOPLEFT", x, y)
+            button:SetWidth(width)
+            x = x + width + 8
+        end
+        local offset = 38 - y
+        if ui.tabOffset ~= offset then
+            ui.tabOffset = offset
+            ui.origin:ClearAllPoints()
+            ui.origin:SetPoint("TOPLEFT", ui.body, "TOPLEFT", 0, -offset)
+            if ui.contentBottom then Page.Finish(ui, ui.contentBottom) end
+        end
+    end
+
+    local function BuildTabs(ui)
+        Helpers.EditorChoices()
+        ui.tabButtons = ui.tabButtons or {}
+        for index, tab in ipairs(Page.tabs) do
+            local button = Page.Button(ui, "tab:" .. tab[1], tab[2], 16, -16, 68,
                 function() Helpers.ChooseTab(tab[1]) end)
             P.HM.MarkSegmentChoice(button)
             button:SetActive(Page.tab == tab[1])
-            x = x + tabWidth + 8
+            ui.tabButtons[index] = button
         end
-        y = y - 38
+        Helpers.LayoutTabs(ui)
+    end
+
+    Helpers.Header = function(ui)
+        BuildTabs(ui)
+        local width, y = ui.width, 0
+        local available = width - 32
         Page.Label(ui, "quick:title", Tr("Quick start"), 16, y, width - 32, T.colors.muted)
         y = y - 23
         local quickMinWidth = 108
@@ -189,7 +213,7 @@ Page.initializers[#Page.initializers + 1] = function()
                 quickMinWidth = math.max(quickMinWidth, T.MeasureTabWidth(Tr(entry[2])) + 4)
             end
         end
-        columns = math.max(1, math.min(#Page.quick, math.floor((available + 5) / (quickMinWidth + 5))))
+        local columns = math.max(1, math.min(#Page.quick, math.floor((available + 5) / (quickMinWidth + 5))))
         local quickWidth = math.floor((available - (columns - 1) * 5) / columns)
         for i, entry in ipairs(Page.quick) do
             local x, row = 16 + ((i - 1) % columns) * (quickWidth + 5), math.floor((i - 1) / columns)
@@ -381,7 +405,8 @@ Page.initializers[#Page.initializers + 1] = function()
     Page.scopes = { { value = "character", text = Tr("This character") }, { value = "account", text = Tr("All characters") } }
 
     function Page.Finish(ui, y)
-        local height = math.max(320, -y + 16)
+        ui.contentBottom = y
+        local height = math.max(320, (ui.tabOffset or 54) - y + 16)
         -- FinishSection uses the previous height to resize the page's scroll content.
         P.HM.SetSectionCursor(ui.body, -height + 16)
         ui.builder:FinishSection(ui.body, 16)

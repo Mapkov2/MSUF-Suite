@@ -39,29 +39,56 @@ local function Actions(ctx, parent, section, y, width)
     return y - math.ceil(#buttons / 2) * 35 - 10
 end
 
-function P.BuildNavigationDetails(ctx, parent, group, sectionId, width, sections, allRules, keywords, register)
-    local panels, tabs, active, ui = {}, {}, nil, nil
+local function NavigationTabs(ctx, parent, sectionId, width, sections, y, selectTab)
+    local picker = { ctx = ctx, header = parent, width = width, selected = 1, spec = { page = PAGE, module = ID } }
+    local values = {}
+    for index in ipairs(sections) do
+        values[index] = { value = index, text = Tr(TAB_LABELS[index]),
+            meta = P.Meta(PAGE, ID, "tab." .. index, "action", sectionId) }
+    end
+    local row, choose = P.MenuWorkspace.WrappingTabs(picker, values, function(index)
+        picker.selected = index
+        selectTab(index)
+        return true
+    end)
+    row:ClearAllPoints()
+    row:SetPoint("TOPLEFT", parent, "TOPLEFT", 16, y)
+    for _, item in ipairs(row.items) do
+        local index = item.id
+        item.button:SetScript("OnClick", function()
+            if P.Combat() then return end
+            choose(index)
+            P.Refresh()
+        end)
+    end
+    P.M.TrackRefresh(ctx, function()
+        local enabled = not P.Combat()
+        for _, item in ipairs(row.items) do item.button:SetEnabled(enabled) end
+    end)
+    return row, choose
+end
+
+function P.BuildNavigationDetails(ctx, parent, group, sectionId, width, sections, allRules, keywords, register, resize)
+    local panels, choose = {}, nil
     local function Select(index)
-        active = index
+        if choose then
+            choose(index)
+        end
+    end
+    local function Show(index)
         for number, panel in ipairs(panels) do panel:SetShown(number == index) end
-        for number, tab in ipairs(tabs) do tab:SetAlpha(number == index and 1 or .65) end
     end
-    local y
-    y, ui = P.BuildNavigationPreview(ctx, parent, width, function(key) Select(KEYS[key] or 1) end)
+    local y = P.BuildNavigationPreview(ctx, parent, width, function(key) Select(KEYS[key] or 1) end)
     y = Actions(ctx, parent, sectionId, y, width - 32)
-    local columns = width < 580 and 3 or #sections
-    local tabWidth = (width - 32) / columns
-    for index, section in ipairs(sections) do
-        local slot = index - 1
-        tabs[index] = P.Button(ctx, parent, TAB_LABELS[index], 16 + slot % columns * tabWidth,
-            y - math.floor(slot / columns) * 32, tabWidth - 5, function() Select(index) end, nil,
-            P.Meta(PAGE, ID, "tab." .. index, "action", sectionId))
-    end
-    y = y - math.ceil(#sections / columns) * 32 - 8
+    local tabs
+    tabs, choose = NavigationTabs(ctx, parent, sectionId, width, sections, y, Show)
+    local content = CreateFrame("Frame", nil, parent)
+    content:SetPoint("TOPLEFT", tabs, "BOTTOMLEFT", -16, -8)
+    content:SetSize(width, 1)
     local maxHeight = 0
     for index, section in ipairs(sections) do
-        local panel = CreateFrame("Frame", nil, parent)
-        panel:SetPoint("TOPLEFT", 0, y)
+        local panel = CreateFrame("Frame", nil, content)
+        panel:SetPoint("TOPLEFT")
         panel:SetSize(width, 32)
         panels[index] = panel
         local bottom, entries = P.RuleGrid(ctx, panel, PAGE, ID, section.rules, -4, width - 32, nil, sectionId, nil, nil, true)
@@ -79,10 +106,13 @@ function P.BuildNavigationDetails(ctx, parent, group, sectionId, width, sections
         maxHeight = math.max(maxHeight, -bottom + 8)
     end
     Select(1)
+    local function Bottom() return y - tabs:GetHeight() - 8 - maxHeight end
+    if resize then tabs:HookScript("OnSizeChanged", function() resize(Bottom()) end) end
     local shortcut = P.AttachRuleColors(parent, group.title, ID, allRules)
     if shortcut then
         P.M.RegisterControlMetadata(shortcut, P.Meta(PAGE, ID, "action.colors.enabled", "action", sectionId),
             Tr("%s Colors"):format(Tr(group.title)), "button")
     end
-    return y - maxHeight, -y + maxHeight + 12, shortcut
+    local bottom = Bottom()
+    return bottom, -bottom + 12, shortcut
 end
