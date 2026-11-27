@@ -97,7 +97,6 @@ Core\Catalog\CooldownManager.lua
 Core\Catalog\CooldownManagerData.lua
 Core\SuiteMigrations.lua
 Core\Suite.lua
-Core\AddonConflicts.lua
 Core\HUDVisibility.lua
 Core\CDMInspection.lua
 Core\SpellRange.lua
