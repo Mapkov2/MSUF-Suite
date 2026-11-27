@@ -5232,8 +5232,6 @@ local dm = contexts.suite_damageMeter
 current = dm
 local windowPicker = Find(dm, function(w) return w.meta and tostring(w.meta.controlId):find("window%.selected") end)
 local windowType = Find(dm, function(w) return w.meta and w.meta.settingKey == "msufsuite.damageMeter.w1Type" end)
-windowPicker.set(3)
-assert(windowType.get() == S.Config("damageMeter").w3Type)
 local dmConfig = S.Config("damageMeter")
 ;(function()
     local function Prepare(widget, config)
@@ -5267,11 +5265,14 @@ local dmConfig = S.Config("damageMeter")
     local countBefore = dmConfig.windowCount
     dmConfig.windowCount = 3
     windowPicker.set(3)
+    assert(windowType.get() == dmConfig.w3Type, "window controls ignored an active selection")
     Prepare(windowType, dmConfig)
     assert(windowPicker.get() == 3, "window search changed an active selection")
     dmConfig.windowCount = 1
     Prepare(windowType, dmConfig)
-    assert(windowPicker.get() == 3, "exact navigation discarded an explicitly selected retained window")
+    assert(windowPicker.get() == 1, "exact navigation targeted a window above the active count")
+    windowPicker.set(3)
+    assert(windowPicker.get() == 1, "a stale picker selection targeted a window above the active count")
     windowPicker.set(1)
     dmConfig.windowCount = countBefore
 

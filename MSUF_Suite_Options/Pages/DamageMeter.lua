@@ -30,13 +30,21 @@ local FIGHT_KEYS = { Session = true, SyncSession = true }
 -- The selected window is shared by the window controls below; their rules use
 -- window 1's keys as templates and resolve to the selected window at runtime.
 local selected = 1
-P.ChoiceGates[ID] = { w1AnchorWindow = function(value) return value <= selected end }
--- Exact navigation follows the explicit picker, including retained windows
--- above windowCount. Their controls keep the existing disabled-state hint.
-P.SearchPreparers[ID] = function() return selected end
+local function SelectedWindow()
+    selected = math.min(selected, P.Get(ID, "windowCount"))
+    return selected
+end
+local function SelectWindow(value)
+    local index = tonumber(value)
+    if not index or index % 1 ~= 0 or index < 1 or index > P.Get(ID, "windowCount") then return end
+    selected = index
+    P.Refresh()
+end
+P.ChoiceGates[ID] = { w1AnchorWindow = function(value) return value <= SelectedWindow() end }
+P.SearchPreparers[ID] = SelectedWindow
 local function WindowKey(key)
     local suffix = key:match("^w%d+(.+)$")
-    return suffix and ("w" .. selected .. suffix) or key
+    return suffix and ("w" .. SelectedWindow() .. suffix) or key
 end
 
 local function IsLoadCondition(rule)
@@ -110,22 +118,15 @@ local function WindowControls(ctx, b, body, templates, built)
     local width = math.max(240, (HM.GetSectionWidth(body) or b.width or 720) - 32)
     local help = P.Text(body, HELP.window_settings, 16, -18, width)
     local y = -18 - math.max(14, math.ceil(help:GetStringHeight() or 14)) - 12
-    local picker = ctx.meterWindowPicker
-    if not picker then
-        local choices = {}
-        for i = 1, Suite.DamageMeterMaxWindows do choices[i] = { value = i, text = Tr("Window %d"):format(i) } end
-        picker = M.BindDropdownAt(ctx, body, Tr("Window"), 16, y, choices, math.floor(width / 2),
-            function() return selected end, function(value) selected = tonumber(value) or 1
-                P.Refresh() end,
-            P.Meta(PAGE, ID, "window.selected", "ephemeral", "suite_damageMeter_windows"))
+    if not ctx.meterWindowPicker then
+        P.BindMeterWindowPicker(ctx, body, y, math.floor(width / 2), SelectedWindow, SelectWindow)
+        y = y - 62
     end
-    local note = P.Text(body, "", 28 + math.floor(width / 2), y - 24, math.floor(width / 2) - 12)
-    y = y - 62
     local entries
     y, entries = P.RuleGrid(ctx, body, PAGE, ID, templates, y, width, WindowKey, "suite_damageMeter_windows", nil, built)
     P.MenuWorkspace.Prepare(body, entries)
     P.AttachRuleColors(body, "Window settings", ID, templates, WindowKey)
-    return y, picker, note
+    return y
 end
 
 -- Window settings: one pane whose controls follow the selected window. A
@@ -133,12 +134,9 @@ end
 local function BuildWindows(ctx, b, ui)
     local templates = P.SectionRules(ID, "w1", function(rule) return not IsLoadCondition(rule) end)
     local built = P.RuleRows(PAGE, ID, templates, WindowKey, "suite_damageMeter_windows")
-    local picker, note
     P.LazySection(b, "suite_damageMeter_windows", Tr("Window settings"), true, {
         content = function(body)
-            local y
-            y, picker, note = WindowControls(ctx, b, body, templates, built)
-            return y
+            return WindowControls(ctx, b, body, templates, built)
         end,
         summary = function(body) P.AttachRowsSummary(ctx, body, built.rows) end,
         shell = function(body)
@@ -154,17 +152,11 @@ local function BuildWindows(ctx, b, ui)
                     if preview then preview.showScreen(true, preview.screen.window) end
                 end,
                 function()
-                    local anchor = P.Get(ID, "w" .. selected .. "AnchorWindow") or 1
-                    return P.Get(ID, "enabled") and selected <= P.Get(ID, "windowCount")
-                        and (anchor == 1 or anchor > selected)
+                    local index = SelectedWindow()
+                    local anchor = P.Get(ID, "w" .. index .. "AnchorWindow") or 1
+                    return P.Get(ID, "enabled") and (anchor == 1 or anchor > index)
                 end,
                 P.Meta(PAGE, ID, "window.move", "action", "suite_damageMeter_windows"))
-            M.TrackRefresh(ctx, function()
-                local count = P.Get(ID, "windowCount")
-                P.SetTranslatedText(note, selected > count
-                    and string.format(Tr("Shown windows: %d. Raise the number of windows to show this one."), count) or "")
-                if picker.SetValue then picker:SetValue(selected) end
-            end)
             P.FinishBody(b, body, y - 40)
         end,
     })
@@ -230,8 +222,7 @@ local function Build(ctx)
             { id = "visibility", label = "Visibility", sections = "loadConditions globalVisibility" },
             { id = "timer", label = "Combat timer", sections = "timer timerDock timerFont" },
         } })
-    P.MenuSamples.Meter(ui, function() return selected end, function(value) selected = value
-                P.Refresh() end)
+    P.MenuSamples.Meter(ui, SelectedWindow, SelectWindow)
     -- S.DamageMeterReset comes with the damage meter addon.
     P.ModuleCard(ctx, b, PAGE, ID, {
         { "Reset combat data", function() if S.DamageMeterReset then S.DamageMeterReset() end end,

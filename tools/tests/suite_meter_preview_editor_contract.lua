@@ -270,12 +270,12 @@ do
     assert(widget and widget:IsVisible(), "the shared visibility accordion is missing its dropdown")
     c.windowCount, c.visibility, c.w1LoadVisibility = savedCount, savedVisibility, 1
 end
--- Change the page's actual picker closure, then exercise real exact preparation.
+-- Reducing the count moves exact preparation to the remaining active window.
 debug.setupvalue(selectedIndex, 1, 2)
 c.windowCount = 1
 assert(E.Open(preview, targets.buttons.type))
 mw:RunTimers()
-assert(selectedIndex() == 2, "exact navigation changed the explicitly selected inactive window")
+assert(selectedIndex() == 1, "exact navigation targeted a window above the active count")
 debug.setupvalue(selectedIndex, 1, 1)
 preview.selected = selectedIndex
 local owner, handle = preview.viewport, targets.rows[1].name

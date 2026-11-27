@@ -258,12 +258,25 @@ local function Paint(preview)
         + chipsHeight + math.ceil(preview.footer:GetStringHeight() or 28))
 end
 
+local choiceCount, choices
+local function WindowChoices()
+    local count = P.Get("damageMeter", "windowCount")
+    if count ~= choiceCount then
+        choiceCount, choices = count, {}
+        for i = 1, count do choices[i] = { value = i, text = Tr("Window %d"):format(i) } end
+    end
+    return choices
+end
+
+function P.BindMeterWindowPicker(ctx, parent, y, width, selected, setSelected)
+    return P.M.BindDropdownAt(ctx, parent, Tr("Window"), 16, y, WindowChoices, width, selected, setSelected,
+        P.Meta("suite_damageMeter", "damageMeter", "window.selected", "ephemeral", "suite_damageMeter_windows"))
+end
+
 function P.BuildMeterMenuPreview(ui, selected, setSelected)
     if not ui then return end
-    local width, choices = ui.width - 32, {}
-    for i = 1, P.Suite.DamageMeterMaxWindows do choices[i] = { value = i, text = Tr("Window %d"):format(i) } end
-    local picker = P.M.BindDropdownAt(ui.ctx, ui.header, Tr("Window"), 16, -42, choices, width,
-        selected, setSelected, P.Meta("suite_damageMeter", "damageMeter", "window.selected", "ephemeral", "suite_damageMeter_windows"))
+    local width = ui.width - 32
+    local picker = P.BindMeterWindowPicker(ui.ctx, ui.header, -42, width, selected, setSelected)
     ui.ctx.meterWindowPicker = picker
     P.HM.SetSearchTargetPrepare(picker, function() ui.select("window")
     return true end)

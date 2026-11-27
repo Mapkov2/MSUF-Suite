@@ -338,4 +338,55 @@ if forever then
         "leaving threat must bring the Session button back")
 end
 
-print("Damage meter audit: Delves, report pipes and failed sends, Mythic+ reset, header timer greying, threat fights and search aliases passed")
+------------------------------------------------------------------ hover-only and Dark Mode header controls
+do
+    local win = assert(D.windows[1], "the fixture left no window")
+    assert(S.GetActionTrackerMeterAnchor() == win.header, "the live Damage Done window did not publish its header")
+    local settings, reset, typeButton = win.buttons.settings, win.buttons.reset, win.buttons.type
+    local glyph = settings.icon
+    local region = getmetatable(glyph)
+    function region:SetDesaturated(dark) self.desaturated = dark end
+    function region:SetVertexColor(r, g, b) self.tint = {r, g, b} end
+    local function Right(region) return region.points[#region.points][4] end
+    local function CheckControls(alpha, titleRight)
+        assert(settings.alpha == alpha and reset.alpha == alpha, "header controls did not follow hover visibility")
+        assert(win.title.shown and Right(win.title) == titleRight, "the title did not get the available header width")
+    end
+
+    assert(rules.headerButtonStyle.default == 1 and rules.headerButtonStyle.choices[2] == "Midnight Dark",
+        "existing profiles must retain the default button style and be able to choose Midnight Dark")
+    D.SetWindowType(win, 0)
+    win.hover = false
+    Settings({headerVisible = true, headerSelectors = false, headerOutside = true, headerMouseover = true,
+        headerTimer = false, combatTime = true, headerButtonStyle = 2, titleOffsetX = 0, showTitle = true})
+    local c = S.Config(ID)
+    local visibleRight = -5 - 2 * (math.min(c.headerIconSize, c.headerHeight) + 2)
+    CheckControls(0, -5)
+    assert(glyph.desaturated and glyph.tint[1] == glyph.tint[2] and glyph.tint[2] == glyph.tint[3] and glyph.tint[3] < 1,
+        "Midnight Dark must desaturate and tint the existing atlas glyphs")
+    assert(typeButton.bars[1].color[1] == glyph.tint[1] and win.buttons.target.label.textColor[1] == glyph.tint[1],
+        "drawn and text-only controls must use the same Midnight Dark color")
+    local titleRed, titleGreen, titleBlue = S.RGB(c.titleColor)
+    assert(win.title.textColor[1] == titleRed and win.title.textColor[2] == titleGreen and win.title.textColor[3] == titleBlue,
+        "the button style changed the title's custom color")
+
+    D.HoverEnter(win.header)
+    CheckControls(1, visibleRight)
+    win.header.IsMouseOver = function() return true end
+    D.HoverLeave(settings)
+    CheckControls(1, visibleRight)
+    win.header.IsMouseOver = nil
+    D.HoverLeave(win.header)
+    CheckControls(0, -5)
+
+    win.menuPreview = true
+    D.StyleHeader(win)
+    CheckControls(1, visibleRight)
+    win.menuPreview = nil
+    Settings({headerButtonStyle = 1})
+    CheckControls(0, -5)
+    assert(glyph.desaturated == false and glyph.tint[1] == 1 and glyph.tint[2] == 1 and glyph.tint[3] == 1,
+        "selecting the default style must restore the original atlas colors")
+end
+
+print("Damage meter audit: Delves, reports, Mythic+ reset, header timer and buttons, threat fights and search aliases passed")

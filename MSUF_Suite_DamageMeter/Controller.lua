@@ -621,6 +621,15 @@ end
 -- the tracker, so it is called only when the answer changes, not on every
 -- refresh (each slider tick of a meter setting).
 local historyPushed
+local historyAnchor
+function S.GetActionTrackerMeterAnchor() return historyAnchor end
+
+local function SyncHistoryAnchor(anchor)
+    if historyAnchor == anchor then return end
+    historyAnchor = anchor
+    if S.RefreshActionTrackerMeterAnchor then S.RefreshActionTrackerMeterAnchor() end
+end
+
 local function SyncHistoryVisibility()
     local hidden = M.active and M.config.toggleHistory and M.sessionHidden or false
     if hidden == historyPushed or not S.SetActionTrackerSessionHidden then return end
@@ -653,6 +662,7 @@ function M:Refresh()
         if win.panel then S.ApplyOwnedChildLayer(win.panel, win.frame, layer, 5, restored) end
         D.SyncWindow(win)
     end
+    SyncHistoryAnchor(D.windows[1] and D.windows[1].header)
     D.HideTip()
     D.EvaluateVisibility()
     D.StyleTimer()
@@ -663,6 +673,7 @@ end
 
 -- Frames are kept and reused by the next Enable.
 function M:Disable()
+    SyncHistoryAnchor(nil)
     CloseAnalyses()
     D.UntrackUIVisibility()
     NS.HostBridge.WatchIconSkins("damageMeter", false)

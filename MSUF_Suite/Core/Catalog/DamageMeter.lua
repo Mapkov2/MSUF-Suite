@@ -79,6 +79,7 @@ local cleanModern = {
 -- The "look" choice values (Style preset below).
 local LOOK = { MIDNIGHT_BLUE = 1, MIDNIGHT_DARK = 2, FOREVER = 3, CUSTOM = 4, CLEAN_MODERN = 5, CLASS_STYLE = 6 }
 NS.DamageMeterLook = LOOK
+NS.DamageMeterHeaderButtonStyle = { ORIGINAL = 1, DARK = 2 }
 local DROPDOWN = { ORIGINAL = 1, METER = 2, MODERN = 3, BLUE = 4, DARK = 5, FOREVER = 6, CLASS = 7 }
 NS.DamageMeterDropdownStyle = DROPDOWN
 NS.DamageMeterDropdownLooks = {
@@ -177,6 +178,7 @@ B.Section(id, "window", "Window and header", {
     Number("headerFontSize", "Header text size", 11, 8, 18),
     Color("titleColor", "Header text color", initial.titleColor),
     Number("headerIconSize", "Header button size", 18, 14, 30),
+    Choice("headerButtonStyle", "Button style", NS.DamageMeterHeaderButtonStyle.ORIGINAL, { "Default", "Midnight Dark" }),
     Number("titleOffsetX", "Title: horizontal", 0, -200, 200),
     Number("titleOffsetY", "Title: vertical", 0, -200, 200),
     Number("buttonsOffsetX", "Header buttons: horizontal", 0, -200, 200),

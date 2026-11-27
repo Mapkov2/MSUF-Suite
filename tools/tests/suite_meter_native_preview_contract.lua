@@ -64,6 +64,7 @@ local Suite, P, private = env.MSUFSuite, {}, {}
 assert(Suite.Database.Initialize(nil))
 local config = Suite.Suite.Config("damageMeter")
 config.enabled, config.combatTime, config.timer = true, false, false
+config.windowCount, config.w3Width = 3, 310
 config.w1Width, config.w1Height, config.w1Type, config.w1Session = 260, 170, 10, 1
 Load("MSUF_Suite_Options", P)
 Load("MSUF_Suite_Modules", {})
@@ -122,6 +123,44 @@ end
 Visible()
 assert(paints > 0 and preview.selected() == 1, "first open needed a picker change")
 assert(not win.timer:IsShown() and not win.sampleTimer, "disabled timer appeared in the initial sample")
+do
+    local picker = assert(ui.ctx.meterWindowPicker, "missing preview window picker")
+    local function OpenChoices(count)
+        picker:GetScript("OnClick")(picker)
+        local rows = {}
+        local actual = 0
+        for _, row in ipairs(world.widgets.frames) do
+            if row._msuf2Owner == picker and row:IsVisible() then
+                rows[row._msuf2Value] = row
+                actual = actual + 1
+            end
+        end
+        assert(actual == count, ("window picker shows %d choices for %d active slots"):format(actual, count))
+        for index = 1, count do assert(rows[index], "missing active window choice " .. index) end
+        return rows
+    end
+    local function Pick(count, index)
+        local row = OpenChoices(count)[index]
+        row:GetScript("OnClick")(row)
+        -- The client stand-in does not advance the popup's close animation.
+        M.Widgets.CloseDropdown(true)
+        mw:RunTimers()
+        assert(preview.selected() == index and picker:GetValue() == index, "menu selection diverged from preview")
+        Visible()
+    end
+    Pick(3, 3)
+    assert(win.frame:GetWidth() == 310, "choosing window 3 did not draw its settings")
+    assert(P.SetMany("damageMeter", { windowCount = 2 }) ~= false)
+    mw:RunTimers()
+    assert(preview.selected() == 2 and picker:GetValue() == 2, "reduced count left the preview on an inactive window")
+    assert(config.w3Width == 310, "reducing window count erased the inactive window settings")
+    Pick(2, 1)
+    assert(P.SetMany("damageMeter", { windowCount = 3 }) ~= false)
+    mw:RunTimers()
+    Pick(3, 3)
+    assert(win.frame:GetWidth() == 310, "reactivating window 3 did not restore its settings")
+    Pick(3, 1)
+end
 local function Click(key)
     assert(ui:Focus("suite_damageMeter_timer"))
     local meta = P.Meta("suite_damageMeter", "damageMeter", key, "setting", "suite_damageMeter_timer")
@@ -195,4 +234,4 @@ assert(ui.meterPreview == preview and preview.stage.damageMeterMenuPreview == wi
 Visible()
 assert(win.timer:IsVisible() and sampleTimer:IsVisible(), "reopen lost the enabled timer samples")
 assert(not preview.stage:GetScript("OnUpdate"), "preview introduced persistent polling")
-print("Meter native preview " .. flavor .. ": first open, real timer controls, all anchors, hidden suspension and reopen passed")
+print("Meter native preview " .. flavor .. ": live window choices, real timer controls, all anchors, hidden suspension and reopen passed")

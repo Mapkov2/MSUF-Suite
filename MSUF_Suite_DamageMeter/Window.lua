@@ -13,6 +13,8 @@ local floor, max, min, format = math.floor, math.max, math.min, string.format
 local GRIP = "Interface\\ChatFrame\\UI-ChatIM-SizeGrabber-"
 local ORDER = { "settings", "reset", "session", "type", "target" }
 local EDGE = { TOP = { "TOPLEFT", "TOPRIGHT" }, BOTTOM = { "BOTTOMLEFT", "BOTTOMRIGHT" } }
+local DARK_HEADER = NS.DamageMeterHeaderButtonStyle.DARK
+local DARK_GLYPH = .82
 
 local function HeaderButton(win, kind)
     local button = S.CreateFrame("Button", nil, win.header)
@@ -246,10 +248,48 @@ local function HeaderSlots(c, meterType)
     return meterType == D.THREAT and slots - 1 or slots
 end
 
+local function PositionHeaderText(win, buttonsShown)
+    local c = M.config
+    local size = min(c.headerIconSize, c.headerHeight)
+    local slots = buttonsShown and HeaderSlots(c, win.meterType) or 0
+    local timerRight = -5 - slots * (size + 2)
+    local timerSize = c.headerTimerSize > 0 and c.headerTimerSize or c.headerFontSize
+    local titleSpace = M.style.headerClock and (timerSize * 3 + 4) or 0
+    win.title:ClearAllPoints()
+    win.timer:ClearAllPoints()
+    win.timer:SetPoint("RIGHT", win.header, "RIGHT", timerRight + c.headerTimerOffsetX, M.style.baseline + c.headerTimerOffsetY)
+    win.title:SetPoint("LEFT", win.header, "LEFT", 6 + c.titleOffsetX, M.style.baseline + c.titleOffsetY)
+    win.title:SetPoint("RIGHT", win.header, "RIGHT", timerRight - titleSpace + c.titleOffsetX, M.style.baseline + c.titleOffsetY)
+end
+
+local function ApplyHeaderControls(win, layoutChanged)
+    local c = M.config
+    local shown = not c.headerMouseover or win.hover or M.forced or win.menuPreview
+    local alpha = shown and 1 or 0
+    if alpha ~= win.buttonAlpha then
+        win.buttonAlpha = alpha
+        -- A hidden glyph still anchors an open settings or fight menu.
+        for _, button in pairs(win.buttons) do button:SetAlpha(alpha) end
+        layoutChanged = true
+    end
+    if layoutChanged then PositionHeaderText(win, shown) end
+end
+
+local function PaintHeaderAtlas(button, dark)
+    if (button.darkGlyph == true) == dark then return end
+    button.darkGlyph = dark
+    button.icon:SetDesaturated(dark)
+    local tint = dark and DARK_GLYPH or 1
+    button.icon:SetVertexColor(tint, tint, tint)
+end
+
 function D.StyleHeader(win)
     local c = M.config
     local size = min(c.headerIconSize, c.headerHeight)
     local r, g, b = S.RGB(c.titleColor)
+    local dark = c.headerButtonStyle == DARK_HEADER
+    local glyphR, glyphG, glyphB = r, g, b
+    if dark then glyphR, glyphG, glyphB = DARK_GLYPH, DARK_GLYPH, DARK_GLYPH end
     local previous
     local slots, gap = HeaderSlots(c, win.meterType), 0
     for index, kind in ipairs(ORDER) do
@@ -268,10 +308,13 @@ function D.StyleHeader(win)
         button:SetPoint("RIGHT", win.header, "RIGHT", -3 - (slot - 1) * (size + 2)
             + c.buttonsOffsetX + c[kind .. "OffsetX"], c.buttonsOffsetY + c[kind .. "OffsetY"])
         previous = button
-        if button.iconScale then button.icon:SetSize(elementSize * button.iconScale, elementSize * button.iconScale) end
+        if button.iconScale then
+            button.icon:SetSize(elementSize * button.iconScale, elementSize * button.iconScale)
+            PaintHeaderAtlas(button, dark)
+        end
         if button.label then
             D.FontStyle(button.label, c[kind .. "Size"] > 0 and max(8, floor(elementSize * .6)) or max(8, c.headerFontSize - 1), "header")
-            button.label:SetTextColor(r, g, b)
+            button.label:SetTextColor(glyphR, glyphG, glyphB)
             button.label:ClearAllPoints()
             button.label:SetPoint("CENTER", button, "CENTER", 0, M.style.baseline)
         end
@@ -281,7 +324,7 @@ function D.StyleHeader(win)
                 bar:ClearAllPoints()
                 bar:SetSize(width * (1.3 - .3 * i), thick)
                 bar:SetPoint("LEFT", button, "CENTER", -width / 2, (2 - i) * (thick + 2))
-                bar:SetColorTexture(r, g, b, 1)
+                bar:SetColorTexture(glyphR, glyphG, glyphB, 1)
             end
         end
     end
@@ -291,12 +334,7 @@ function D.StyleHeader(win)
     win.title:SetShown(c.showTitle ~= false)
     D.FontStyle(win.timer, c.headerTimerSize > 0 and c.headerTimerSize or c.headerFontSize, "header")
     win.timer:SetTextColor(r, g, b)
-    win.title:ClearAllPoints()
-    win.timer:ClearAllPoints()
-    local timerRight = -3 - slots * (size + 2) - 2
-    win.timer:SetPoint("RIGHT", win.header, "RIGHT", timerRight + c.headerTimerOffsetX, M.style.baseline + c.headerTimerOffsetY)
-    win.title:SetPoint("LEFT", win.header, "LEFT", 6 + c.titleOffsetX, M.style.baseline + c.titleOffsetY)
-    win.title:SetPoint("RIGHT", win.header, "RIGHT", timerRight - c.headerFontSize * 3 - 4 + c.titleOffsetX, M.style.baseline + c.titleOffsetY)
+    ApplyHeaderControls(win, true)
 end
 
 -- The outline sits outside the window: S.PlaceEdges frames the box that
@@ -349,7 +387,7 @@ function D.StyleWindowLayout(win)
     for slot, row in pairs(win.rows) do D.AnchorRow(row, body, slot) end
     -- Keep the current fade state through a style refresh. Resetting it would
     -- make ApplyHover fetch and paint once before Refresh's batched paint.
-    win.titleText, win.statusText, win.timerSecond, win.buttonAlpha = nil, nil, false, nil
+    win.titleText, win.statusText, win.timerSecond = nil, nil, false
 end
 
 function D.StyleWindow(win)
@@ -567,13 +605,12 @@ end
 
 function D.HoverLeave(region)
     local win = region.win
-    if not win.hover or win.frame:IsMouseOver() then return end
+    if not win.hover or win.frame:IsMouseOver() or win.header:IsMouseOver() then return end
     win.hover = false
     D.ApplyHover(win)
 end
 
 function D.ApplyHover(win, deferred)
-    local c = M.config
     local fade = M.uiHidden or (D.WindowVisibility(win.index) == D.VISIBILITY.MOUSEOVER and not M.forced and not win.hover)
     if fade ~= win.faded then
         win.faded, win.dirty = fade, true
@@ -600,11 +637,7 @@ function D.ApplyHover(win, deferred)
             D.SyncClock()
         end
     end
-    local alpha = (c.headerMouseover and not win.hover and not M.forced) and 0 or 1
-    if alpha ~= win.buttonAlpha then
-        win.buttonAlpha = alpha
-        for _, button in pairs(win.buttons) do button:SetAlpha(alpha) end
-    end
+    ApplyHeaderControls(win)
     win.grip:SetShown(win.hover and D.CanMove(win))
 end
 
