@@ -71,6 +71,7 @@ B.Section("actionTracker", "action_tracker", "Recent actions", {
     Bool("showChevron", "Show gold action markers", true),
     B.Font("font", "Font"),
     Number("fontSize", "Spell name size", 12, 9, 20),
+    Choice("anchorTarget", "Anchor point", 1, { "Screen anchor", "Damage meter" }),
     Choice("point", "Screen anchor", 5, NS.AnchorLabels),
     Number("x", "Horizontal position", 0, -4000, 4000),
     Number("y", "Vertical position", -40, -3000, 3000),

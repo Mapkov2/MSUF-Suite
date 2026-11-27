@@ -10,6 +10,7 @@ local M = {}
 local ICONS_ONLY = 2
 local GROW_UP, GROW_RIGHT, GROW_LEFT = 2, 3, 4
 local NO_ANIMATION, POP_IN = 1, 3
+local DAMAGE_METER_ANCHOR = 2
 
 -- The examples exist only in Edit Mode. Live rows come exclusively from the
 -- player's successful spellcast event, never from combat-log inference.
@@ -76,6 +77,29 @@ local function Create(self)
     host:Hide()
 end
 
+local function MeterAnchor(self)
+    if self.config.anchorTarget == DAMAGE_METER_ANCHOR and S.GetActionTrackerMeterAnchor then
+        return S.GetActionTrackerMeterAnchor()
+    end
+end
+
+local function Place(self)
+    local c, host = self.config, self.host
+    local point = POINTS[c.point] or "CENTER"
+    local meter = MeterAnchor(self)
+    host:ClearAllPoints()
+    if meter then
+        local x = c.displayPreset == ICONS_ONLY and 1 or 0
+        if c.growth == GROW_LEFT then
+            local width = c.displayPreset == ICONS_ONLY and c.rowHeight or c.width
+            x = x + (c.rows - 1) * (width + c.rowGap)
+        end
+        host:SetPoint("BOTTOMLEFT", meter, "TOPLEFT", -x, 0)
+    else
+        host:SetPoint(point, UIParent, point, c.x, c.y)
+    end
+end
+
 local function Layout(self)
     local c = self.config
     local iconsOnly = c.displayPreset == ICONS_ONLY
@@ -85,7 +109,6 @@ local function Layout(self)
     local headerHeight = c.showHeader and not iconsOnly and (c.fontSize + 10) or 0
     local totalWidth = horizontal and c.rows * width + (c.rows - 1) * c.rowGap or width
     local height = horizontal and c.rowHeight or c.rows * c.rowHeight + (c.rows - 1) * c.rowGap
-    local point = POINTS[c.point] or "CENTER"
     self.host:SetSize(totalWidth, height + headerHeight)
     self.header:ClearAllPoints()
     self.header:SetPoint("TOPLEFT", self.host, "TOPLEFT", 4, -2)
@@ -96,8 +119,7 @@ local function Layout(self)
         self.host:SetScale(math.min(viewport.scale, viewport.width / totalWidth, viewport.height / (height + headerHeight)))
     else
         self.host:SetScale(c.scale / 100)
-        self.host:ClearAllPoints()
-        self.host:SetPoint(point, UIParent, point, c.x, c.y)
+        Place(self)
     end
     for index, row in ipairs(self.rows) do
         row.frame:ClearAllPoints()
@@ -152,14 +174,44 @@ local function Style(self)
     end
 end
 
+local function HidePrivateIcons(self)
+    if not self.privateShown then return end
+    for _, row in ipairs(self.rows) do
+        if row.private then
+            row.private:Hide()
+            row.private = nil
+        end
+    end
+    self.privateShown = nil
+end
+
+local function PlacePrivateIcon(entry, row)
+    local icon = entry.source
+    if entry.sourceRow ~= row then
+        icon:SetParent(row.frame)
+        icon:ClearAllPoints()
+        icon:SetAllPoints(row.icon)
+        entry.sourceRow = row
+    end
+    row.icon:SetTexture(nil)
+    icon:Show()
+    row.private = icon
+end
+
 local function Paint(self)
+    HidePrivateIcons(self)
     local entries = self.previewEntries or (S.editMode and Samples() or self.history)
     local count = math.min(self.config.rows, #entries)
     for index, row in ipairs(self.rows) do
         local entry = index <= count and entries[index]
         if entry then
-            row.icon:SetTexture(entry.icon)
-            row.name:SetText(entry.name)
+            if entry.private then
+                PlacePrivateIcon(entry, row)
+                self.privateShown = true
+            else
+                row.icon:SetTexture(entry.icon)
+            end
+            row.name:SetText(entry.name or "")
             row.frame:Show()
         else
             row.frame:Hide()
@@ -168,8 +220,15 @@ local function Paint(self)
     self.host:SetShown(count > 0 and (S.editMode or (not self.sessionHidden and self.contextVisible ~= false)))
 end
 
+local function RecycleEntry(self, index)
+    local entry = table.remove(self.history, index)
+    if entry.private then entry.source:SetTexture(nil) end
+    entry.private, entry.name, entry.icon = nil, nil, nil
+    self.spareEntries[#self.spareEntries + 1] = entry
+end
+
 local function ClearHistory(self)
-    for index = #self.history, 1, -1 do self.history[index] = nil end
+    for index = #self.history, 1, -1 do RecycleEntry(self, index) end
     Paint(self)
 end
 
@@ -240,23 +299,45 @@ local function AnimateNewest(self)
     group:Play()
 end
 
-local function Cast(self, _, _, _, spellID)
-    -- This event is SecretWhenUnitSpellCastRestricted in upstream/live.
-    -- Guard the ID and every field before comparisons, indexing or storage.
-    if not S.Finite(spellID) or spellID <= 0 then return end
-    -- The name and icon getters answer plain values; GetSpellInfo built a
-    -- whole info table for every cast (520 B a cast in the 2026-10-02 raid
-    -- trace). GetSpellTexture's first result is GetSpellInfo's iconID.
-    local name = S.PublicText(C_Spell.GetSpellName(spellID))
-    if not name then return end
-    local icon = C_Spell.GetSpellTexture(spellID)
-    if not S.Finite(icon) or icon <= 0 then return end
-    if self.contextVisible == false then return end
+local function NewestEntry(self)
     local history = self.history
-    local entry = history[MAX_ROWS] or {}
+    local entry = history[MAX_ROWS] or table.remove(self.spareEntries) or {}
     for index = MAX_ROWS, 2, -1 do history[index] = history[index - 1] end
-    entry.name, entry.icon = name, icon
     history[1] = entry
+    return entry
+end
+
+local function RecordPrivateIcon(self, spellID)
+    -- The spell lookup and texture setters accept secret inputs. Keep the
+    -- result in the region we display. Do not read it back, even to repaint.
+    local icon = C_Spell.GetSpellTexture(spellID)
+    if S.Public(icon) and (not S.Finite(icon) or icon <= 0) then return false end
+    local entry = NewestEntry(self)
+    if not entry.source then
+        entry.source = S.CreateTexture(self.host, nil, "ARTWORK")
+        entry.source:SetTexCoord(.07, .93, .07, .93)
+        entry.source:Hide()
+    end
+    entry.source:SetTexture(icon)
+    entry.private, entry.name, entry.icon = true, nil, nil
+    return true
+end
+
+local function Cast(self, _, _, _, spellID)
+    if self.contextVisible == false then return end
+    if S.Finite(spellID) then
+        if spellID <= 0 then return end
+        -- The separate getters avoid building a spell info table per cast.
+        local name = S.PublicText(C_Spell.GetSpellName(spellID))
+        if not name then return end
+        local icon = C_Spell.GetSpellTexture(spellID)
+        if not S.Finite(icon) or icon <= 0 then return end
+        local entry = NewestEntry(self)
+        if entry.private then entry.source:SetTexture(nil) end
+        entry.private, entry.name, entry.icon = nil, name, icon
+    elseif self.config.displayPreset ~= ICONS_ONLY or S.Public(spellID) or not RecordPrivateIcon(self, spellID) then
+        return
+    end
     self.lastCastAt = GetTime()
     if self.pausedAt then self.pausedAt = self.lastCastAt end
     if not S.editMode then
@@ -310,11 +391,17 @@ end
 
 function M:Enable()
     Create(self)
-    self.history, self.lastCastAt = {}, nil
+    self.history, self.lastCastAt = self.history or {}, nil
+    self.spareEntries = self.spareEntries or {}
     self:Refresh()
 end
 
 function M:Refresh()
+    if self.config.displayPreset ~= ICONS_ONLY then
+        for index = #self.history, 1, -1 do
+            if self.history[index].private then RecycleEntry(self, index) end
+        end
+    end
     WatchGloss(self, self.config.glossEnabled == true)
     Layout(self)
     Style(self)
@@ -326,7 +413,8 @@ end
 
 function M:Disable()
     WatchGloss(self, false)
-    self.history = {}
+    HidePrivateIcons(self)
+    for index = #(self.history or {}), 1, -1 do RecycleEntry(self, index) end
     self.lastCastAt, self.pausedAt = nil, nil
     for _, row in ipairs(self.rows or {}) do
         if row.fade then row.fade:Stop() end
@@ -339,11 +427,19 @@ function M:RegisterMovers()
     S.RegisterOwnedMover(ID, "actions", {
         label = "Action tracker", order = 628,
         getFrame = function() return self.host end,
+        isEnabled = function() return not MeterAnchor(self) end,
         xKey = "x", yKey = "y", pointKey = "point",
         point = function() return POINTS[self.config.point] or "CENTER" end,
         quickPosition = true, historyKeys = { "width", "rowHeight", "scale" },
         sizeKeys = { "width", "rowHeight", "scale" },
     })
+end
+
+function S.RefreshActionTrackerMeterAnchor()
+    if M.active and M.config.anchorTarget == DAMAGE_METER_ANCHOR then
+        Place(M)
+        S.RefreshOwnedMovers(ID)
+    end
 end
 
 function S.SetActionTrackerSessionHidden(hidden)

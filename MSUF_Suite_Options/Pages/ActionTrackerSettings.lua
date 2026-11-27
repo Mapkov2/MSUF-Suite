@@ -8,7 +8,7 @@ local TABS = {
 }
 local LAYOUT = {
     rows = true, width = true, rowHeight = true, rowGap = true, growth = true, scale = true,
-    insertAnimation = true, showHeader = true,
+    insertAnimation = true, showHeader = true, anchorTarget = true, point = true, x = true, y = true,
 }
 local TEXT = {
     showNames = true, font = true, fontSize = true, fontOutline = true, fontRendering = true,

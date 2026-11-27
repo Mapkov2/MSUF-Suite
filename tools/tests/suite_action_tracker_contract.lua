@@ -11,9 +11,10 @@ local function Widget(parent, fontString)
     function w:CreateTexture() return Widget(self) end
     function w:CreateFontString() return Widget(self, true) end
     function w:GetParent() return self.parent end
+    function w:SetParent(value) self.parent = value end
     function w:SetFrameStrata() end
     function w:EnableMouse(value) self.mouse = value end
-    function w:SetAllPoints() end
+    function w:SetAllPoints(value) self.allPoints = value end
     function w:SetSize(width, height) self.width, self.height = width, height end
     function w:SetWidth(width) self.width = width end
     function w:SetHeight(height) self.height = height end
@@ -289,6 +290,91 @@ assert(pop and pop.plays == 0, "the configured pop was not prepared before the f
 Cast(15)
 assert(M.rows[1].pop == pop and pop.plays == 1 and fade.stopped,
     "switching insertion animations left the previous animation running")
+
+do
+    local Secrets = assert(loadfile(root .. "/../MidnightSimpleUnitFrames-7.0/tools/tests/classpower_secrets.lua"))()
+    Secrets.GUARD_NAMES.falsy.Public = true
+    local stop = Secrets.Watch(root .. "/MSUF_Suite_QualityOfLife/ActionTracker.lua", { strict = true })
+    local spellID, icon, absent = Secrets.New(), Secrets.New(), Secrets.New()
+    local public, texture = S.Public, C_Spell.GetSpellTexture
+    S.Public = function(value) return not Secrets.IsSecret(value) and public(value) end
+    C_Spell.GetSpellTexture = function(id)
+        if rawequal(id, absent) then return end
+        if rawequal(id, spellID) then return icon, 0 end
+        return texture(id)
+    end
+
+    Cast(spellID)
+    assert(M.history[1].name == "Spell 15", "a private cast displaced a named action")
+    M.config.displayPreset, M.config.hideAfter = 2, 1
+    M:Refresh()
+    Cast(absent)
+    assert(M.history[1].name == "Spell 15", "an unresolved icon displaced an action")
+    local nameReads = reads
+    Cast(spellID)
+    local native = assert(M.history[1].source, "an icon-only private cast did not reach a native texture")
+    assert(M.rows[1].private == native and native.parent == M.rows[1].frame and native.allPoints == M.rows[1].icon
+        and rawequal(native.texture, icon) and reads == nameReads,
+        "icon-only rendering did not forward the opaque icon without reading the name")
+    for _, value in pairs(M.history[1]) do
+        assert(not Secrets.IsSecret(value), "history retained a secret Lua value")
+    end
+    Cast(16)
+    assert(M.rows[2].private == native and native.parent == M.rows[2].frame and native.shown,
+        "the private icon did not move with history")
+    S.editMode = true
+    M:Refresh()
+    S.editMode = false
+    M:Refresh()
+    assert(M.rows[2].private == native and native.shown, "Edit Mode replaced the live private history")
+    M.config.displayPreset = 1
+    M:Refresh()
+    assert(M.history[1].name == "Spell 16" and M.history[2].name == "Spell 15" and native.texture == nil,
+        "standard rows retained a private icon or lost public history")
+    M.config.displayPreset = 2
+    M:Refresh()
+    Cast(spellID)
+    assert(M.history[1].source == native, "return to icon mode allocated a second native slot")
+    clock.Advance(1.1)
+    assert(#M.history == 0 and not M.host.shown and native.texture == nil and not native.shown,
+        "inactivity retained private texture contents")
+    local create, allocated = S.CreateTexture, 0
+    S.CreateTexture = function(...)
+        allocated = allocated + 1
+        return create(...)
+    end
+    for index = 1, 16 do Cast(spellID) end
+    assert(allocated == 7 and #M.history == 8, "opaque casts allocated beyond the bounded history")
+    M:Disable()
+    assert(M.rows[1].private == nil and native.texture == nil and not native.shown,
+        "disabling retained the private visible texture")
+    S.CreateTexture = create
+    S.Public, C_Spell.GetSpellTexture = public, texture
+    local violations = stop()
+    assert(#violations == 0, "private action logic inspected a secret:\n" .. table.concat(violations, "\n"))
+end
+
+do
+    local header, notifications = Widget(), 0
+    M.config.anchorTarget, M.config.growth, M.config.scale = 2, 3, 150
+    M:Refresh()
+    assert(M.host.point[2] == UIParent and mover.isEnabled(), "missing meter lost the screen fallback")
+    S.GetActionTrackerMeterAnchor = function() return header end
+    S.RefreshOwnedMovers = function(id)
+        assert(id == "actionTracker")
+        notifications = notifications + 1
+    end
+    S.RefreshActionTrackerMeterAnchor()
+    local point = M.host.point
+    assert(point[1] == "BOTTOMLEFT" and point[2] == header and point[3] == "TOPLEFT"
+        and point[4] == -1 and point[5] == 0 and not mover.isEnabled(),
+        "the first icon does not follow the meter's scaled top-left edge")
+    header = nil
+    S.RefreshActionTrackerMeterAnchor()
+    assert(M.host.point[2] == UIParent and mover.isEnabled() and notifications == 2,
+        "turning off the meter kept the tracker docked")
+end
+
 M:Disable()
 M.active = false
 assert(not M.host.shown and #M.history == 0, "disable retained visible or recorded actions")
