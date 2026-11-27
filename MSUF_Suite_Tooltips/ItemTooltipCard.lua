@@ -304,13 +304,12 @@ local function ReadData(kind, key, text, ownerIcon)
 end
 
 local function HeaderRoom(tip, title, reserve)
-    local width = Safety.Read(tip, "GetWidth")
-    local screen = Safety.Read(UIParent, "GetTop")
-    local tipScale, screenScale = Safety.Read(tip, "GetEffectiveScale"), Safety.Read(UIParent, "GetEffectiveScale")
+    local width, tipScale = Safety.ReadPair(tip, "GetWidth", "GetEffectiveScale")
+    local screen, screenScale = Safety.ReadPair(UIParent, "GetTop", "GetEffectiveScale")
     if not (width and width > 0 and screen and tipScale and tipScale > 0 and screenScale and screenScale > 0) then return end
     local ratio = tipScale / screenScale
     local height = Card.HeaderHeight()
-    local top, bottom = Safety.Read(title, "GetTop"), Safety.Read(title, "GetBottom")
+    local top, bottom = Safety.ReadPair(title, "GetTop", "GetBottom")
     local tipTop = Safety.Read(tip, "GetTop")
     if not (top and bottom and tipTop) then return end
     if top - bottom < height - 4 and (bottom + height + reserve) * ratio <= screen then

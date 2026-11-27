@@ -1,7 +1,7 @@
 local root = assert(arg[1])
 local card, outline, buffCard, buffOutline, combatEvents, timer
 local callbacks = {}
-local comparisonUpdates = 0
+local singleComparisonUpdates, dualComparisonUpdates = 0, 0
 local queued, reads, combat, spells, actionTextures = 0, 0, false, 0, 0
 local function Noop() end
 local function Widget()
@@ -139,10 +139,14 @@ local vitals = { Refresh = function() return false end }
 local NS = {
     TooltipVitals = vitals,
     TooltipComparisonLayout = { Update = function(manager, owner, primary, secondary, _, firstShown, secondShown)
-        if not firstShown or not secondShown then return end
+        if not firstShown then return end
         assert(manager == TooltipComparisonManager and owner == GameTooltip
             and primary == ShoppingTooltip1 and secondary == ShoppingTooltip2)
-        comparisonUpdates = comparisonUpdates + 1
+        if secondShown then
+            dualComparisonUpdates = dualComparisonUpdates + 1
+        else
+            singleComparisonUpdates = singleComparisonUpdates + 1
+        end
     end },
     Client = { isForever = false, isMainline = true },
     DB = { enabled = true, theme = { itemTooltipStyle = "compact" } },
@@ -170,6 +174,15 @@ local NS = {
     Surface = { Attach = Noop, MediaPath = Noop, SetMediaTexture = Noop },
 }
 local core = { CatalogBuild = { Module = Noop, Add = Noop } }
+local readSafety, secretCheck = {}, issecretvalue
+issecretvalue = function(value) return type(value) == "table" and value.secret == true end
+assert(loadfile(root .. "/MSUF_Suite/Appearance/Safety.lua"))("MSUF_Suite", readSafety)
+issecretvalue = secretCheck
+local pairedReads = 0
+NS.Safety.ReadPair = function(...)
+    pairedReads = pairedReads + 1
+    return readSafety.Safety.ReadPair(...)
+end
 assert(loadfile(root .. "/MSUF_Suite/Core/Catalog/Tooltips.lua"))("MSUF_Suite", core)
 NS.Defaults = { theme = core.TooltipAppearance.defaults }
 local function Copy(value)
@@ -198,6 +211,7 @@ end
 Build(1, GameTooltip.current)
 assert(card:IsShown() and outline:IsShown() and reads == 1 and not timer,
     "the first item build waited for the next frame")
+assert(pairedReads == 3, "header geometry did not share the readability check per region")
 GameTooltip:Show()
 GameTooltip.scripts.OnShow()
 assert(card.anchor[1] == "BOTTOMRIGHT" and card.anchor[2] == GameTooltip and card.anchor[3] == "TOPRIGHT"
@@ -574,8 +588,9 @@ GameTooltip.shoppingTooltips = { first, second }
 local manager = TooltipComparisonManager
 manager.tooltip, manager.anchorFrame = GameTooltip, GameTooltip
 manager:AnchorShoppingTooltips(true, true)
-manager:AnchorShoppingTooltips(true, false)
-assert(comparisonUpdates == 1, "default tooltip styling missed the dual-comparison layout hook")
+manager:AnchorShoppingTooltips(true, nil)
+assert(singleComparisonUpdates == 1 and dualComparisonUpdates == 1,
+    "default tooltip styling missed a native item comparison callback")
 local coverModes, originalAlphas = {}, {}
 NS.TooltipChrome.IsActive = function() return true end
 NS.TooltipChrome.SetCardBacking = function(tip, mode) coverModes[tip] = mode return true end
