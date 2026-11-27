@@ -126,7 +126,7 @@ local function RangeChanged(_, _, slot, inRange, checksRange)
     local out = not IsSecret(inRange) and not IsSecret(checksRange) and checksRange and not inRange or nil
     for i = 1, #list do
         local rec = list[i]
-        if Visible(rec.bar) and rec.rangeSlot == slot and rec.outOfRange ~= out then
+        if rec.rangeSlot == slot and rec.outOfRange ~= out and Visible(rec.bar) then
             rec.outOfRange = out
             if not out then
                 Usable(rec)
@@ -431,7 +431,7 @@ local IN_COMBAT = { inCombat = true }
 -- SPELL_UPDATE_COOLDOWN 1,596, ACTIONBAR_UPDATE_COOLDOWN 739,
 -- CURRENT_SPELL_CAST_CHANGED 381 and ACTIONBAR_UPDATE_STATE 278 events.
 local DIRECT = { inCombat = true, direct = true }
-local DIRECT_EVENTS = { SPELL_UPDATE_COOLDOWN = DIRECT, ACTIONBAR_UPDATE_COOLDOWN = DIRECT,
+local DIRECT_EVENTS = { ACTIONBAR_SLOT_CHANGED = DIRECT, SPELL_UPDATE_COOLDOWN = DIRECT, ACTIONBAR_UPDATE_COOLDOWN = DIRECT,
     CURRENT_SPELL_CAST_CHANGED = DIRECT, ACTIONBAR_UPDATE_STATE = DIRECT }
 function AB.SyncOptionalEvents()
     local context = M.context
@@ -443,7 +443,7 @@ function AB.SyncOptionalEvents()
             or event ~= "ACTION_RANGE_CHECK_UPDATE" and M.config.procGlow ~= PROC_NONE
         if gamepadEvent then wanted = NS.Client.isForever and AB.AnyGamepadHidden() end
         if wanted then
-            context:Event(event, EVENTS[event], IN_COMBAT)
+            context:Event(event, EVENTS[event], event == "ACTION_RANGE_CHECK_UPDATE" and DIRECT or IN_COMBAT)
         else
             context:RemoveEvent(event)
         end

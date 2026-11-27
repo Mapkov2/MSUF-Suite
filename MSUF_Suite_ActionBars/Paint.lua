@@ -695,9 +695,10 @@ local function MapButton(rec)
     if not slot then return end
     local list = slotMap[slot]
     if not list then
-        list = {}
+        list = { markerGeneration = -1, markerShown = false }
         slotMap[slot] = list
     end
+    list.markerGeneration = -1
     list[#list + 1] = rec
 end
 

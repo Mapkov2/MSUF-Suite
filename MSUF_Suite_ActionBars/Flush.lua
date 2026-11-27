@@ -39,6 +39,7 @@ local protected = { grid = false, routing = false }
 -- of the cooldown/usable cap is pending. Separate flags, so next-frame work
 -- (a page change, a slot change) never waits for the cap.
 local scheduled, throttled = false, false
+local retryParked = false
 local sharedDue
 local last = { cooldown = 0, actionbarCooldown = 0, usable = 0, unreported = 0 }
 -- Only a capped pass can prove that this kind awaits the trailing timer.
@@ -74,9 +75,14 @@ local function Schedule()
 end
 
 local function WakeRetry()
+    if scheduled then return end
     -- An otherwise idle slot event still wakes a failed paint or grid plan.
-    if next(dirtyBars) or next(dirtySlots) or next(spellCooldowns)
-        or (protected.grid or protected.routing or next(gridBars)) and not NS.IsCombatLocked() then
+    if (protected.grid or protected.routing or next(gridBars)) and not NS.IsCombatLocked() then
+        Schedule()
+        return
+    end
+    if not retryParked then return end
+    if next(dirtyBars) or next(dirtySlots) or next(spellCooldowns) then
         Schedule()
         return
     end
@@ -392,7 +398,7 @@ Flush = function()
     WalkDirty(now)
     if nativeFull then Run(dirty, "full", true, NativeFullWalk) end
     FlushProtected()
-    Settle()
+    retryParked = Settle()
 end
 
 local function Mark(kind)
@@ -435,6 +441,7 @@ local function Reset()
     for slot in pairs(gridFill) do gridFill[slot] = nil end
     for slot in pairs(gridHold) do gridHold[slot] = nil end
     protected.routing, protected.grid = false, false
+    retryParked = false
     ResetUnits()
 end
 
