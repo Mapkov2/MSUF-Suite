@@ -18,6 +18,9 @@ local function LoadedEngine()
 end
 
 local tooltipBorder
+local roundedWindow, roundedWindowEngine, roundedFamily, roundedRadius
+local roundedContours = setmetatable({}, { __mode = "k" })
+local WINDOW_SHAPE = { role = "shell", border = 0 }
 
 function Skin.TooltipTheme()
     local engine = LoadedEngine()
@@ -33,6 +36,13 @@ function Skin.TooltipAppearanceChanged()
     local engine = Skin.TooltipTheme()
     if engine then engine.Registry.NotifyListeners("tooltipStyle", "tooltips") end
 end
+local function ChangesWindowShape(domain, key)
+    return domain == "profile" or domain == "ready"
+        or domain == "theme" and (key == "preset" or key == "look")
+        or domain == "adapter" and key == "master"
+        or domain == "geometry" and (key == "roundWindows" or key == "windowRadius" or key == "family")
+end
+
 local function HookOwnedAppearance(api)
     -- hooksecurefunc raises when the hooked field is not a function.
     if appearanceHooked or type(api.OnAppearanceChanged) ~= "function" then return end
@@ -47,7 +57,9 @@ local function HookOwnedAppearance(api)
         if bags and bags.active and (domain == "theme" or domain == "color" or domain == "appearance"
             or domain == "geometry" or domain == "profile" or domain == "ready" or domain == "adapter" and key == "master") then
             local config = controller.Config("bags")
-            if config.backpackBorderStyle ~= Suite.BagsBorderStyle.CUSTOM then controller.Apply("bags") end
+            if config.backpackBorderStyle ~= Suite.BagsBorderStyle.CUSTOM or ChangesWindowShape(domain, key) then
+                controller.Apply("bags")
+            end
         end
     end)
     appearanceHooked = true
@@ -106,15 +118,115 @@ function Skin.WindowsEnabled()
     return Skin.enabled and not (engine and engine.DB and engine.DB.enabled == false)
 end
 
+local function EnsureAppearanceHook(engine)
+    if not appearanceHooked and engine and engine.GetAPI then
+        local api = engine.GetAPI(2, 0)
+        if api then HookOwnedAppearance(api) end
+    end
+end
+
+function Skin.GetRoundedWindowGeometry()
+    local engine = LoadedEngine()
+    if not engine or not Skin.WindowsEnabled() then return end
+    EnsureAppearanceHook(engine)
+    local geometry = engine.DB and engine.DB.geometry
+    if not geometry or not geometry.roundWindows or not engine.Geometry then return end
+    local family, radius = geometry.family, geometry.windowRadius
+    if roundedWindowEngine ~= engine or roundedFamily ~= family or roundedRadius ~= radius then
+        roundedWindowEngine, roundedFamily, roundedRadius = engine, family, radius
+        -- Paint consumers keep the old asset identity to detect a shape change.
+        roundedWindow = engine.Geometry.Resolve(WINDOW_SHAPE)
+    end
+    return roundedWindow
+end
+
+function Skin.SetOwnedWindowContour(frame, inset)
+    if roundedContours[frame] == inset then return end
+    roundedContours[frame] = inset
+    local engine = LoadedEngine()
+    local focus = engine and engine.WindowFocus
+    if focus and focus.OwnedContourChanged then focus.OwnedContourChanged(frame) end
+end
+
+function Skin.GetOwnedWindowContour(frame)
+    local inset = roundedContours[frame]
+    if inset ~= nil then return Skin.GetRoundedWindowGeometry(), inset end
+end
+
+local function NewRoundedMask(engine, owner)
+    local safety = engine.Safety
+    if not safety.CanCreateRegions(owner, not Suite.IsCombatLocked()) or not safety.HasMethod(owner, "CreateMaskTexture") then return end
+    local mask = owner:CreateMaskTexture()
+    if not safety.HasMethod(mask, "ClearTextureSlice") or not safety.HasMethod(mask, "SetTextureSliceMargins")
+        or not safety.HasMethod(mask, "SetTextureSliceMode") then
+        mask:Hide()
+        return
+    end
+    mask:SetAllPoints(owner)
+    return mask
+end
+
+-- All supplied regions belong to the Suite. Their normal material painters
+-- keep ownership of gradients, tints and visibility while this clips the art.
+function Skin.MaskOwnedWindow(owner, state, geometry, ...)
+    if not geometry then
+        if state and state.active then
+            for region in pairs(state.regions) do
+                region:RemoveMaskTexture(state.mask)
+                state.regions[region] = nil
+            end
+            state.mask:Hide()
+            state.active = nil
+        end
+        return state
+    end
+    local engine = LoadedEngine()
+    if not engine then return state end
+    if not state then
+        local mask = NewRoundedMask(engine, owner)
+        if not mask then return end
+        state = { mask = mask, regions = {} }
+    end
+    engine.Geometry.ConfigureShape(state.mask, geometry.fill, geometry)
+    if not state.active then
+        state.mask:Show()
+        state.active = true
+    end
+    for i = 1, select("#", ...) do
+        local region = select(i, ...)
+        if region and not state.regions[region] then
+            region:AddMaskTexture(state.mask)
+            state.regions[region] = true
+        end
+    end
+    return state
+end
+
+function Skin.PaintRoundedWindowShadow(texture, geometry, opacity, alwaysApply)
+    local engine = LoadedEngine()
+    if not engine then return end
+    engine.Geometry.ConfigureShape(texture, geometry.fill, geometry, alwaysApply)
+    texture:SetVertexColor(0, 0, 0, opacity)
+end
+
+function Skin.PaintRoundedWindowOutline(frame, art, pixels, r, g, b, a, strata, level, attachToWindow, logicalWidth)
+    if pixels <= 0 then
+        if art then art:Hide() end
+        return art
+    end
+    local engine = LoadedEngine()
+    if engine and engine.WindowFocusVisual then
+        return engine.WindowFocusVisual.PaintRoundOutline(frame, art, pixels, r, g, b, a, strata, level, attachToWindow, logicalWidth)
+    end
+    return art
+end
+
 function Skin.GetTooltipBorder()
     local engine = LoadedEngine()
     local tooltips = Suite.Tooltips
     local chrome = tooltips and tooltips.TooltipChrome or engine and engine.TooltipChrome
     if not chrome then return nil end
-    if not appearanceHooked and engine and engine.GetAPI then
-        local api = engine.GetAPI(2, 0)
-        if api then HookOwnedAppearance(api) end
-    end
+    EnsureAppearanceHook(engine)
     if tooltips then
         if not tooltips.DB.enabled then return nil end
     elseif not Skin.WindowsEnabled() then return nil end

@@ -68,29 +68,102 @@ local body = [======[
     local close = Native("ContourClose", 676, 487, 28, 28)
     close.parent, close.kind = border, "Button"
     border.GetChildren = function() return info, portrait, close end
-    map:Hide(); map:Show(); Click(character)
+    map:Hide(); map:Show(); Tick(); Click(character)
     Check(Covered(690, 510), "an exterior native button lost its dimming")
     NS.WindowFocusChrome.SetHidden(function(frame) return frame == close end)
-    map:Hide(); map:Show(); Click(character)
+    map:Hide(); map:Show(); Tick(); Click(character)
     Check(not Covered(690, 510), "a faded native caption button still shapes the focus veil")
     NS.WindowFocusChrome.SetHidden(NS.WindowControlChrome.IsFaded)
     border.GetChildren = function() return info, portrait end
-    map:Hide(); map:Show(); Click(character)
+    map:Hide(); map:Show(); Tick(); Click(character)
     local foreignWrites = 0
     for _, frame in ipairs({ map, border, info, portrait, portrait.portrait, portrait.CircleMask }) do
         foreignWrites = foreignWrites + (frame.geometryWrites or 0)
     end
     Check(foreignWrites == 0, "contour discovery wrote native geometry")
     info.I.asset = { secret = true }
-    map:Hide(); map:Show(); Click(character)
+    map:Hide(); map:Show(); Tick(); Click(character)
     Check(not Covered(175, 505), "secret native art fell back to an unmasked click rectangle")
     info.I.asset = "Interface\\common\\help-i"
-    map:Hide(); map:Show(); Click(character)
+    map:Hide(); map:Show(); Tick(); Click(character)
     local reads = 0
     info.I.GetTexture = function() reads = reads + 1; return info.I.asset end
     map:Hide()
     for _ = 1, 100 do Tick() end
     Check(reads == 0, "closed-window contour discovery polled native artwork")
+
+    character:Hide()
+    local lower = Native("ProfessionsFrame", 103, 278, 18, 20)
+    local top = Native("CharacterFrame", 50, 50, 400, 400)
+    local hosted = Native("HostedSuiteCharacter", 80, 80, 160, 160)
+    hosted:SetScale(1.25)
+    NS.Registry.GetSurface = function(frame)
+        if frame == hosted then
+            return { visible = true, spec = { inset = 2 }, geometry = {
+                fill = "suite-r24-fill", outside = "suite-r24-outside", margins = { 27.5, 27.5, 27.5, 27.5 },
+                slice = true, shape = "round", radius = 24,
+            } }
+        end
+    end
+    NS.DB.geometry.roundWindows = true
+    W.TrackFocus(lower, "contour")
+    F.Present(top, hosted)
+    W.TrackFocus(top, "contour")
+    local hiddenUnderTop, clearTop = F.records[lower], F.records[top]
+    Check(F.active == clearTop and #clearTop.veils == 0, "new clear presentation was previously dimmed")
+    Check(not hiddenUnderTop.covered and hiddenUnderTop.sliceCount > 0,
+        "rounded foreground incorrectly skipped a lower window fully inside its bounds")
+    local cornerSlice
+    for index = 1, hiddenUnderTop.sliceCount do
+        local slice = hiddenUnderTop.slices[index]
+        if slice.left <= 104 and slice.left + slice.width > 104 and slice.bottom <= 295 and slice.bottom + slice.height > 295 then
+            cornerSlice = slice
+            break
+        end
+    end
+    Check(cornerSlice and not cornerSlice.cutoutMask, "mixed-scale cutout lost the dimmed band at the visible corner")
+    local cut = clearTop.rect.roundedCut
+    Check(cut and cut.geometry.outside == "suite-r24-outside" and cut.left == 102.5 and cut.bottom == 102.5
+        and cut.width == 195 and cut.unitScale == 1.25, "cutout used native bounds, ignored the inset, or lost the overlay scale")
+    Check(not NS.WindowFocusGeometry.Covers(clearTop.rect, lower, 0)
+        and NS.WindowFocusGeometry.Covers(clearTop.rect, { left = 190, bottom = 190, width = 20, height = 20 }, 0),
+        "coverage did not distinguish the transparent corner from the opaque interior")
+    local carving = NS.WindowFocusGeometry
+    local example = { rect = { left = 90, bottom = 270, width = 40, height = 40, unitScale = 1.25 } }
+    Check(carving.Begin(example) and carving.SubtractWindow(example, clearTop), "same-scale corner could not be carved")
+    local exact
+    for index = 1, example.sliceCount do
+        if example.slices[index].cutoutMask == cut then exact = true end
+    end
+    Check(exact, "same-scale opaque source missed the inverse mask")
+    Check(carving.SubtractWindow(example, clearTop), "overlapping inverse masks could not be reduced to bands")
+    for index = 1, example.sliceCount do
+        local mask = example.slices[index].cutoutMask
+        Check(not mask or mask == cut, "a corner slice retained competing inverse masks")
+    end
+    local subtract, rectangularRetry = carving.SubtractWindow, false
+    carving.SubtractWindow = function(state, other, rectangular)
+        if state == hiddenUnderTop then
+            if not rectangular then
+                state.roundedCuts = true
+                return false
+            end
+            rectangularRetry = state.roundedCuts == nil and state.sliceCount == 1
+        end
+        return subtract(state, other, rectangular)
+    end
+    F.OwnedContourChanged(top)
+    Tick()
+    carving.SubtractWindow = subtract
+    Check(rectangularRetry, "exhausted corner slices did not restart with rectangular subtraction")
+    local reconcile
+    NS.Registry.QueueJob = function(callback) reconcile = callback end
+    NS.DB.geometry.roundWindows = false
+    listeners[F](F, "theme", "look")
+    Check(reconcile ~= nil, "changing rounding did not wait for the surface refresh")
+    reconcile()
+    Check(hiddenUnderTop.covered and not Dimmed(lower), "disabling rounding did not restore the rectangular cutout")
+
     local function Noop() end
     local binds, unbinds, typeReads, enumerations = 0, 0, 0, 0
     local function NewTexture()
@@ -103,6 +176,7 @@ local body = [======[
         CreateMaskTexture = function()
             return { SetTexture = Noop, SetTexCoord = Noop, ClearAllPoints = Noop, SetPoint = Noop, SetSize = Noop, Show = Noop }
         end,
+        GetNumRegions = function() return #regions end,
         GetRegions = function() enumerations = enumerations + 1; return unpack(regions) end,
     }
     local veil = { canvas = canvas }

@@ -531,6 +531,7 @@ function Caption.Attach(module, frame, t)
     states[frame] = state
     Own(state, module.context)
     Caption.Sync(state)
+    return state.close.caption.fill
 end
 
 -- A window layout pass moved or scaled a window.

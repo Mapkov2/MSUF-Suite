@@ -44,6 +44,7 @@ end
 
 local function HideOutline(state)
     if state.outline then state.outline:Hide() end
+    if state.roundOutline then state.roundOutline:Hide() end
     if state.tooltipOutline then state.tooltipOutline:Hide() end
 end
 
@@ -65,14 +66,20 @@ local function UpdateOutline(state)
         HideOutline(state)
         return
     end
+    local round = not matchTooltip and db.geometry.roundWindows == true
+    if state.outline and (matchTooltip or round) then state.outline:Hide() end
+    if state.roundOutline and not round then state.roundOutline:Hide() end
     if matchTooltip then
-        if state.outline then state.outline:Hide() end
         state.tooltipOutline = Visual.PaintTooltipOutline(frame, state.tooltipOutline, state.strata, state.level)
         return
     end
     if state.tooltipOutline then state.tooltipOutline:Hide() end
-    local outline = NS.SuiteCore().WindowOutline
     local r, g, b, a = NS.Theme.GetColor("windowOutline")
+    if round then
+        state.roundOutline = Visual.PaintRoundOutline(frame, state.roundOutline, pixels, r, g, b, a, state.strata, state.level)
+        return
+    end
+    local outline = NS.SuiteCore().WindowOutline
     state.outline = outline.Paint(frame, state.outline, pixels, r, g, b, a, state.strata, state.level, true)
 end
 
@@ -101,14 +108,25 @@ local function ChooseActive()
     return active
 end
 
+local function SubtractWindows(state, rectangular)
+    for _, other in pairs(visible) do
+        if other ~= state and other.readable and not other.covered and (other.keepClear or Geometry.Above(other, state))
+            and not Geometry.SubtractWindow(state, other, rectangular) then return false end
+    end
+    return NS.WindowFocusPopups.Subtract(state)
+end
+
 local function Paint(state)
     if state.keepClear or not state.readable then Hide(state, false) return end
     if state.covered or not Geometry.Begin(state) then Hide(state, true) return end
-    for _, other in pairs(visible) do
-        if other ~= state and other.readable and not other.covered and (other.keepClear or Geometry.Above(other, state))
-            and not Geometry.SubtractWindow(state, other) then Hide(state, true) return end
+    if not SubtractWindows(state) then
+        -- Many crossing corner bands can fill the bounded slice pool. Preserve
+        -- dimming using the original rectangular subtraction for this paint.
+        if not state.roundedCuts or not Geometry.Begin(state) or not SubtractWindows(state, true) then
+            Hide(state, true)
+            return
+        end
     end
-    if not NS.WindowFocusPopups.Subtract(state) then Hide(state, true) return end
     for index = 1, state.sliceCount do
         local veil = state.veils[index]
         if not veil then
@@ -473,6 +491,10 @@ function Focus.Present(frame, surface)
     end
 end
 
+function Focus.OwnedContourChanged(frame)
+    if visible[frame] then QueueGeometry() end
+end
+
 function Focus.Track(frame, owner)
     local name = NS.WindowControlPolicy.IdentifyFocusWindow(frame)
     if not name or not Safety.HasMethod(frame, "HookScript") then return false end
@@ -521,14 +543,17 @@ function Focus.ReleaseOwner(owner)
     Reconcile()
 end
 
-local function SettingsChanged(_, domain)
+local function SettingsChanged(_, domain, key)
     if domain == "profile" or domain == "motion" or domain == "adapter" or domain == "theme"
         or domain == "color" or domain == "appearance" or domain == "geometry" or domain == "tooltipStyle" then
         for _, state in pairs(visible) do
             UpdateOutline(state)
             for index = 1, #state.veils do Visual.Refresh(state.veils[index]) end
         end
-        Reconcile()
+        -- Surface geometry changes on the next registry flush. Reconcile
+        -- after it so both the dim material and the cutout use that shape.
+        if domain == "geometry" or domain == "profile" or domain == "theme" and key == "look" then NS.Registry.QueueJob(Reconcile)
+        else Reconcile() end
     end
 end
 

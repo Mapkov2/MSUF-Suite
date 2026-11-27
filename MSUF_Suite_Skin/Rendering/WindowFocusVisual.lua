@@ -188,6 +188,64 @@ end
 -- Reuse the tooltip's actual edge art on an addon-owned overlay. The center
 -- belongs to the outlined window; only the eight edge pieces are installed.
 local outlineLayout
+-- With rounded windows the outline follows the window's corners. Each ring is
+-- the window shape's 2 px edge, one UI unit further in than the one before,
+-- so a thicker outline leaves no gap along the curves.
+local ROUND_RING_SPECS = { { role = "shell", border = 1 }, { role = "shell", border = 2 } }
+local MAX_ROUND_RINGS = 9
+
+-- Outline pixels as UI units at the outline's own scale.
+local function OutlineUnits(art, pixels)
+    local factor = NS.SuiteCore().WindowCaption.PixelFactor()
+    local scale = art:GetEffectiveScale()
+    if type(factor) ~= "number" or type(scale) ~= "number" or factor <= 0 or scale <= 0 then return pixels end
+    return pixels * factor / scale
+end
+
+local function MatchWindowScale(art, frame)
+    local target = Safety.Read(frame, "GetEffectiveScale")
+    local parent = Safety.Read(UIParent, "GetEffectiveScale")
+    local scale = type(target) == "number" and target > 0 and type(parent) == "number" and parent > 0 and target / parent or 1
+    if (art.roundScale or 1) ~= scale then
+        art:SetScale(scale)
+        art.roundScale = scale
+    end
+end
+
+function Visual.PaintRoundOutline(frame, art, pixels, r, g, b, a, strata, level, attachToWindow, logicalWidth)
+    if not art then
+        art = attachToWindow and Safety.CreateChildFrame("Frame", frame) or CreateFrame("Frame", nil, UIParent)
+        art:EnableMouse(false)
+        art:SetAllPoints(frame)
+        art.rings = {}
+    end
+    if not attachToWindow then MatchWindowScale(art, frame) end
+    local units = logicalWidth and pixels or OutlineUnits(art, pixels)
+    local thin = units < 1.5
+    local count = thin and 1 or math.min(MAX_ROUND_RINGS, math.floor(units + 0.5) - 1)
+    local geometry = NS.Geometry.Resolve(ROUND_RING_SPECS[thin and 1 or 2], art.geometry)
+    art.geometry = geometry
+    for index = 1, count do
+        local ring = art.rings[index]
+        if not ring then
+            ring = art:CreateTexture(nil, "OVERLAY")
+            art.rings[index] = ring
+        end
+        local inset = index - 1
+        ring:ClearAllPoints()
+        ring:SetPoint("TOPLEFT", art, "TOPLEFT", inset, -inset)
+        ring:SetPoint("BOTTOMRIGHT", art, "BOTTOMRIGHT", -inset, inset)
+        NS.Geometry.ConfigureShape(ring, geometry.edge, geometry)
+        ring:SetVertexColor(r, g, b, a)
+        ring:Show()
+    end
+    for index = count + 1, #art.rings do art.rings[index]:Hide() end
+    if strata and art:GetFrameStrata() ~= strata then art:SetFrameStrata(strata) end
+    if level and art:GetFrameLevel() ~= level then art:SetFrameLevel(level) end
+    art:Show()
+    return art
+end
+
 function Visual.PaintTooltipOutline(frame, art, strata, level)
     local tooltips = NS.SuiteCore().Tooltips
     local r, g, b, a

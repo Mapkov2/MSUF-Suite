@@ -691,9 +691,9 @@ function M:Refresh()
     end
     local c, last = self.config, self.appliedVisual
     local slotChanged, windowChanged, labelChanged, levelChanged, goldChanged = VisualChanges(c, last)
-    local border = Private.BagAppearance.DefaultBorder(c)
-    windowChanged = windowChanged or self.defaultBorder ~= border
-    self.defaultBorder = border
+    local border, shape = Private.BagAppearance.DefaultBorder(c), Private.BagAppearance.WindowShape()
+    windowChanged = windowChanged or self.defaultBorder ~= border or self.windowShape ~= shape
+    self.defaultBorder, self.windowShape = border, shape
     local fontPath, fontEpoch = S.ResolveFont(c.font) or S.GlobalFontPath(), _G.MSUF_FontApplyEpoch
     local readable = S.ReadableValues and S.ReadableValues() or false
     if self.fontPath ~= fontPath or self.fontEpoch ~= fontEpoch or self.readableValues ~= readable then
@@ -702,7 +702,8 @@ function M:Refresh()
         labelChanged = true
         for _, record in pairs(self.overlays) do record.bindStyled = nil end
     end
-    local deferredWindow = self.needsStandaloneWindow
+    local deferredWindow = self.needsStandaloneWindow or self.needsRoundedWindow
+    self.needsRoundedWindow = nil
     if windowChanged or deferredWindow then self:StyleWindows() end
     if goldChanged then self:ApplyGoldEvents() end
     if labelChanged then

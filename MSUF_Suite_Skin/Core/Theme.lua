@@ -590,6 +590,20 @@ function Theme.SetGeometry(key, value)
     return true
 end
 
+-- Rounded windows are no part of a look, so changing them keeps the look.
+function Theme.SetWindowRounding(key, value)
+    if NS.IsCombatLocked() then return false end
+    if key == "roundWindows" then
+        value = value == true
+    elseif key ~= "windowRadius" or not IsListed(NS.WindowRadii, tonumber(value)) then
+        return false
+    end
+    NS.DB.geometry[key] = key == "windowRadius" and tonumber(value) or value
+    NS.Registry.QueueRefresh()
+    NS.Registry.NotifyListeners("geometry", key)
+    return true
+end
+
 function Theme.ApplyPreset(presetName)
     if NS.IsCombatLocked() or not NS.PresetOverrides[presetName] then
         return false

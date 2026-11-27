@@ -148,6 +148,13 @@ end
 
 local PaintWindow = Private.BagAppearance.Window
 
+local function SetContour(frame, textures, shown)
+    local skin = NS.Skin
+    if skin and skin.SetOwnedWindowContour then
+        skin.SetOwnedWindowContour(frame, shown and textures.rounded and (textures.combined and 1 or 0) or nil)
+    end
+end
+
 local function SetSkinShown(textures, shown)
     if textures.combined then
         if not shown then Private.BagMotion.Stop(textures.shell) end
@@ -155,9 +162,10 @@ local function SetSkinShown(textures, shown)
     else
         for i = 2, 9 do
             local texture = textures[i]
-            if texture then texture:SetShown(shown) end
+            if texture then texture:SetShown(shown and (i <= 6 or not textures.rounded)) end
         end
     end
+    if not shown and textures.roundedBorder then textures.roundedBorder:Hide() end
     textures[1]:SetShown(shown and not textures.panel)
 end
 
@@ -253,9 +261,13 @@ local function StyleWindow(self, frame, combined)
     end
     SetSkinShown(textures, true)
     OwnChrome(self, frame, textures)
-    Private.BagCaption.Attach(self, frame, textures)
+    textures.closeFill = Private.BagCaption.Attach(self, frame, textures)
     if textures.dragHandle then textures.dragHandle:SetShown(not S.editMode) end
-    PaintWindow(textures, self.config)
+    if PaintWindow(textures, self.config) and not self.needsRoundedWindow then
+        self.needsRoundedWindow = true
+        S.Queue("bags")
+    end
+    SetContour(frame, textures, true)
     textures.presentation = nil
 end
 
@@ -617,6 +629,7 @@ function M:RestoreWindows()
         if textures.dailyGoldLabel then textures.dailyGoldLabel:Hide() end
         if textures.dragHandle then textures.dragHandle:Hide() end
         SetSkinShown(textures, false)
+        SetContour(frame, textures, false)
         if textures.titlePoints and frame.TitleContainer and not NS.IsCombatLocked() then
             local title = frame.TitleContainer
             title:ClearAllPoints()

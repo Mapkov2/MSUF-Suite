@@ -319,6 +319,8 @@ NS.RegisterLocale("enUS", {
     ["Window corner style"] = "Window corner style",
     ["Button corner style"] = "Button corner style",
     ["Corner radius"] = "Corner radius",
+    ["Round all windows and menus"] = "Round all windows and menus",
+    ["Window corner radius"] = "Window corner radius",
     ["Outline thickness"] = "Outline thickness",
     ["Window outline"] = "Window outline",
     ["Match tooltip border"] = "Match tooltip border",

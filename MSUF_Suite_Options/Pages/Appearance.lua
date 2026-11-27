@@ -386,6 +386,7 @@ local function BuildShape(ctx, b, skin)
         ConfigRow(skin, shape, "shape", spec[1], "geometry", spec[2], "dropdown", spec[3], nil, nil, nil,
             skin.Theme.SetGeometry)
     end
+    Kit.AddWindowRoundingRows(shape, skin)
     ConfigRow(skin, shape, "shape", "Hover highlight", "theme", "hoverStyle", "dropdown", skin.HoverStyles,
         nil, nil, nil, skin.Theme.SetAppearance)
     ConfigRow(skin, shape, "shape", "Hover strength", "theme", "hoverIntensity", "slider", nil,

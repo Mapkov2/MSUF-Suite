@@ -206,6 +206,10 @@ NS.Defaults = {
         radius = 8,
         border = 1,
         controlShape = "round",
+        -- Every skinned window and menu uses windowRadius instead of the
+        -- radius its adapter chose.
+        roundWindows = false,
+        windowRadius = 16,
     },
     typography = {
         enabled = true,
@@ -394,6 +398,9 @@ NS.ColorOrder = {
 
 NS.GeometryFamilies = { "round", "continuous", "squircle" }
 NS.GeometryRadii = { 4, 6, 8, 12 }
+NS.WindowRadii = { 8, 12, 16, 20, 24 }
+-- Every radius with corner assets in Media\Shapes (see tools/generate-shape-corners.py).
+NS.ShapeRadii = { 4, 6, 8, 12, 16, 20, 24 }
 NS.GeometryBorders = { 0, 1, 2 }
 NS.ControlShapes = { "pill", "round", "continuous", "squircle" }
 NS.GradientDirections = { "VERTICAL", "HORIZONTAL" }

@@ -66,6 +66,35 @@ function Contour.Describe(frame, contour)
     return contour
 end
 
+function Contour.DescribeRoot(frame, contour)
+    local skin = NS.SuiteCore().Skin
+    local geometry, inset
+    if skin and skin.GetOwnedWindowContour then geometry, inset = skin.GetOwnedWindowContour(frame) end
+    if not geometry then return Contour.Describe(frame, contour) end
+    contour = contour or {}
+    contour.geometry, contour.inset = geometry, inset or 0
+    contour.art, contour.circle = nil, nil
+    return contour
+end
+
+function Contour.SetCutout(rect)
+    local contour = rect.contour
+    local geometry = contour and contour.geometry
+    rect.roundedCut = nil
+    if not geometry or not geometry.outside then return end
+    local scale = rect.unitScale or 1
+    local inset = contour.inset * scale
+    local width, height = rect.width - inset * 2, rect.height - inset * 2
+    if width <= 0 or height <= 0 then return end
+    local cut = rect.cutScratch or {}
+    rect.cutScratch, rect.roundedCut = cut, cut
+    cut.left, cut.bottom = rect.left + inset, rect.bottom + inset
+    cut.width, cut.height, cut.unitScale = width, height, scale
+    cut.cornerX = math.min(geometry.margins[1] * scale, width / 2)
+    cut.cornerY = math.min(geometry.margins[2] * scale, height / 2)
+    cut.geometry = geometry
+end
+
 function Contour.Native(art, circle, contour, rect, uiScale)
     contour = contour or {}
     contour.geometry = nil
@@ -109,8 +138,7 @@ local function NativeMaterial(mask, cache, descriptor, refresh)
     cache.kind, cache.asset, cache.atlas, cache.uvCount = "art", asset, atlas, count
 end
 
-local function ShapeMaterial(mask, cache, geometry, refresh)
-    local asset = geometry.fill
+local function ShapeMaterial(mask, cache, geometry, asset, refresh)
     local margins = geometry.slice and geometry.margins
     local left, top, right, bottom
     if margins then left, top, right, bottom = margins[1], margins[2], margins[3], margins[4] end
@@ -124,7 +152,14 @@ local function ShapeMaterial(mask, cache, geometry, refresh)
     cache.left, cache.top, cache.right, cache.bottom = left, top, right, bottom
 end
 
-local function Mask(record, index)
+-- Slice support of our own mask is fixed per client build: checked when the
+-- mask is first painted and again on an explicit refresh.
+local function Sliceable(mask)
+    return Safety.HasMethod(mask, "ClearTextureSlice") and Safety.HasMethod(mask, "SetTextureSliceMargins")
+        and Safety.HasMethod(mask, "SetTextureSliceMode")
+end
+
+local function Mask(record, index, refresh)
     record.masks = record.masks or {}
     local mask = record.masks[index]
     if not mask then
@@ -133,35 +168,16 @@ local function Mask(record, index)
     end
     local cache = paints[mask]
     if not cache then cache = {} paints[mask] = cache end
+    if refresh or cache.sliceable == nil then cache.sliceable = Sliceable(mask) end
     return mask, cache
 end
 
-local function PaintMask(record, index, source, fullRect, descriptor, refresh)
-    local mask, cache = Mask(record, index)
-    local scale = source.unitScale or 1
-    local left, bottom = source.left, source.bottom
-    local width, height = source.width, source.height
-    local geometry = descriptor.geometry
-    if geometry then
-        if not Safety.HasMethod(mask, "ClearTextureSlice") or not Safety.HasMethod(mask, "SetTextureSliceMargins")
-            or not Safety.HasMethod(mask, "SetTextureSliceMode") then return false end
-        local inset = descriptor.inset * scale
-        left, bottom = left + inset, bottom + inset
-        width, height = width - inset * 2, height - inset * 2
-    elseif index == 2 then
-        left, bottom = left + descriptor.left * width, bottom + descriptor.bottom * height
-        width, height = width * descriptor.width, height * descriptor.height
-    end
-    if width <= 0 or height <= 0 then return false end
-    local serial = (cache.serial or 0) + 1
-    cache.serial = serial
-    if geometry then ShapeMaterial(mask, cache, geometry, refresh)
-    else NativeMaterial(mask, cache, descriptor, refresh) end
+local function PositionMask(canvas, fullRect, mask, cache, left, bottom, width, height, scale, refresh, serial)
     local x, y = (left - fullRect.left) / scale, (bottom - fullRect.bottom) / scale
     width, height = width / scale, height / scale
     if refresh or cache.x ~= x or cache.y ~= y then
         mask:ClearAllPoints()
-        mask:SetPoint("BOTTOMLEFT", record.canvas, "BOTTOMLEFT", x, y)
+        mask:SetPoint("BOTTOMLEFT", canvas, "BOTTOMLEFT", x, y)
     end
     if refresh or cache.width ~= width or cache.height ~= height then mask:SetSize(width, height) end
     if refresh or not cache.shown or (mask.IsShown and Safety.Read(mask, "IsShown") == false) then mask:Show() end
@@ -171,6 +187,40 @@ local function PaintMask(record, index, source, fullRect, descriptor, refresh)
         -- A synchronous native callback painted this mask during a setter.
         cache.x, cache.width, cache.kind, cache.shown = nil, nil, nil, nil
     end
+end
+
+local function PaintMask(record, index, source, fullRect, descriptor, refresh)
+    local mask, cache = Mask(record, index, refresh)
+    local serial = (cache.serial or 0) + 1
+    cache.serial = serial
+    local scale = source.unitScale or 1
+    local left, bottom = source.left, source.bottom
+    local width, height = source.width, source.height
+    local geometry = descriptor.geometry
+    if geometry then
+        if not cache.sliceable then return false end
+        local inset = descriptor.inset * scale
+        left, bottom = left + inset, bottom + inset
+        width, height = width - inset * 2, height - inset * 2
+    elseif index == 2 then
+        left, bottom = left + descriptor.left * width, bottom + descriptor.bottom * height
+        width, height = width * descriptor.width, height * descriptor.height
+    end
+    if width <= 0 or height <= 0 then return false end
+    if geometry then ShapeMaterial(mask, cache, geometry, geometry.fill, refresh)
+    else NativeMaterial(mask, cache, descriptor, refresh) end
+    PositionMask(record.canvas, fullRect, mask, cache, left, bottom, width, height, scale, refresh, serial)
+    return true
+end
+
+local function PaintCutout(record, cut, fullRect, refresh)
+    local mask, cache = Mask(record, 1, refresh)
+    if not cache.sliceable then return false end
+    local serial = (cache.serial or 0) + 1
+    cache.serial = serial
+    local geometry = cut.geometry
+    ShapeMaterial(mask, cache, geometry, geometry.outside, refresh)
+    PositionMask(record.canvas, fullRect, mask, cache, cut.left, cut.bottom, cut.width, cut.height, cut.unitScale, refresh, serial)
     return true
 end
 
@@ -213,14 +263,22 @@ function Contour.Apply(record, rect, fullRect, refresh)
     local source = rect.source or rect
     local contour = source.contour
     local count = 0
-    if contour then
+    local cutout = rect.cutoutMask
+    if contour or cutout then
         if not Safety.HasMethod(record.canvas, "CreateMaskTexture") then return false end
+    end
+    if cutout then
+        -- Geometry only selects an inverse mask where the source is opaque.
+        -- Binding both would let WoW's union reveal the foreground interior.
+        count = 1
+        if not PaintCutout(record, cutout, fullRect, refresh) then return false end
+    elseif contour then
         count = contour.circle and 2 or 1
         if not PaintMask(record, 1, source, fullRect, contour.geometry and contour or contour.art, refresh) then return false end
         if contour.circle and not PaintMask(record, 2, source, fullRect, contour.circle, refresh) then return false end
     end
-    -- Masked material can gain or replace textures between paints. Once every
-    -- mask has been released there is no binding to inspect on a plain veil.
+    -- Host material can replace a region without changing the region count.
+    -- Recheck identities while a mask is in use or still needs removal.
     if count > 0 or record.masked and next(record.masked) or refresh and record.masks then
         Bind(record, count, refresh, record.canvas:GetRegions())
     end

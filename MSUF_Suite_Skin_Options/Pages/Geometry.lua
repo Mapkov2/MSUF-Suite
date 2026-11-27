@@ -22,73 +22,83 @@ local function RadiusIndex()
     return 3
 end
 
+local function WindowRadiusIndex()
+    for index = 1, #NS.WindowRadii do
+        if NS.WindowRadii[index] == NS.DB.geometry.windowRadius then return index end
+    end
+    return 3
+end
+
+-- Rounded windows: one shape for every skinned window and menu.
+local function AddWindowRounding(list, rows)
+    local rounded = O.CreateToggle(list, L["Round all windows and menus"], function()
+        return NS.DB.geometry.roundWindows == true
+    end, function(value)
+        NS.Theme.SetWindowRounding("roundWindows", value)
+    end, 520)
+    local radius = O.CreateSlider(list, L["Window corner radius"], 1, #NS.WindowRadii, 1, WindowRadiusIndex,
+        function(value) NS.Theme.SetWindowRounding("windowRadius", NS.WindowRadii[value]) end,
+        520, function(value) return O.Pixel(NS.WindowRadii[value]) end)
+    O.TrackAndRefresh(function() O.SetWidgetEnabled(radius, NS.DB.geometry.roundWindows == true) end)
+    rows[#rows + 1] = { rounded, true }
+    rows[#rows + 1] = { radius, true }
+end
+
 local function BorderLabel(value)
     return value == 0 and L["Off"] or O.Pixel(value)
 end
 
+-- The left column scrolls: every row stays reachable at the window's height.
 local function BuildControls(page)
-    local family = O.CreateCycle(page, L["Window corner style"], NS.GeometryFamilies, function()
+    local _, list = O.CreateLeftColumn(page, 536, 900, 520)
+    local rows = {}
+    local function Add(widget) rows[#rows + 1] = { widget, true } end
+    Add(O.CreateCycle(list, L["Window corner style"], NS.GeometryFamilies, function()
         return NS.DB.geometry.family
     end, function(value)
         NS.Theme.SetGeometry("family", value)
-    end, 520, O.HumanizeShape)
-    family:SetPoint("TOPLEFT", 4, -70)
-
-    local controls = O.CreateCycle(page, L["Button corner style"], NS.ControlShapes, function()
+    end, 520, O.HumanizeShape))
+    Add(O.CreateCycle(list, L["Button corner style"], NS.ControlShapes, function()
         return NS.DB.geometry.controlShape
     end, function(value)
         NS.Theme.SetGeometry("controlShape", value)
-    end, 520, O.HumanizeShape)
-    controls:SetPoint("TOPLEFT", family, "BOTTOMLEFT", 0, -8)
-
-    local radius = O.CreateSlider(page, L["Corner radius"], 1, #NS.GeometryRadii, 1, RadiusIndex, function(value)
+    end, 520, O.HumanizeShape))
+    Add(O.CreateSlider(list, L["Corner radius"], 1, #NS.GeometryRadii, 1, RadiusIndex, function(value)
         NS.Theme.SetGeometry("radius", NS.GeometryRadii[value])
-    end, 520, function(value) return O.Pixel(NS.GeometryRadii[value]) end)
-    radius:SetPoint("TOPLEFT", controls, "BOTTOMLEFT", 0, -8)
-
-    local border = O.CreateSlider(page, L["Outline thickness"], 0, 2, 1, function()
+    end, 520, function(value) return O.Pixel(NS.GeometryRadii[value]) end))
+    AddWindowRounding(list, rows)
+    Add(O.CreateSlider(list, L["Outline thickness"], 0, 2, 1, function()
         return NS.DB.geometry.border
     end, function(value)
         NS.Theme.SetGeometry("border", value)
-    end, 520, BorderLabel, { outlineSetting = "msufsuite.skin.geometry.border" })
-    border:SetPoint("TOPLEFT", radius, "BOTTOMLEFT", 0, -8)
-
-    local outline = O.CreateSlider(page, L["Window outline"], 0, 10, 1, function()
+    end, 520, BorderLabel, { outlineSetting = "msufsuite.skin.geometry.border" }))
+    Add(O.CreateSlider(list, L["Window outline"], 0, 10, 1, function()
         return NS.DB.theme.windowOutline
     end, function(value)
         NS.Theme.SetAppearance("windowOutline", value)
-    end, 520, BorderLabel, { outlineSetting = "msufsuite.skin.theme.windowOutline" })
-    outline:SetPoint("TOPLEFT", border, "BOTTOMLEFT", 0, -8)
-    local outlineColor = O.CreateColorRow(page, "windowOutline", L["Outline color"], 520)
-    outlineColor:SetPoint("TOPLEFT", outline, "BOTTOMLEFT", 0, -8)
-
-    local matchTooltip = O.CreateToggle(page, L["Match tooltip border"], function()
+    end, 520, BorderLabel, { outlineSetting = "msufsuite.skin.theme.windowOutline" }))
+    Add(O.CreateColorRow(list, "windowOutline", L["Outline color"], 520))
+    Add(O.CreateToggle(list, L["Match tooltip border"], function()
         return NS.DB.theme.windowOutlineMatchTooltip == true
     end, function(value)
         NS.Theme.SetAppearance("windowOutlineMatchTooltip", value)
-    end, 520, { outlineSetting = "msufsuite.skin.theme.windowOutlineMatchTooltip" })
-    matchTooltip:SetPoint("TOPLEFT", outlineColor, "BOTTOMLEFT", 0, -8)
-
-    local hoverStyle = O.CreateCycle(page, L["Hover highlight"], NS.HoverStyles, function()
+    end, 520, { outlineSetting = "msufsuite.skin.theme.windowOutlineMatchTooltip" }))
+    Add(O.CreateCycle(list, L["Hover highlight"], NS.HoverStyles, function()
         return NS.DB.theme.hoverStyle
     end, function(value)
         NS.Theme.SetAppearance("hoverStyle", value)
-    end, 520, HoverLabel)
-    hoverStyle:SetPoint("TOPLEFT", matchTooltip, "BOTTOMLEFT", 0, -8)
-
-    local hoverIntensity = O.CreateSlider(page, L["Hover intensity"], 0, 1, 0.05, function()
+    end, 520, HoverLabel))
+    Add(O.CreateSlider(list, L["Hover intensity"], 0, 1, 0.05, function()
         return NS.DB.theme.hoverIntensity
     end, function(value)
         NS.Theme.SetAppearance("hoverIntensity", value)
-    end, 520, O.Percent)
-    hoverIntensity:SetPoint("TOPLEFT", hoverStyle, "BOTTOMLEFT", 0, -8)
-
-    local gradient = O.CreateToggle(page, L["Two-color material gradients"], function()
+    end, 520, O.Percent))
+    Add(O.CreateToggle(list, L["Two-color material gradients"], function()
         return NS.DB.theme.gradient
     end, function(value)
         NS.Theme.SetGradient(value)
-    end, 520)
-    gradient:SetPoint("TOPLEFT", hoverIntensity, "BOTTOMLEFT", 0, -8)
+    end, 520))
+    O.StackRows(list, rows)()
 end
 
 -- Three static sample cards, one per corner family.

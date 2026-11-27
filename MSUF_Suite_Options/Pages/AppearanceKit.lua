@@ -351,6 +351,19 @@ local function ConfigRow(skin, rows, section, label, path, key, kind, values, mi
         kind == "dropdown" and Values(values) or nil, min, max, step)
 end
 
+-- One rounded shape for every skinned window and menu; the radius applies
+-- while the toggle is on.
+function Kit.AddWindowRoundingRows(shape, skin)
+    ConfigRow(skin, shape, "shape", "Round all windows and menus", "geometry", "roundWindows", "toggle",
+        nil, nil, nil, nil, skin.Theme.SetWindowRounding)
+    shape[#shape].tooltip = Tr("Gives every skinned window, menu and popup the same rounded corners.")
+    ConfigRow(skin, shape, "shape", "Window corner radius", "geometry", "windowRadius", "dropdown",
+        skin.WindowRadii, nil, nil, nil, skin.Theme.SetWindowRounding)
+    shape[#shape].unavailable = function()
+        if skin.DB.geometry.roundWindows ~= true then return Tr("Requires rounded windows.") end
+    end
+end
+
 Kit.Engine, Kit.Change, Kit.Meta, Kit.Values = Engine, Change, Meta, Values
 Kit.Row, Kit.Section, Kit.ResetSkinSection = Row, Section, ResetSkinSection
 Kit.SkinColorRow, Kit.ConfigRow = SkinColorRow, ConfigRow

@@ -14,7 +14,7 @@ local body = [======[
     _G.combat, _G.combatEdge = true, true
     Check(W.TrackFocus(professions, "coverage"), "native width-one Professions root was discarded before its first OnShow")
     professions.width = 700
-    professions:Show()
+    professions:Show(); Tick()
     Check(F.active.frame == professions and Dimmed(character), "first protected combat layout failed to activate Professions")
     Check(not professions.geometryWrites, "focus enrollment changed protected root geometry")
     local companions = {
@@ -116,7 +116,7 @@ local body = [======[
     for _, frame in ipairs(discovered) do
         Check(F.records[frame] and F.records[frame].owners.blizzardWindows ~= nil,
             frame.name .. " absent from real cold catalog discovery")
-        frame:Show()
+        frame:Show(); Tick()
         Check(F.active.frame == frame, frame.name .. " discovery did not observe the native first show")
         frame:Hide()
     end
@@ -142,17 +142,18 @@ local body = [======[
         child.parent, child.kind = parent, kind
         return child
     end
+    -- Focus walks the root's children and grandchildren only (WindowFocusChrome).
     local page = Child(professions, "Frame", 600, 200, 700, 658)
     local card = Child(page, "Frame", 650, 400, 300, 100)
-    local bar = Child(card, "StatusBar", 650, 400, 300, 20)
+    local bar = Child(page, "StatusBar", 650, 400, 300, 20)
     bar.strata, bar.frameLevel = "HIGH", 100
     local tabs = Child(professions, "Frame", 620, 174, 400, 28)
     local tab = Child(tabs, "Button", 620, 174, 140, 28)
     local sideTab = Child(professions, "Frame", 1300, 600, 50, 46)
     sideTab.scripts.OnMouseDown = function() end
     Children(professions, { page, tabs, sideTab })
-    Children(page, { card }); Children(card, { bar }); Children(tabs, { tab })
-    professions:Hide(); professions:Show()
+    Children(page, { card, bar }); Children(tabs, { tab })
+    professions:Hide(); professions:Show(); Tick()
     Click(character)
     local state = F.records[professions]
     Check(state.strata == "HIGH", "native HIGH profession card remained above its dim veil")
@@ -188,9 +189,9 @@ local body = [======[
     -- A click on an already-active root can create/reveal a deeper pane after
     -- GLOBAL_MOUSE_DOWN; one queued layout pass must see its new HIGH child.
     bar:Hide(); Tick()
-    local hiddenPane = Child(page, "Frame", 620, 300, 300, 200)
+    local hiddenPane = Child(professions, "Frame", 620, 300, 300, 200)
     hiddenPane:Hide()
-    Children(page, { card, hiddenPane })
+    Children(professions, { page, tabs, sideTab, hiddenPane })
     Click(tabs); Tick()
     Click(tabs)
     local lateHigh = Child(hiddenPane, "Frame", 620, 300, 300, 200)
@@ -214,7 +215,7 @@ local body = [======[
         "held native click needs a one-shot release listener, not a polling driver")
     local releaseChild = Child(page, "Frame", 620, 300, 300, 200)
     releaseChild.strata, releaseChild.frameLevel = "HIGH", 3200
-    Children(page, { card, hiddenPane, releaseChild })
+    Children(page, { card, bar, releaseChild })
     held = false
     if driver.events.GLOBAL_MOUSE_UP then driver.scripts.OnEvent(driver, "GLOBAL_MOUSE_UP") end
     Tick()

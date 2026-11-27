@@ -366,6 +366,8 @@ local function NormalizeGeometry(geometry)
     KeepListed(geometry, GEOMETRY_CHOICES, defaults)
     KeepListedNumber(geometry, "radius", NS.GeometryRadii, defaults.radius)
     KeepListedNumber(geometry, "border", NS.GeometryBorders, defaults.border)
+    geometry.roundWindows = geometry.roundWindows == true
+    KeepListedNumber(geometry, "windowRadius", NS.WindowRadii, defaults.windowRadius)
 end
 
 local LEGACY_MEDIA_PREFIX = "Midnight Skin - "

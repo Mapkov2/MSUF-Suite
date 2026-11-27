@@ -24,6 +24,7 @@ CreateFrame = function(...)
     frame.textures, frame.masks = {}, {}
     function frame:SetScale(value) self.scale = value end
     function frame:GetRegions() return unpack(self.textures) end
+    function frame:GetNumRegions() return #self.textures + #self.masks end
     function frame:CreateTexture(_, layer, _, subLevel)
         local texture = Frame(self)
         texture.layer, texture.subLevel, texture.kind = layer, subLevel, "Texture"
@@ -282,10 +283,9 @@ local function MaskSample(mask, x, y)
     local point = mask.points[1]
     local left, bottom = point[4], point[5]
     if x < left or y < bottom or x >= left + mask.width or y >= bottom + mask.height then return 0 end
-    if mask.asset == contour.geometry.fill then
-        if x - left < 0.1 and y - bottom < 0.1 then return 0 end
-        return 1
-    end
+    local corner = x - left < 0.1 and y - bottom < 0.1
+    if mask.asset == contour.geometry.fill then return corner and 0 or 1 end
+    if mask.asset == contour.geometry.outside then return corner and 1 or 0 end
     return 1
 end
 local function MaskedBlackOpacity(focus, x, y)
@@ -294,7 +294,11 @@ local function MaskedBlackOpacity(focus, x, y)
         local color = texture.color
         if texture.shown and color and color[1] == 0 and color[2] == 0 and color[3] == 0 then
             local alpha = color[4] * focus.overlay:GetAlpha()
-            for mask in pairs(texture.masks) do alpha = alpha * MaskSample(mask, x, y) end
+            if next(texture.masks) then
+                local coverage = 0
+                for mask in pairs(texture.masks) do coverage = math.max(coverage, MaskSample(mask, x, y)) end
+                alpha = alpha * coverage
+            end
             remaining = remaining * (1 - alpha)
         end
     end
@@ -345,9 +349,17 @@ for _, host in ipairs({ false, hosts[1], hosts[2] }) do
     Visual.Show(focus, clipped, material, "DIALOG", 91)
     Check(#focus.canvas.masks == masks, "layout refresh recreated masks")
     local writes = CountMaskWrites(mask)
+    local hasMethod, sliceChecks = NS.Safety.HasMethod, 0
+    NS.Safety.HasMethod = function(target, name)
+        if target == mask then sliceChecks = sliceChecks + 1 end
+        return hasMethod(target, name)
+    end
     for i = 1, 20 do Visual.Show(focus, clipped, material, "DIALOG", 91) end
-    print(("20 unchanged rounded masks: %d material and %d layout writes"):format(writes.art, writes.layout))
+    NS.Safety.HasMethod = hasMethod
+    print(("20 unchanged rounded masks: %d material and %d layout writes, %d slice capability checks")
+        :format(writes.art, writes.layout, sliceChecks))
     Check(writes.art == 0 and writes.layout == 0, "identical rounded masks rewrote native state")
+    Check(sliceChecks == 0, "an unchanged rounded mask checked its slice support again")
     local oldMargin = contour.geometry.margins[2]
     contour.geometry.margins[2] = oldMargin + 1
     Visual.Show(focus, clipped, material, "DIALOG", 91)
@@ -396,11 +408,15 @@ CheckMasks(native, 2, "native portrait")
 Check(native.masks[1].asset == "native-book" and native.masks[2].asset == "native-circle",
     "native portrait lost either its texture alpha or Blizzard circle mask")
 local portraitWrites, circleWrites = CountMaskWrites(native.masks[1]), CountMaskWrites(native.masks[2])
+local enumerations, canvasRegions = 0, native.canvas.GetRegions
+function native.canvas:GetRegions() enumerations = enumerations + 1; return canvasRegions(self) end
 for i = 1, 20 do Visual.Show(native, clipped, material, "DIALOG", 91) end
-print(("20 unchanged two-mask portraits: %d material and %d layout writes"):format(
-    portraitWrites.art + circleWrites.art, portraitWrites.layout + circleWrites.layout))
+print(("20 unchanged two-mask portraits: %d material and %d layout writes, %d region enumerations"):format(
+    portraitWrites.art + circleWrites.art, portraitWrites.layout + circleWrites.layout, enumerations))
 Check(portraitWrites.art + circleWrites.art + portraitWrites.layout + circleWrites.layout == 0,
     "unchanged portrait or its mask repeated native writes")
+Check(enumerations == 20, "each masked paint must check for same-count region replacements")
+native.canvas.GetRegions = canvasRegions
 nativeContour.art.uv[7] = .61
 nativeContour.circle.left = nativeContour.circle.left + .1
 Visual.Show(native, clipped, material, "DIALOG", 91)
@@ -430,6 +446,30 @@ Visual.Show(native, clipped, material, "DIALOG", 91)
 CheckMasks(native, 0, "reused unmasked root")
 Visual.Hide(native, true)
 _G.MSUF2 = nil
+local overlapped = Visual.Create()
+contour.geometry.outside = NS.path .. "Media\\Shapes\\continuous_r8_outside.png"
+sourceRect.contour = contour
+local cutout = { left = 200, bottom = 300, width = 240, height = 180, unitScale = 1.5, geometry = contour.geometry }
+clipped.cutoutMask = cutout
+Check(Visual.Show(overlapped, clipped, material, "DIALOG", 91), "rounded cutout could not paint over a rounded source")
+CheckMasks(overlapped, 1, "exclusive inverse contour")
+local inverse = overlapped.masks[1]
+Check(inverse.asset == contour.geometry.outside and inverse.width == 160,
+    "inverse mask did not keep the active shell's texture and bounds")
+overlapped.group:Finish()
+local cornerX, cornerY = (cutout.left - material.left) / sourceRect.unitScale, (cutout.bottom - material.bottom) / sourceRect.unitScale
+Check(math.abs(MaskedBlackOpacity(overlapped, cornerX + .01, cornerY + .01) - .42) < .000001
+    and MaskedBlackOpacity(overlapped, cornerX + 10, cornerY + 10) == 0,
+    "veil did not dim through a transparent corner and preserve the active window interior")
+local shade = overlapped.canvas.textures[1]
+shade:RemoveMaskTexture(inverse)
+Visual.Refresh(overlapped)
+CheckMasks(overlapped, 1, "explicit refresh of a detached inverse contour")
+clipped.cutoutMask = nil
+Visual.Show(overlapped, clipped, material, "DIALOG", 91)
+CheckMasks(overlapped, 1, "rounded source after losing its occluder")
+Check(overlapped.masks[1].asset == contour.geometry.fill, "reused inverse mask did not restore the source contour")
+
 local unsupported = Visual.Create()
 sourceRect.contour = contour
 Visual.Show(unsupported, clipped, material, "DIALOG", 91)

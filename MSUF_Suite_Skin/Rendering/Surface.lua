@@ -352,6 +352,27 @@ function Surface.GetEdgePaint(state, material)
     return material.border, NS.Theme.GetBorderOpacity()
 end
 
+-- Fill, edge and depth visibility after a paint; a prepared shell records it.
+local function ShowLayers(state, edgeAsset, hideFill)
+    if state.preparedShell then
+        state.preparedEdge = state.visible ~= false and edgeAsset or nil
+        state.preparedFill = state.visible ~= false and state.spec.fillVisible ~= false and not hideFill
+        state.fill:Hide()
+    elseif state.visible == false then
+        state.fill:Hide()
+        state.edge:Hide()
+        if state.depth then state.depth:Hide() end
+    elseif state.spec.fillVisible == false or hideFill then
+        -- Dense Blizzard lists should read as one continuous panel, not a
+        -- stack of boxed cards. Keep the normal row transparent; button
+        -- highlight/pushed textures and an explicit active state still supply
+        -- interaction and selection feedback.
+        state.fill:Hide()
+    else
+        state.fill:Show()
+    end
+end
+
 local function RefreshState(state, checked)
     -- Only SetActive/SetVisible pass their immediately preceding guard.
     -- Between that read and this call they change owned scalar state only;
@@ -369,6 +390,8 @@ local function RefreshState(state, checked)
     state.geometry = geometry
     local material = NS.Theme.GetMaterial(RoleForState(state))
     local hideIdleListFill = state.spec.listItem == true and state.active ~= true
+    -- Square chrome at a window's edge (a title band) would cut into rounded corners.
+    local hideSquareChrome = state.spec.hideWhenRounded == true and geometry.roundWindows
     local filledGlassAncestor
     if FlattensNestedFill(state) and state.spec.listItem ~= true and Surface.UsesGlassCompositing() then
         filledGlassAncestor = HasFilledStructuralSurfaceAncestor(state)
@@ -396,26 +419,10 @@ local function RefreshState(state, checked)
         state.edge:Hide()
     end
 
-    RefreshDepth(state, geometry, material, suppressNestedGlassFill or tintLayer)
+    RefreshDepth(state, geometry, material, suppressNestedGlassFill or tintLayer or hideSquareChrome)
     RefreshButtonState(state, geometry)
     RefreshInteractiveHover(state, geometry)
-    if state.preparedShell then
-        state.preparedEdge = state.visible ~= false and edgeAsset or nil
-        state.preparedFill = state.visible ~= false and state.spec.fillVisible ~= false and not hideIdleListFill and not suppressNestedGlassFill
-        state.fill:Hide()
-    elseif state.visible == false then
-        state.fill:Hide()
-        state.edge:Hide()
-        if state.depth then state.depth:Hide() end
-    elseif state.spec.fillVisible == false or hideIdleListFill or suppressNestedGlassFill then
-        -- Dense Blizzard lists should read as one continuous panel, not a
-        -- stack of boxed cards. Keep the normal row transparent; button
-        -- highlight/pushed textures and an explicit active state still supply
-        -- interaction and selection feedback.
-        state.fill:Hide()
-    else
-        state.fill:Show()
-    end
+    ShowLayers(state, edgeAsset, hideIdleListFill or suppressNestedGlassFill or hideSquareChrome)
     -- nil marks an independent surface; false must notice a structural parent
     -- added later. Publish this alongside the other successful paint stamp.
     state.filledGlassAncestor = filledGlassAncestor

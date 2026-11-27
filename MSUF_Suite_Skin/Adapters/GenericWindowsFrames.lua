@@ -436,7 +436,7 @@ end
 
 local windowBorderSpec = { role = "shell", fillVisible = false, motion = false, radius = 4 }
 local browserChromeSpec = { role = "shell", opaqueFill = true, motion = false, radius = 4 }
-local windowTitleSpec = { role = "shell", border = 0, motion = false, radius = 0 }
+local windowTitleSpec = { role = "shell", border = 0, motion = false, radius = 0, hideWhenRounded = true }
 local windowTitleBands = Kit.WeakSet()
 local shopLogos = Kit.WeakSet()
 

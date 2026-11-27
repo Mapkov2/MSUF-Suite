@@ -442,10 +442,10 @@ end
 
 -- footprintOnly: the window is clear and only cuts its footprint out of
 -- other veils. One walk serves both roles, so a focus change reuses it.
-function Chrome.Update(state, footprintOnly, uiScale)
+function Chrome.Update(state, footprintOnly, uiScale, rounding)
     if state.static then
-        -- Bags paints this shell (SuiteOwnership): its plain root rectangle is
-        -- the whole window, so nothing below it is walked or observed.
+        -- Bags paints this shell (SuiteOwnership). Its owned contour was read
+        -- at the root, so nothing below it is walked or observed.
         state.chromeDirty, state.verifyTopology = false, false
         state.checkAfterShow, state.checkReopenLayers = false, false
         PlainRoot(state)
@@ -467,7 +467,10 @@ function Chrome.Update(state, footprintOnly, uiScale)
     if state.chromeRank > state.rank then state.strata, state.rank, state.level = state.chromeStrata, state.chromeRank, state.chromeLevel
     elseif state.chromeRank == state.rank then state.level = math.max(state.level, state.chromeLevel) end
     local root = state.rect
-    root.contour = Contour.Describe(state.frame, root.contour)
+    if not rounding then
+        root.roundedCut = nil
+        root.contour = Contour.Describe(state.frame, root.contour)
+    end
     state.footprints, state.materialRect = state.footprints or {}, state.materialRect or {}
     state.footprints[1] = root
     local left, bottom, right, top = root.left, root.bottom, root.left + root.width, root.bottom + root.height
@@ -477,6 +480,7 @@ function Chrome.Update(state, footprintOnly, uiScale)
         rect.left, rect.bottom = root.left + saved.left * root.width, root.bottom + saved.bottom * root.height
         rect.width, rect.height = saved.width * root.width, saved.height * root.height
         rect.unitScale, rect.contour = root.unitScale, saved.contour
+        if rounding then Contour.SetCutout(rect) else rect.roundedCut = nil end
         left, bottom = math.min(left, rect.left), math.min(bottom, rect.bottom)
         right, top = math.max(right, rect.left + rect.width), math.max(top, rect.bottom + rect.height)
     end
@@ -487,8 +491,9 @@ end
 
 -- A dimmed window's material bounds include every accepted native tab and
 -- portrait. Only the band outside the clear root can require its child tree.
-local function Cutout(state, windows, uiScale)
+local function Cutout(state, windows, uiScale, rounding)
     local root = state.rect
+    if not rounding then root.roundedCut = nil end
     if not state.presentation then
         local left, bottom = root.left, root.bottom
         local right, top = left + root.width, bottom + root.height
@@ -500,7 +505,7 @@ local function Cutout(state, windows, uiScale)
                 if otherRight > left - gutter and rect.left < right + gutter
                     and otherTop > bottom - gutter and rect.bottom < top + gutter
                     and (rect.left < left or otherRight > right or rect.bottom < bottom or otherTop > top) then
-                    Chrome.Update(state, true, uiScale)
+                    Chrome.Update(state, true, uiScale, rounding)
                     return
                 end
             end
@@ -512,12 +517,13 @@ local function Cutout(state, windows, uiScale)
     state.verifyTopology = true
 end
 
-local function UpdateDimmed(state, windows, uiScale)
+local function UpdateDimmed(state, windows, uiScale, rounding)
     local cover
+    local covers = rounding and Geometry.Covers or Inside
     local gutter = state.presentation and 0 or MAX_GUTTER * state.rect.unitScale
     for _, clear in pairs(windows) do
-        if clear.keepClear and clear.readable and Inside(clear.rect, state.rect, 0) then
-            if Inside(clear.rect, state.rect, gutter) then
+        if clear.keepClear and clear.readable and covers(clear.rect, state.rect, 0) then
+            if covers(clear.rect, state.rect, gutter) then
                 -- New children can appear while no veil is drawn here.
                 state.covered, state.verifyTopology = true, true
                 return
@@ -525,23 +531,35 @@ local function UpdateDimmed(state, windows, uiScale)
             cover = clear.rect
         end
     end
-    Chrome.Update(state, false, uiScale)
-    state.covered = cover and Inside(cover, state.materialRect, 0)
+    Chrome.Update(state, false, uiScale, rounding)
+    state.covered = cover and covers(cover, state.materialRect, 0)
     if not state.covered then NS.WindowFocusLayers.Prepare(state) end
 end
 
 function Chrome.UpdateWindows(windows, needsVeil, uiScale)
+    local rounding = needsVeil and NS.DB.geometry.roundWindows == true
+    if rounding then
+        -- Clear windows may never have needed their native children scanned.
+        -- Read their actual shell before checking coverage of other windows.
+        for _, state in pairs(windows) do
+            if state.readable then
+                local root = state.rect
+                root.contour = Contour.DescribeRoot(state.presentation or state.frame, root.contour)
+                Contour.SetCutout(root)
+            end
+        end
+    end
     for _, state in pairs(windows) do
         state.covered = nil
         if not needsVeil or not state.readable then
             state.verifyTopology = true
         elseif not state.keepClear then
-            UpdateDimmed(state, windows, uiScale)
+            UpdateDimmed(state, windows, uiScale, rounding)
         end
     end
     if not needsVeil then return end
     for _, state in pairs(windows) do
-        if state.keepClear then Cutout(state, windows, uiScale) end
+        if state.keepClear then Cutout(state, windows, uiScale, rounding) end
     end
 end
 

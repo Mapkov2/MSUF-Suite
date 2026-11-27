@@ -138,6 +138,7 @@ EXTRA = {
     "suite_skin_cooperative_controls_contract.lua": [[flavor] for flavor in FLAVORS],
     "suite_skin_scroll_motion_contract.lua": [[flavor] for flavor in FLAVORS],
     "suite_skin_surface_ensure_contract.lua": [[flavor] for flavor in FLAVORS],
+    "suite_skin_rounded_windows_contract.lua": [[flavor] for flavor in FLAVORS],
     "suite_nameplates_aura_colors_contract.lua": [[], ["secret"]],
     "suite_forever_character_contract.lua": [[], ["secret"]],
     "suite_character_combat_skin_contract.lua": [[flavor] for flavor in FLAVORS],

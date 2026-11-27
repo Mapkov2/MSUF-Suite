@@ -16,8 +16,11 @@ for _, flavor in ipairs({ "Mainline", "Forever" }) do
     local NS, Frame = H.NS, H.Frame
     NS.Client.isForever = flavor == "Forever"
     NS.DB.theme = { look = "midnight", windowFocusDimming = true }
+    -- Database.lua always normalizes this group (square outlines here).
+    NS.DB.geometry = { roundWindows = false }
     NS.DB.windowControls.enabled = false
-    NS.SuiteOwnership = { OwnsWindowGeometry = function() return true end }
+    -- No Suite-painted bag shell here: every tracked root is walked (WindowFocus.Track).
+    NS.SuiteOwnership = { OwnsWindowGeometry = function() return true end, IsBagShell = function() return false end }
     local listeners, nativeHooks, veils = {}, {}, {}
     local gamepadTarget, gamepadCallbacks
     EventRegistry = {
@@ -167,6 +170,30 @@ for _, flavor in ipairs({ "Mainline", "Forever" }) do
     end)
     Check(relayouts == 1 and F.active.frame == b and Dimmed(a), "focus failed to settle synchronously once")
     NS.WindowFocusChrome.UpdateWindows = layout
+    -- A second window's show settles in the frame's geometry pass, after the
+    -- rest of its opening stack (WindowControls' OnShow restores scale and place).
+    b:Hide()
+    NS.WindowFocusChrome.UpdateWindows = function(...)
+        relayouts = relayouts + 1
+        return layout(...)
+    end
+    relayouts = 0
+    b:Show()
+    b:SetScale(1.25)
+    b:SetPoint("TOPLEFT", UIParent, "TOPLEFT", 360, -330)
+    Check(relayouts == 0 and driver.scripts.OnUpdate and driver.events.GLOBAL_MOUSE_DOWN,
+        "a show reconciled before its opening stack finished")
+    Tick()
+    Check(relayouts == 1 and F.active.frame == b and Dimmed(a) and not driver.scripts.OnUpdate,
+        "a show did not settle once in its frame")
+    NS.WindowFocusChrome.UpdateWindows = layout
+    b:Hide()
+    b:Show()
+    Click(b)
+    Check(F.active.frame == b and Dimmed(a), "input on the opening window waited for the geometry driver")
+    Tick()
+    b:SetScale(1); Tick()
+    b.geometryWrites, b.point = nil, nil
     local shell = Frame(nil, a)
     shell.left, shell.bottom, shell.width, shell.height = 100, 80, 940, 552
     function shell:GetBottom() return self.bottom end
@@ -207,7 +234,7 @@ for _, flavor in ipairs({ "Mainline", "Forever" }) do
     a:Hide()
     Check(F.active.frame == b and not Dimmed(b), "hiding focused window did not restore its predecessor")
     Check(not gamepadCallbacks, "single remaining window retained a gamepad callback")
-    a:Show()
+    a:Show(); Tick() -- the show settles in the frame's geometry pass
     Check(F.active.frame == a and Dimmed(b), "reopened window did not become active")
 
     -- Implicitly protected roots and Suite-owned bags still participate;
@@ -335,6 +362,30 @@ for _, flavor in ipairs({ "Mainline", "Forever" }) do
     b:SetScale(0.8); Tick()
     Check(F.active == before and F.records[b].rect.width == 400 and not driver.scripts.OnUpdate,
         "native scaling changed focus or left stale bounds/idle work")
+    -- Root writes that keep the scale and layer of the last walk only move the
+    -- window; a rescaled, raised or restrata'd root is walked again.
+    local walks = 0
+    function b:GetChildren() walks = walks + 1 end
+    function b:GetNumChildren() return 0 end
+    F.RefreshChrome(b); Tick()
+    Check(walks == 1 and Dimmed(b), "a dimmed window was not walked once")
+    walks = 0
+    for _ = 1, 10 do
+        b:SetScale(b:GetScale()); Tick()
+        b:SetFrameLevel(b:GetFrameLevel()); b:SetFrameStrata(b:GetFrameStrata()); Tick()
+    end
+    print(("10 root writes keeping scale and layer: %d walks"):format(walks))
+    Check(walks == 0 and Dimmed(b), "a root write that kept its scale and layer walked the window again")
+    b:SetScale(1.2); Tick()
+    Check(walks == 1, "a rescaled root was not walked exactly once")
+    b:SetScale(0.8); Tick()
+    walks = 0
+    b:Raise(); Tick()
+    Check(walks == 1, "a raised root reused the walk of its old level")
+    b:SetFrameStrata("HIGH"); Tick()
+    Check(walks == 2, "a root in another strata reused the walk of its old layer")
+    b.strata, b.GetChildren, b.GetNumChildren, b.geometryWrites = nil, nil, nil, nil
+    F.RefreshChrome(b); Tick()
     local nativeLeft, nativeWidth = a.GetLeft, UIParent.width
     a.GetLeft = function(self) return UIParent:GetWidth() / 2 - self:GetWidth() / 2 end
     a:SetScale(a.scale); Tick()

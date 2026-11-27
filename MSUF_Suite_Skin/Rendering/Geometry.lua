@@ -44,10 +44,28 @@ local function GetAssets(shape, extent, border)
             fill = shapePath .. stem .. "_fill.png",
             edge = border > 0 and shapePath .. stem .. "_edge" .. tostring(border) .. ".png" or nil,
             hoverEdge = shapePath .. stem .. "_edge" .. tostring(border > 0 and border or 1) .. ".png",
+            outside = shapePath .. stem .. "_outside.png",
         }
         size[border] = result
     end
     return result
+end
+
+-- Slice the asset through its middle row and column. Radii through 8 share
+-- the factory size of 20 pixels; larger assets grow with their radius.
+local function CornerMargin(radius)
+    local size = radius <= 8 and 20 or radius * 2 + 8
+    return (size - 1) / 2
+end
+
+-- Windows and menus (shell and popup surfaces). Rounded windows replace the
+-- adapter's radius; a part that asks for radius 0 (a title band, a card
+-- inside a tooltip) keeps its square corners. Forever windows always follow
+-- the global corner radius.
+local function WindowRadius(spec, geometry)
+    if spec.role ~= "shell" and spec.role ~= "popup" then return nil end
+    if geometry.roundWindows == true and spec.radius ~= 0 then return geometry.windowRadius end
+    if forever then return geometry.radius end
 end
 
 function Geometry.Resolve(spec, result)
@@ -75,21 +93,23 @@ function Geometry.Resolve(spec, result)
         shape = "continuous"
     end
     local pill = shape == "pill"
-    local window = forever and (spec.role == "shell" or spec.role == "popup")
-    local radius = window and geometry.radius or spec.radius or geometry.radius
-    local extent = pill and ClosestValue(pillHeights, spec.pillHeight or 24) or ClosestValue(NS.GeometryRadii, radius)
+    local windowRadius = WindowRadius(spec, geometry)
+    local radius = windowRadius or spec.radius or geometry.radius
+    local extent = pill and ClosestValue(pillHeights, spec.pillHeight or 24) or ClosestValue(NS.ShapeRadii, radius)
     local asset = GetAssets(shape, extent, border)
     -- Callers may reuse their own result, but never share mutable geometry
     -- between surfaces. Every spec/default is resolved again on every refresh.
     result = result or {}
     local margins = result.margins or {}
-    local margin = pill and extent / 2 or (extent == 12 and 15.5 or 9.5)
+    local margin = pill and extent / 2 or CornerMargin(extent)
     margins[1], margins[3] = margin, margin
     margins[2], margins[4] = pill and 0 or margin, pill and 0 or margin
     result.fill, result.edge, result.hoverEdge = asset.fill, asset.edge, asset.hoverEdge
     result.margins, result.shape = margins, shape
     result.radius = not pill and extent or nil
     result.border, result.slice = border, spec.slice ~= false
+    result.roundWindows = geometry.roundWindows == true
+    result.outside = result.roundWindows and windowRadius and spec.radius ~= 0 and not pill and result.slice and asset.outside or nil
     return result
 end
 

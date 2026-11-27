@@ -49,7 +49,9 @@ local body = [======[
         Check(F.active.frame == split and F.records[mail].footprintCount == 1 and F.records[split].footprintCount,
             "mail and bag focus did not settle together while combat was still active")
     else
-        Check(F.active.frame == mail and #mailJobs == 0, "Retail mailbox focus was deferred")
+        Check(#mailJobs == 0, "Retail mailbox focus waited for the next frame")
+        Tick()
+        Check(F.active.frame == mail, "Retail mailbox focus did not settle in its opening frame")
         split:Show()
     end
     _G.combatEdge = false
