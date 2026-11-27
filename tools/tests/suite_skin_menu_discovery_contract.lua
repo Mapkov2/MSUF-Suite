@@ -246,14 +246,20 @@ debug.sethook()
 print(string.format("resize-budget: discovery=%d forbidden=%d protection=%d type=%d children=%d scalar=%d bulk=%d vm~%d",
     calls.discovery or 0, native.IsForbidden or 0, native.IsProtected or 0,
     native.GetObjectType or 0, native.GetChildren or 0, scalarChecks - scalarBefore, bulkChecks - bulkBefore, instructions))
-if os.getenv("SUITE_MENU_DISCOVERY_MEASURE") then return end
-Check((calls.discovery or 0) == 0, "unchanged tree repeated discovery")
-Check(native.IsForbidden <= 219 * 110, "resize repeated safety checks")
-Check(native.GetChildren == 219 * 25, "resize skipped exact child identity verification")
--- With identical public/secret spies, 219 warm passes used 67,014 native
--- secrecy checks and ~4.51M VM instructions before batching identity reads.
-Check(scalarChecks - scalarBefore + bulkChecks - bulkBefore < 48000, "resize secrecy-call budget regressed")
-Check(instructions < 4100000, "resize instruction budget regressed")
+local measure = os.getenv("SUITE_MENU_DISCOVERY_MEASURE")
+if not measure then
+    Check((calls.discovery or 0) == 0, "unchanged tree repeated discovery")
+    -- 2026-11-26: a recorded frame keeps its object type and HookScript, so a
+    -- warm pass reads forbidden twice and protection once per record (before:
+    -- 22,995 forbidden and 5,694 type reads, 40,515 scalar checks, ~3.78M VM).
+    Check(native.IsForbidden <= 219 * 55, "resize repeated safety checks")
+    Check((native.GetObjectType or 0) <= 219, "resize re-read the immutable object type of every record")
+    Check(native.GetChildren == 219 * 25, "resize skipped exact child identity verification")
+    -- With identical public/secret spies, 219 warm passes used 67,014 native
+    -- secrecy checks and ~4.51M VM instructions before batching identity reads.
+    Check(scalarChecks - scalarBefore + bulkChecks - bulkBefore < 32000, "resize secrecy-call budget regressed")
+    Check(instructions < 3000000, "resize instruction budget regressed")
+end
 
 -- Reopening the same Blizzard panel and re-adopting its current owner still
 -- verify child identities without running the provider-discovery walk again.
@@ -266,12 +272,18 @@ for i = 1, 60 do
     Check(Menus.Track(panel, owner), "same owner could not re-adopt its panel")
 end
 debug.sethook()
-print(string.format("warm-menu-budget: discovery=%d forbidden=%d children=%d scalar=%d bulk=%d vm~%d",
-    calls.discovery or 0, native.IsForbidden or 0, native.GetChildren or 0, scalarChecks - scalarBefore, bulkChecks - bulkBefore, instructions))
+print(string.format("warm-menu-budget: discovery=%d forbidden=%d protection=%d type=%d children=%d scalar=%d bulk=%d vm~%d",
+    calls.discovery or 0, native.IsForbidden or 0, native.IsProtected or 0, native.GetObjectType or 0,
+    native.GetChildren or 0, scalarChecks - scalarBefore, bulkChecks - bulkBefore, instructions))
+if measure then return end
 Check((calls.discovery or 0) == 0, "unchanged show/re-track repeated discovery")
 Check(native.GetChildren == 120 * 25, "warm show/re-track missed a child identity check")
-Check(scalarChecks - scalarBefore + bulkChecks - bulkBefore < 30000, "show/re-track secrecy-call budget regressed")
-Check(instructions < 2250000, "warm show/re-track instruction budget regressed")
+-- 2026-11-26 before: 3,180 type and 12,720 forbidden reads, ~2.09M VM.
+Check((native.GetObjectType or 0) <= 180 and (native.GetObjectType or 0) < 120 * 25,
+    "warm show/re-track re-read the immutable object type of every record")
+Check(native.IsForbidden <= 120 * 56, "warm show/re-track repeated forbidden checks per record")
+Check(scalarChecks - scalarBefore + bulkChecks - bulkBefore < 18000, "show/re-track secrecy-call budget regressed")
+Check(instructions < 1700000, "warm show/re-track instruction budget regressed")
 Check(bulkChecks > 0, "warm public field validation never used the native tuple secrecy check")
 
 -- Equal count, different identities: discover the replacement including deeper children.

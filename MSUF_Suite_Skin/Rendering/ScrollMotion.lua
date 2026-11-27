@@ -643,18 +643,60 @@ local function ReleaseControllerLease(target, owner)
     end
 end
 
-function ScrollMotion.Track(target, owner, ownedPreview)
-    if owner == nil or IsNamedQuestScroll(target) or ScrollMotion.IsMailScroll(target)
-        or not Supported(target) then return false end
-    local partner = Partner(target)
+-- A lease marked settled bound everything its controllers can bind (thumb,
+-- layout). Visibility, flag, combat and settings changes reach it through its
+-- hooks and listeners, so a repeated Track has nothing to add.
+local function Settle(lease, partner)
+    local settled = true
+    for index = 1, #lease.controllers do
+        local state = lease.controllers[index]
+        settled = settled and (state.thumb ~= nil or not Safety.HasMethod(state.target, "GetThumb"))
+            and (state.layout or not Safety.HasMethod(state.target, "GetView"))
+    end
+    lease.partner, lease.settled = partner, settled
+end
+
+local function NativeRoute(target, partner)
+    return NativeList.IsTarget(target) or partner and NativeList.IsTarget(partner)
+end
+
+local function WarmLease(target, owner, partner, native)
+    local targets = native and NativeList.targets or ScrollMotion.targets
+    local leases = targets[target]
+    local lease = leases and leases[owner]
+    return lease ~= nil and lease.settled == true and lease.partner == partner
+end
+
+local function Refused(target, partner)
     local groupFinder = NS.ForeverGroupFinder
     local isActivityList = groupFinder and groupFinder.IsActivityList
-    if partner and NS.Client.isForever and (IsNamedQuestScroll(partner) or ScrollMotion.IsMailScroll(partner))
-        or isActivityList and (isActivityList(target) or isActivityList(partner)) then
-        return false
-    end
-    if NativeList.IsTarget(target) or partner and NativeList.IsTarget(partner) then
-        return NativeList.Track(target, owner)
+    return IsNamedQuestScroll(target) or ScrollMotion.IsMailScroll(target)
+        or partner and NS.Client.isForever and (IsNamedQuestScroll(partner) or ScrollMotion.IsMailScroll(partner))
+        or isActivityList and (isActivityList(target) or isActivityList(partner))
+end
+
+-- A controller can move between ordinary and native-render lists without
+-- changing partners. Re-evaluate its route before trusting either lease.
+function ScrollMotion.IsTracked(target, owner)
+    if owner == nil or not Safety.Public(target) or type(target) ~= "table" or not Safe(target) then return false end
+    local partner = Partner(target)
+    return not Refused(target, partner) and (not partner or Safe(partner))
+        and WarmLease(target, owner, partner, NativeRoute(target, partner))
+end
+
+function ScrollMotion.Track(target, owner, ownedPreview)
+    if owner == nil or not Safety.Public(target) or type(target) ~= "table" or not Safe(target) then return false end
+    local partner = Partner(target)
+    if Refused(target, partner) then return false end
+    local native = NativeRoute(target, partner)
+    if WarmLease(target, owner, partner, native) then return not partner or Safe(partner) end
+    if not Supported(target) then return false end
+    if native then
+        if not NativeList.Track(target, owner) then return false end
+        -- A native list lease binds nothing else after its first Track.
+        local lease = NativeList.targets[target][owner]
+        lease.partner, lease.settled = partner, true
+        return true
     end
     if not Flag(target) or partner and (not Supported(partner) or not Flag(partner)) then return false end
     local targets = ScrollMotion.targets[target]
@@ -668,7 +710,10 @@ function ScrollMotion.Track(target, owner, ownedPreview)
     local owned = ScrollMotion.owners[owner]
     if not owned then owned = {} ScrollMotion.owners[owner] = owned end
     owned[lease] = true
-    if AddController(lease, target) and (not partner or AddController(lease, partner)) then return true end
+    if AddController(lease, target) and (not partner or AddController(lease, partner)) then
+        Settle(lease, partner)
+        return true
+    end
     if newLease then ReleaseControllerLease(target, owner) end
     return false
 end

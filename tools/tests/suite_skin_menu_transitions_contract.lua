@@ -141,10 +141,22 @@ end
 UIParent = Frame()
 CreateFrame = function() return Frame() end
 local listeners = {}
+-- Registry jobs run at once unless a contract holds them as a next frame.
+local heldJobs
 local NS = { DB = { enabled = true, theme = {} }, Client = { isForever = arg[2] == "Forever" },
     IsCombatLocked = function() return combat or lockdown end,
     Registry = { GetSurface = function(frame) return surfaces[frame] end,
-        AddListener = function(owner, callback) listeners[owner] = callback end } }
+        AddListener = function(owner, callback) listeners[owner] = callback end,
+        QueueJob = function(job)
+            if not heldJobs then job() return end
+            for _, queued in ipairs(heldJobs) do if queued == job then return end end
+            heldJobs[#heldJobs + 1] = job
+        end,
+        CancelJob = function(job)
+            for index = #(heldJobs or {}), 1, -1 do
+                if heldJobs[index] == job then table.remove(heldJobs, index) end
+            end
+        end } }
 local function Load(file)
     local path = root .. "/MSUF_Suite_Skin/" .. file
     local override = os.getenv("SUITE_TRANSITION_OVERRIDE_ROOT")
@@ -741,5 +753,14 @@ end
 print("Suite skin menu transitions (" .. (arg[2] or "Mainline") .. "): " .. checks .. " checks passed")
 if arg[3] == "coverage" then
     return { NS = NS, Frame = Frame, groups = groups, frames = frames, listeners = listeners,
-        Load = Load, ForeignWrites = function() return foreignWrites end }
+        Load = Load, ForeignWrites = function() return foreignWrites end,
+        HoldJobs = function() heldJobs = heldJobs or {} end,
+        QueuedJobs = function() return heldJobs and #heldJobs or 0 end,
+        -- Runs the held jobs as the next frame does and returns to running jobs at once.
+        DrainJobs = function()
+            local batch = heldJobs or {}
+            heldJobs = nil
+            for _, job in ipairs(batch) do job() end
+            return #batch
+        end }
 end

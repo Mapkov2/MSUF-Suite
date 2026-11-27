@@ -132,19 +132,35 @@ local function DragReleased(button)
     for _, state in pairs(Legacy.states) do state.dragging = false end
 end
 
+-- Frames whose modern bar ScrollMotion eases. The cache does not own the bar.
+local delegated = setmetatable({}, { __mode = "kv" })
+
 function Legacy.Track(frame, owner, bar)
-    if not Safety.CanCreateRegions(frame) or Safety.GetProtection(frame)
-        or not Safety.HasMethod(frame, "GetScrollChild") then return false end
+    if not Safety.Public(frame) or not Safety.Public(bar) or not Safety.CanCreateRegions(frame)
+        or not Safety.ReadableMethod(frame, "GetScrollChild") then return false end
     local nativeQuest, nativeOnly = NS.ScrollMotion.IsQuestScroll(frame)
     if nativeOnly then return false end
     local nativeMail = NS.ScrollMotion.IsMailScroll(frame)
     local renderOnly = nativeQuest or nativeMail
-    bar = bar or Safety.Field(frame, "ScrollBar") or Safety.Field(frame, "scrollBar")
+    if not bar then
+        bar = Safety.Field(frame, "ScrollBar")
+        if not Safety.Public(bar) then return false end
+        bar = bar or Safety.Field(frame, "scrollBar")
+        if not Safety.Public(bar) then return false end
+    end
+    bar = bar or nil
     local state = Legacy.states[frame]
+    -- Reparenting can change the native scroll policy with the same bar.
+    -- Compare the bound bar so a newly readable slider gets its first hooks.
+    if not renderOnly and bar and delegated[frame] == bar and NS.ScrollMotion.IsTracked(bar, owner) then return true end
+    if state and state.owners[owner] and state.bar == bar
+        and state.snapToTop == renderOnly and state.nativeMail == nativeMail then return true end
     if not renderOnly and Safety.HasMethod(bar, "CanInterpolateScroll") then
         if state then wipe(state.owners) Stop(state) end
+        delegated[frame] = bar
         return NS.ScrollMotion.Track(bar, owner)
     end
+    delegated[frame] = nil
     if not state then
         state = { owners = {}, records = {}, target = frame, offset = Safety.Read(frame, "GetVerticalScroll") }
         Legacy.states[frame] = state

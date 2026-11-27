@@ -429,6 +429,9 @@ NS.ControlSkin = { states = {}, SetTabMotionProvider = function(track) NS.Contro
     Refresh = function(tab, selected) NS.Surface.SetActive(tab, selected) return true end }
 local selected = {}
 NS.Surface = { SetActive = function(tab, value) selected[tab] = value end }
+-- TabMotion dedupes repaints per client frame; each selection here is a new frame.
+local frameTime, previousTime = 0, GetTime
+GetTime = function() frameTime = frameTime + 1 return frameTime end
 Load("Rendering/TabMotion.lua")
 local tab = Frame(window, true)
 function tab:SetTabSelected(value) self.nativeSelected = value end
@@ -447,6 +450,7 @@ tab.protected = true
 tab:SetTabSelected(true)
 Check(selected[tab] == false, "protected tab was animated during combat")
 tab.protected, NS.Motion.combat = false, false
+GetTime = previousTime
 
 -- Finished Settings event picks the visible list/canvas, including addon pages.
 local changed, releaseSettings

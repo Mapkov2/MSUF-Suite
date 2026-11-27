@@ -187,15 +187,18 @@ local function Current(state)
     if not state.reusable or state.cacheOwner ~= state.owner then return false end
     for index = 1, state.length do
         local record = state.records[index]
-        local kind = Safe(record.frame)
-        if record.kind ~= kind then return false end
-        if kind then
+        -- Object type and HookScript never change for a live widget, so a
+        -- record keeps its kind. Forbidden, protection and compositor answers
+        -- are read again on every pass; an unsafe frame that became safe still
+        -- forces discovery.
+        if record.kind then
+            if not Safety.CanCreateRegions(record.frame) then return false end
             if not ShapeFields(record, false) then return false end
             if not record.leaf then
                 if (record.bodies or not HasSecret) and not Bodies(record, false, state.owner) then return false end
                 if not record.terminal and not CurrentChildren(record) then return false end
             end
-        end
+        elseif Safe(record.frame) then return false end
     end
     return true
 end
