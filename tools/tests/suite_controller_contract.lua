@@ -227,7 +227,7 @@ for _, id in ipairs(Suite.SuiteOrder) do
         and id ~= "keyAudit" and id ~= "currencyGoals" and id ~= "keywordAlerts" and id ~= "waypointLists"
         and id ~= "soundProfiles" and id ~= "notificationHistory" and id ~= "worldQuestTab"
         and id ~= "navigationHUD" and id ~= "chatMessenger" and id ~= "nativeCooldownVisibility"
-        and id ~= "playerBuffGroups" and id ~= "hudVisibility" and id ~= "procAlerts" and id ~= "targetDotEstimate" and id ~= "castEnhancements"),
+        and id ~= "hudVisibility" and id ~= "procAlerts" and id ~= "targetDotEstimate" and id ~= "castEnhancements"),
         id .. " factory enable state is wrong")
 end
 for _, id in ipairs(Suite.SuiteOrder) do Suite.Suite.Config(id).enabled = false end

@@ -7,7 +7,7 @@ P.GameplayPage = Gameplay
 -- destination changes when the host supports appending to its Gameplay page.
 local MODULES = {
     "actionTracker", "selfCombatText", "floatingCombatText", "combatStatsHUD", "targetDistance", "threatMeter",
-    "burningRushCue", "combatMovementCue", "combatPetStatus", "cursorEffects",
+    "burningRushCue", "combatMovementCue", "combatPetStatus", "cursorEffects", "procAlerts",
     "battleRes", "groupBloodlust", "groupDeathAlert", "innervateCue", "enemyCastStack",
 }
 local owned = {}

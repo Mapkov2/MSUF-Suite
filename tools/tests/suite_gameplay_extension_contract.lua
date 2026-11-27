@@ -114,11 +114,43 @@ local function Widget(key)
         end
     end
 end
+Check(P.GameplayPage.registered, "Suite Gameplay extension not registered")
+local function CheckProcAlertMover()
+    local previousAPI, alerts, mover = env.MSUF_EditModeAPI, nil, nil
+    local runtime = setmetatable({ Text = NS.Text, Install = function(_, module) alerts = module end }, { __index = S })
+    local namespace = { NS = NS, Suite = runtime }
+    env.MSUF_EditModeAPI = { RegisterElement = function(owner, record)
+        Check(owner == "MSUFSuite.procAlerts" and record.id == "alerts", "wrong Proc Alerts mover")
+        mover = record
+        return true
+    end }
+    Check(mw.world:LoadFile(suiteRoot .. "/MSUF_Suite_Modules/EditMode.lua", "MSUF_Suite_Modules", namespace))
+    Check(mw.world:LoadFile(suiteRoot .. "/MSUF_Suite_QualityOfLife/ProcAlerts.lua", "MSUF_Suite_QualityOfLife", namespace))
+    alerts:RegisterMovers()
+    env.MSUF_EditModeAPI = previousAPI
+    Check(mover, "Proc Alerts mover not available")
+
+    M.InvalidatePage("gameplay")
+    for _, scenario in ipairs({ "cold", "cached" }) do
+        Select("home")
+        Check(mover.openSettings(), "Proc Alerts Edit Mode link failed on a " .. scenario .. " page")
+        Settle()
+        Check(M.activeKey == "gameplay", "Proc Alerts Edit Mode link opened the wrong page")
+        local row = M.cache.gameplay.qualityOfLifeFeatureRows.suite_qualityOfLife_procAlerts_proc_alerts
+        Check(row and row.details and row.details:IsVisible(), "Proc Alerts Edit Mode link did not reveal the settings")
+        row.reveal(false)
+    end
+end
+if arg[4] == "proc-alerts" then
+    CheckProcAlertMover()
+    print("Proc Alerts Edit Mode link: " .. flavor .. " " .. checks .. " checks")
+    return
+end
 if flavor ~= "Forever" then
     Check(M.activeKey == "opt_misc" and Widget("msufsuite.tooltipVisibility.enabled"),
         "attaching Suite did not update the already visible tooltip page")
 end
-Check(P.GameplayPage.registered, "Suite Gameplay extension not registered")
+CheckProcAlertMover()
 if originalContext then
     local context = M.Search.Text.ControlContext
     Check(context("msufsuite.enemyCastStack.enabled") == "", "Suite setting leaked raw search words")
@@ -145,7 +177,7 @@ for id in pairs(features) do
     moved = moved + 1
     Check(P.GameplayPage.Relocated(id), "module not relocated: " .. id)
 end
-Check(moved == 15, "wrong Gameplay inventory")
+Check(moved == 16, "wrong Gameplay inventory")
 local rows = {}
 for _, row in ipairs(P.SearchRows()) do
     local id = row.suiteModuleId
@@ -157,6 +189,7 @@ for _, row in ipairs(P.SearchRows()) do
 end
 local key = "msufsuite.actionTracker.enabled"
 Check(rows[key], "combat feature missing from cold search")
+Check(rows["msufsuite.procAlerts.enabled"], "Proc Alerts missing from Gameplay search")
 local floatingTextKey = "msufsuite.floatingCombatText.enabled"
 local floatingTextAvailable, floatingTextReason = S.Availability("floatingCombatText")
 Check(floatingTextAvailable, tostring(floatingTextReason))
