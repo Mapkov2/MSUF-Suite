@@ -406,6 +406,8 @@ local function ApplyModel(v, model, plan, ratio, controls)
     NS.Cosmetics.SuppressVertexAlpha(Safety.Field(model, "BackgroundOverlay"), v)
 end
 
+local CoverOpening
+
 function CharacterGeometry.Apply(root, plan)
     if NS.IsCombatLocked() or root ~= CharacterFrame or not CanLayout(root) then return false end
     if layout and (layout.root ~= root or layout.releasing) then return false end
@@ -428,6 +430,7 @@ function CharacterGeometry.Apply(root, plan)
     Layer(v, close, plan.strata, plan.closeLevel)
     if v.presentation then PaintCharacterChrome(v) end
     v.applying = nil
+    NS.ContentMotion.SetOpeningCover(root, CoverOpening)
     return true
 end
 
@@ -480,6 +483,13 @@ local function NativeGlassAlphaChanged(root, alpha)
     if alpha ~= 0 then glass.refresh() end
 end
 
+local function HookGlassAlpha(v, refresh)
+    if refresh and glassHookRoot ~= v.root then
+        hooksecurefunc(v.root, "SetAlpha", NativeGlassAlphaChanged)
+        glassHookRoot = v.root
+    end
+end
+
 local function StartGlass(v, surface, refresh)
     if not CanLayout(v.root) or Read(surface, "GetParent") ~= v.root then return end
     local flyout = Safety.Field(_G, "EquipmentFlyoutFrame")
@@ -495,10 +505,7 @@ local function StartGlass(v, surface, refresh)
     SetGlassAlpha(glass.alpha[surface], surface, true)
     if flyout then SetGlassAlpha(glass.alpha[flyout], flyout, true) end
     v.glass = glass
-    if refresh and glassHookRoot ~= v.root then
-        hooksecurefunc(v.root, "SetAlpha", NativeGlassAlphaChanged)
-        glassHookRoot = v.root
-    end
+    HookGlassAlpha(v, refresh)
 end
 
 local function GlassRootHidden(root, glass, alpha)
@@ -511,16 +518,63 @@ local function GlassRootHidden(root, glass, alpha)
     return Read(root, "GetAlpha") == 0
 end
 
+-- The Suite opens its Character view on the next Timers tick after the native
+-- window shows. Under Glass that view hides the native root anyway, so the
+-- opening frame hides it already (ContentMotion.SetOpeningCover) instead of
+-- fading the whole CharacterFrame tree, and SetGlass adopts this early glass.
+-- An open the Suite does not take over gets the native window back two frames
+-- later. The cover never starts in combat, under the Gamepad UI, on Retail,
+-- outside Glass or before the view has shown Glass once (coverSurface).
+local function SettleCover(glass, tick)
+    local v = layout
+    if not v or v.glass ~= glass or not glass.early then return end
+    if glass.settleHops > 1 then
+        glass.settleHops = glass.settleHops - 1
+        C_Timer.After(0, tick)
+    elseif NS.IsCombatLocked() then
+        NS.CombatGate.RunOrDefer(GLASS_KEY, tick)
+    else
+        ClearGlass(v)
+    end
+end
+
+CoverOpening = function(root)
+    local v = layout
+    if not NS.Client.isForever or not v or v.root ~= root or v.glass or not v.coverSurface or NS.IsCombatLocked()
+        or NS.Client.IsGamepadUI() or not NS.Surface.UsesGlassCompositing() then return false end
+    -- No refresh: model and slots follow the root (alpha 0) until SetGlass.
+    StartGlass(v, v.coverSurface)
+    local glass = v.glass
+    if not glass then return false end
+    glass.early, glass.settleHops = true, 2
+    -- A timer from a closed view must never settle the next opening's cover.
+    local function Tick() SettleCover(glass, Tick) end
+    C_Timer.After(0, Tick)
+    return Read(root, "GetAlpha") == 0
+end
+
+local function AdoptGlass(v, glass, surface, refresh)
+    if not glass or not glass.early or glass.surface ~= surface then return end
+    glass.early, glass.refresh = nil, refresh
+    HookGlassAlpha(v, refresh)
+end
+
 function CharacterGeometry.SetGlass(root, surface, enabled, modelVisible, gearVisible, refresh)
     local v = layout
     if not NS.Client.isForever or not v or v.root ~= root then return false end
     local glass = v.glass
+    -- A deliberate disable (look, Gamepad UI, classic view, unthemed) with the
+    -- view open ends the opening cover; a close (view hidden) keeps it.
+    if not enabled and Read(surface, "IsVisible") == true then v.coverSurface = nil end
     -- A cold open may use the normal preflight in combat. CanLayout then
     -- requires every target to be unprotected, and Fade needs public alpha.
     if NS.IsCombatLocked() and (glass or not enabled) then
         if not enabled and glass then
             NS.CombatGate.RunOrDefer(GLASS_KEY, function() ClearGlass(v) end)
-        elseif enabled then NS.CombatGate.Cancel(GLASS_KEY) end
+        elseif enabled then
+            NS.CombatGate.Cancel(GLASS_KEY)
+            AdoptGlass(v, glass, surface, refresh)
+        end
         return enabled and glass and Read(root, "GetAlpha") == 0 or false,
             glass and Read(glass.model, "IsIgnoringParentAlpha") ~= false, glass and glass.gearVisible
     end
@@ -533,6 +587,8 @@ function CharacterGeometry.SetGlass(root, surface, enabled, modelVisible, gearVi
     if not v.glass then StartGlass(v, surface, refresh) end
     glass = v.glass
     if not glass then return false end
+    AdoptGlass(v, glass, surface, refresh)
+    v.coverSurface = surface
     local alpha = Read(root, "GetAlpha")
     if alpha ~= 0 then SetGlassAlpha(glass.alpha[surface], surface, true) end
     SetGlassAlpha(glass.alpha[glass.model], glass.model, modelVisible)
@@ -547,6 +603,8 @@ local function ReleaseLayout()
     local v = layout
     if not v or v.releasing or Safety.IsForbidden(v.root) then return end
     v.releasing = true
+    NS.ContentMotion.SetOpeningCover(v.root, nil)
+    v.coverSurface = nil
     ClearGlass(v)
     v.presentation = nil
     PaintCharacterChrome(v)

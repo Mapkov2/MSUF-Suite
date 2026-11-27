@@ -5,11 +5,11 @@ local Field = Safety.Field
 local Call = Safety.Call
 local Public = Safety.Public
 local HasMethod = Safety.HasMethod
-local ParentIs = NS.AdapterKit.ParentIs
 
 -- Owner state, deferral and the shared PaperDoll primitives live in
 -- PaperDollChrome.lua, which loads right before this file.
 local Chrome = NS.PaperDollChrome
+local SkinTabViews = NS.SkinCharacterTabViews
 
 ---------------------------------------------------------------------------------------------
 -- CharacterPanel
@@ -90,20 +90,11 @@ local statCategoryFields = {
     "EnhancementsCategory",
 }
 
-local TAB_VIEWS = {
-    { "ReputationFrame", "ReputationDetailFrame" },
-    { "TokenFrame", "DetailFrame" },
-    { "SkillsFrame", "SkillDetailFrame" },
-    { "PVPRankFrame", "DetailFrame" },
-    { "StatisticsFrame" },
-}
-
 local FOREVER_TAB_FALLBACKS = {
     "Character", "Reputation", "Skills", "PvP", "Currency", "Statistics",
 }
 
 local PANE_SPEC = Chrome.Spec("panel", 4, 0)
-local DETAIL_SPEC = Chrome.Spec("card", 4, 0)
 local NAVIGATION_TAB_SPEC = Chrome.Spec("navigation", 5, 1, false, "navigationActive")
 local FOREVER_TAB_SPEC = {
     role = "navigation", activeRole = "navigationActive",
@@ -119,7 +110,7 @@ local SIDEBAR_TAB_SPEC = Chrome.Spec("navigation", 5, 1, true)
 -- ControlSkin copies these; one per native selection state.
 local sidebarControlSpecs = {}
 for _, active in ipairs({ true, false }) do
-    sidebarControlSpecs[active] = {
+    sidebarControlSpecs[active] = NS.ControlSkin.MarkFixedButtonSpec({
         role = "navigation",
         activeRole = "navigationActive",
         active = active,
@@ -129,7 +120,7 @@ for _, active in ipairs({ true, false }) do
         inset = 1,
         regions = { "TabBg", "Hider", "Highlight" },
         allowImplicitProtected = true,
-    }
+    }, true)
 end
 
 local Fade, Attach, Track = Chrome.Fade, Chrome.Attach, Chrome.Track
@@ -363,25 +354,6 @@ local function SkinForeverPanes(state, root)
     end
 end
 
-local function SkinTabViews(state, root)
-    if not state.active then return end
-    -- Decorate the native list and detail hosts when each tab becomes
-    -- available. The extra Camelot tabs use the same material.
-    for index = 1, #TAB_VIEWS do
-        local spec = TAB_VIEWS[index]
-        local view = _G[spec[1]]
-        if view and ParentIs(view, root) then
-            local list = Field(view, "ScrollBox")
-            local detail = spec[2] and Field(view, spec[2])
-            if list then Attach(state, list, PANE_SPEC) end
-            if detail then
-                Attach(state, detail, DETAIL_SPEC)
-                if spec[1] == "ReputationFrame" then Chrome.Action(state, Field(detail, "ViewRenownButton")) end
-            end
-        end
-    end
-end
-
 local function SkinModeTabs(state, root)
     if not state.active then return end
     if not NS.Client.isForever then
@@ -391,7 +363,7 @@ local function SkinModeTabs(state, root)
     local container = Field(root, "ModeTabs")
     local tabs = Field(container, "Tabs")
     if type(tabs) ~= "table" then return end
-    Attach(state, container, PANE_SPEC)
+    Attach(state, container, PANE_SPEC, true)
     local tabRow = PositionForeverTabs(state, root)
     local selectedTab = Field(root, "selectedTab")
     if not Public(selectedTab) then selectedTab = nil end
@@ -401,10 +373,10 @@ local function SkinModeTabs(state, root)
             local attached
             if tabRow then
                 attached = Safety.CanCreateRegions(tab, not NS.IsCombatLocked())
-                    and NS.Surface.Attach(tab, FOREVER_TAB_SPEC) ~= nil
+                    and NS.Surface.Ensure(tab, FOREVER_TAB_SPEC) ~= nil
                 if attached then Track(state, tab) end
             else
-                attached = Attach(state, tab, NAVIGATION_TAB_SPEC)
+                attached = Attach(state, tab, NAVIGATION_TAB_SPEC, true)
             end
             if attached then
                 Fade(state, Field(tab, "Background"))
@@ -562,19 +534,20 @@ local function SkinModel(state)
 end
 
 local function SkinSidebarTab(state, tab)
-    local hider = Field(tab, "Hider")
-    local checked = Safety.Read(tab, "GetChecked")
-    local active = checked == true or checked == nil and IsShown(hider) == false
     if NS.Safety.CanControl(tab, not NS.IsCombatLocked())
-        and NS.ControlSkin.ApplyButton(tab, state.owner, sidebarControlSpecs[active]) then
+        and NS.ControlSkin.ApplyButton(tab, state.owner, sidebarControlSpecs[Chrome.SidebarActive(tab)]) then
         Track(state, tab)
         return true
     end
     Fade(state, Field(tab, "TabBg"))
-    Fade(state, hider)
+    Fade(state, Field(tab, "Hider"))
     Fade(state, Field(tab, "Highlight"))
-    return Attach(state, tab, SIDEBAR_TAB_SPEC)
+    return Attach(state, tab, SIDEBAR_TAB_SPEC, true)
 end
+
+local function SidebarCount() local sidebars = _G.PAPERDOLL_SIDEBARS return sidebars and #sidebars or 3 end
+local function SidebarTab(index) return _G["PaperDollSidebarTab" .. index] end
+local function SidebarKey() return Chrome.SidebarKey(SidebarCount(), SidebarTab) end
 
 local function SkinSidebar(state)
     if not state.active then return false end
@@ -586,34 +559,19 @@ local function SkinSidebar(state)
     Chrome.Action(state, Field(pane, "SaveSet"))
     Chrome.Action(state, Field(pane, "NewSet"))
     local applied = false
-    local sidebars = _G.PAPERDOLL_SIDEBARS
-    for index = 1, sidebars and #sidebars or 3 do
-        local tab = _G["PaperDollSidebarTab" .. index]
-        if tab then
-            applied = SkinSidebarTab(state, tab) or applied
-        end
+    for index = 1, SidebarCount() do
+        local tab = SidebarTab(index)
+        if tab then applied = SkinSidebarTab(state, tab) or applied end
     end
     return applied
-end
-
-local function SkinTabsAndViews(state)
-    local root = _G.CharacterFrame
-    SkinModeTabs(state, root)
-    SkinTabViews(state, root)
-end
-
-local function RepositionForeverTabs(state)
-    SkinModeTabs(state, _G.CharacterFrame)
-end
-
-local function RefreshForeverLook(state)
-    SkinTabsAndViews(state)
-    SkinModel(state)
 end
 
 local function CharacterRoot() return _G.CharacterFrame end
 local function StatsPane() return _G.CharacterStatsPane end
 local function CharacterView() return NS.CharacterDetails.views[CharacterRoot()] end
+local function SkinTabsAndViews(state) SkinModeTabs(state, CharacterRoot()) SkinTabViews(state, CharacterRoot()) end
+local function RepositionForeverTabs(state) SkinModeTabs(state, CharacterRoot()) end
+local function RefreshForeverLook(state) SkinTabsAndViews(state) SkinModel(state) end
 
 -- UpdateSize finishes the native PaperDoll resize. ShowSubFrame assigns
 -- activeSubframe AFTER showing the PaperDoll child, so reflow the existing
@@ -636,6 +594,7 @@ local panel
 local InstallHooks
 
 local function ApplyNow(state)
+    panel:ForgetPasses()
     local root = CharacterRoot()
     if not root or not state.active then return false, "missing" end
     if Safety.IsForbidden(root) then return false, "forbidden" end
@@ -700,12 +659,14 @@ NS.CharacterPanel = CharacterPanel
 
 -- Native hooks must repaint safe targets immediately; only protected layout
 -- waits for combat end. A hidden panel has no work to catch up until it shows.
-local function RefreshShownOwners(suffix, callback, target)
+-- keyOf(target): the pass key; a repeat with that key in the same frame is skipped.
+local function RefreshShownOwners(suffix, callback, target, keyOf)
     if Safety.Read(target, "IsVisible") == false or Safety.Read(target, "IsShown") == false then return end
     if NS.IsCombatLocked() and not Safety.CanDecorate(target, false) then
         panel:ForActiveOwners(suffix, callback)
         return
     end
+    if keyOf and panel:RepeatedPass(suffix, keyOf(target)) then return end
     for _, state in pairs(panel.owners) do
         if state.active then Safety.Dispatch(callback, state) end
     end
@@ -723,8 +684,9 @@ local function OnStatsUpdated()
     RefreshShownOwners("stats", SkinStats, StatsPane())
 end
 local function OnSlotUpdated(slot) panel:RefreshSlot(slot) end
-local function OnSidebarUpdated() RefreshShownOwners("sidebar", SkinSidebar, CharacterRoot()) end
-local function OnModeTabSelected() RefreshShownOwners("mode-tabs", SkinTabsAndViews, CharacterRoot()) end
+local function OnSidebarUpdated() RefreshShownOwners("sidebar", SkinSidebar, CharacterRoot(), SidebarKey) end
+local function OnModeTabSelected() RefreshShownOwners("mode-tabs", SkinTabsAndViews, CharacterRoot(), Chrome.ModeTabKey) end
+local function OnSubFrame() RefreshShownOwners("subframe", SkinTabsAndViews, CharacterRoot()) end
 local function OnTabLayout() RefreshShownOwners("mode-tabs-layout", RepositionForeverTabs, CharacterRoot()) end
 
 local function OnPaperDollBackground(model)
@@ -762,6 +724,7 @@ InstallHooks = function()
     -- cosmetic suppression after that native update; the model and textures
     -- remain Blizzard-owned.
     HookOnce("modelBackground", nil, "SetPaperDollBackground", OnPaperDollBackground)
+    if root then HookOnce("subframe", root, "ShowSubFrame", OnSubFrame) end
     if NS.Client.isForever and root then
         HookOnce("modeTabs", root, "SetSelectedModeTabByFrame", OnModeTabSelected)
         HookOnce("tabLayout", root, "UpdateTabLayout", OnTabLayout)
@@ -781,6 +744,7 @@ function CharacterPanel.Disable(owner)
     if NS.IsCombatLocked() then return false, "combat" end
 
     state.active = false
+    state.nativeLists = nil
     RestoreModelColors(_G.CharacterModelScene)
     RestoreForeverTabs(state, CharacterRoot())
     NS.EQoLCharacter.Disable(owner)

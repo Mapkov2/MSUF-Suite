@@ -372,12 +372,12 @@ local function MakeOwnedScroll(list)
     end
 end
 
-function Layout.NewList(view, parent, width, height, columns, paint, fixed)
+function Layout.NewList(view, parent, width, height, columns, paint, fixed, ownedScroll)
     local list = {
         view = view, parent = parent, groups = {}, paint = paint,
         columns = columns, height = height, width = width - SCROLL_WIDTH, cards = {}, offsets = {}, heights = {}, rowLayouts = {},
     }
-    if not fixed and view.nativeRoot and NS.Host.Client.isForever then
+    if not fixed and (ownedScroll or view.nativeRoot and NS.Host.Client.isForever) then
         MakeOwnedScroll(list)
         return list
     end
@@ -563,6 +563,8 @@ function Layout.Refresh(view)
     local list, fixed
     if view.gear and view.gear.panelShown then
         list, fixed = view.rail, view.combatRail
+    elseif view.currencyReport and view.currencyReport.scroll.panelShown then
+        list = view.currencyReport
     else
         list = view.setReport and view.setReport.scroll.panelShown and view.setReport or view.report
         fixed = view.combatReport

@@ -8,6 +8,7 @@ local FRAME_NAME = "MSUFSuiteCharacterPanel"
 local PLAYER, INSPECT = "character", "inspect"
 local TAB_KIND = { [PLAYER] = "tab", [INSPECT] = "inspectTab" }
 local OVERVIEW, EQUIPMENT, COMPARE, ATTRIBUTES, REPUTATION = "overview", "gear", "compare", "attributes", "reputation"
+local CURRENCY = "currency"
 local IN_COMBAT = { inCombat = true }
 local ITEM_EVENTS = { "ITEM_DATA_LOAD_RESULT", "GET_ITEM_INFO_RECEIVED" }
 local SCREEN_EVENTS = { "DISPLAY_SIZE_CHANGED", "UI_SCALE_CHANGED" }
@@ -63,6 +64,8 @@ end
 
 local function OnClose()
     if not Module.kind then return end
+    if Module.view.currencyControls then NS.CurrencyControls.Hide(Module.view) end
+    Module.currencies = nil
     if Module.view.reputationSearch then NS.ReputationSearch.Hide(Module.view) end
     Module.view.tabSearch, Module.searchState = nil, nil
     if Module.reputations then Module.reputations.query = "" end
@@ -227,6 +230,8 @@ local function Paint(event)
         end
     elseif tab == REPUTATION then
         NS.ReputationList.Paint(Module, combat)
+    elseif tab == CURRENCY then
+        NS.Currency.Paint(Module, combat)
     elseif tab == ATTRIBUTES then
         view:ShowGroups(Pages.Overview(groups, true, combat), combat)
     elseif tab == COMPARE then
@@ -353,6 +358,7 @@ function Dirty(_, event, first, success)
     end
     if Module.pageEvents[event] then
         if Module.tab == REPUTATION and Module.reputations and not NS.ReputationList.Update(Module.reputations, event, first) then return end
+        if Module.tab == CURRENCY and not NS.Currency.Invalidate(Module.currencies, event, first) then return end
         Module.dirtyPage = true
     end
     Pages.InvalidateCustom(Module.custom, event, Module.view.tabSearch, first)
@@ -384,8 +390,9 @@ local function SelectTab(tab, preserveSlot, showAudit)
     HideTooltip()
     local kind, config = TAB_KIND[Module.kind], Module.config
     if not CharacterHeader.TabVisible(config, kind, tab) then tab = CharacterHeader.HomeTab(config, kind) end
+    if tab ~= CURRENCY then Module.currencies = nil end
     local search = Module.searchState
-    if Module.kind == PLAYER and CharacterHeader.TabSearchEnabled(config, tab) then
+    if Module.kind == PLAYER and tab ~= CURRENCY and CharacterHeader.TabSearchEnabled(config, tab) then
         if not search or search.tab ~= tab or search.config ~= config then search = { tab = tab, config = config, query = "" } end
     else search = nil end
     if Module.view.reputationSearch and (tab ~= Module.tab or search ~= Module.searchState) then NS.ReputationSearch.Hide(Module.view) end
@@ -411,7 +418,7 @@ local function SelectTab(tab, preserveSlot, showAudit)
             local attributes = tab == ATTRIBUTES
             Subscribe(HEADER_EVENTS, attributes)
             if tab ~= REPUTATION or not Host.InCombat() then
-                Subscribe(attributes and ATTRIBUTE_EVENTS or Pages.ReportEvents(tab, config), true)
+                Subscribe(attributes and ATTRIBUTE_EVENTS or tab == CURRENCY and NS.Currency.Events or Pages.ReportEvents(tab, config), true)
             end
         end
         Module.fullStats = tab == ATTRIBUTES or Module.config.showFullStats ~= false
@@ -473,9 +480,10 @@ local function ToggleSetManager()
     Paint()
 end
 
-local function GroupClick(index)
+local function GroupClick(index, button)
     if Module.kind ~= PLAYER then return end
     if Module.tab == REPUTATION then return NS.ReputationList.Toggle(Module, index) end
+    if Module.tab == CURRENCY then return NS.Currency.Click(Module.currencies, index, button) end
     if index == "equipmentSets" then
         if Host.InCombat() or Module.setManager then return end
         if Module.tab ~= EQUIPMENT and CharacterHeader.TabVisible(Module.config, "tab", EQUIPMENT) then return SelectTab(EQUIPMENT) end
@@ -561,7 +569,7 @@ local function RefreshVisibleAppearance()
             local tab, config = Module.tab, Module.config
             if previousView ~= view.characterView or not CharacterHeader.TabVisible(config, TAB_KIND[Module.kind], tab)
                 or Module.customDefinition and CharacterTabs.Find(config, tab) ~= Module.customDefinition
-                or Module.kind == PLAYER and (Module.searchState ~= nil) ~= CharacterHeader.TabSearchEnabled(config, tab)
+                or Module.kind == PLAYER and tab ~= CURRENCY and (Module.searchState ~= nil) ~= CharacterHeader.TabSearchEnabled(config, tab)
                 or Module.searchState and Module.searchState.config ~= config
                 or Module.kind == PLAYER and tab == OVERVIEW and (Module.fullStats ~= (config.showFullStats ~= false)
                     or Module.showSets ~= (config.showEquipmentSetsInOverview ~= false))
@@ -571,6 +579,7 @@ local function RefreshVisibleAppearance()
             if Module.kind == PLAYER then SyncHeaderEvents() end
             PaintTabs()
             PaintContextAction()
+            if tab == CURRENCY then Paint() end
         end
     end
 end
@@ -771,7 +780,9 @@ local function LeaveCombat(_, event)
         Open(PLAYER, "player", Identity("player") or "player", tab, root, nativeTab)
         return
     end
-    if not hadReader and Module.reader or view.glassLook or view.glassApplied then view:RefreshAppearance(AvailableSkin(), Module.config) end
+    if not hadReader and Module.reader or view.glassLook or view.glassApplied or view.roundedPending then
+        view:RefreshAppearance(AvailableSkin(), Module.config)
+    end
     RepaintAfterCombat()
     PaintContextAction(event)
 end
@@ -787,6 +798,8 @@ local function EnterCombat(_, event)
         if Module.tab == REPUTATION then
             SetEvents(Pages.ReportEvents(REPUTATION, Module.config), false)
             NS.ReputationList.Paint(Module, true)
+        elseif Module.tab == CURRENCY then
+            NS.Currency.Paint(Module, true)
         elseif Module.searchState and Module.searchState.groups and Module.searchState.query ~= ""
             and not Module.custom and Module.tab ~= ATTRIBUTES
             and Module.tab ~= OVERVIEW and Module.tab ~= EQUIPMENT then
@@ -842,8 +855,8 @@ function Module:Disable()
     self.running = nil
     Routing.Sync(nil)
     Close()
-    if self.nativeJob then self.nativeJob:Clear() end
-    if self.nativeFitJob then self.nativeFitJob:Clear() end
+    if self.nativeJob then self.nativeJob:Clear() self.nativeFitJob:Clear() end
+    NS.Statistics.Drop()
     ReleaseNativeLayout()
     if self.characterView then self.characterView:RefreshAppearance(nil) end
     if self.dockView then self.dockView:RefreshAppearance(nil) end

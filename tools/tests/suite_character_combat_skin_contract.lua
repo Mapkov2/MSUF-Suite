@@ -6,7 +6,7 @@ file:close()
 local stop = assert(source:find('assert(ns.CharacterPanel.Apply("blizzardWindows"))', 1, true))
 SetPaperDollBackground = function() end
 local H = assert(loadstring(source:sub(1, stop - 1) .. [[
-return { NS = ns, hooks = hooks, backgrounds = modelBackgrounds, Texture = Texture,
+return { NS = ns, hooks = hooks, backgrounds = modelBackgrounds, Texture = Texture, Frame = Frame,
     SetCombat = function(value) combatLocked = value end, reported = reported }
 ]], "@character_combat_fixture"))()
 local NS = H.NS
@@ -57,6 +57,22 @@ NS.Cosmetics.RestoreOwner("combat-cold") -- the parent GenericWindows owner norm
 NS.CharacterDetails.Apply, NS.EQoLCharacter.Apply = detailsApply, eqolApply
 NS.CombatGate.RunOrDefer = function(_, callback) queued = queued + 1; continuation = callback end
 assert(NS.CharacterPanel.Apply("blizzardWindows"))
+local currency = H.Frame()
+currency.parent, currency.ScrollBox, currency.ScrollBar = CharacterFrame, H.Frame(), H.Frame()
+function currency.ScrollBox:IsVisible() return true end
+currency.filterDropdown = not NS.Client.isForever and H.Frame() or nil
+if currency.filterDropdown then currency.filterDropdown.parent = currency end
+local detail = H.Frame()
+detail.CurrencyTransferToggleButton = H.Frame()
+if NS.Client.isForever then currency.DetailFrame = detail else currency.Popup = detail end
+TokenFrame = currency
+Check(type(H.hooks.ShowSubFrame) == "function", "native Character tab switch was not observed")
+H.hooks.ShowSubFrame()
+Check(currency.ScrollBox.surface and currency.ScrollBox.skinnedRows and currency.ScrollBar.skinned,
+    "opening the native Currency tab did not paint the list, rows and scrollbar")
+Check(not currency.filterDropdown or currency.filterDropdown.surface, "Retail's native currency filter retained stock chrome")
+Check(detail.CurrencyTransferToggleButton.surface, "the native transfer button was not skinned")
+TokenFrame = nil
 if not NS.Client.isForever then
     Check(CharacterFrameTab1.surface.active == false and CharacterFrameTab2.surface.active == true,
         "the Retail tabs did not show the native selection")

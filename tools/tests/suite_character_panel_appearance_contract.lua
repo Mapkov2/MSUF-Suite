@@ -53,6 +53,7 @@ local methods = {
     SetMaxLines = function(self, lines) self.maxLines = lines Write() end,
     SetSnapToPixelGrid = Write, SetTexelSnappingBias = Write,
     SetFrameStrata = function(self, strata) self.strata = strata Write() end,
+    GetFrameStrata = function(self) return self.strata or "MEDIUM" end,
     SetParent = function(self, parent) self.parent = parent Write() end,
     SetHitRectInsets = function(self, left, right, top, bottom) self.insets = {left, right, top, bottom} Write() end,
     SetFrameLevel = function(self, level)
@@ -219,6 +220,7 @@ local ns = { Text = function(value) return value end, Number = Number, Suite = s
     String = PublicText, IsSecret = Strict.IsSecret,
     Routing = { HoverGearTab = function() end, ReleaseGearClick = function() end },
     Host = { Client = {}, InCombat = function() return liveCombat end } }
+ns.Finite = function(value) return type(value) == "number" and value == value and math.abs(value) < math.huge end
 ns.Public = function(value)
     if rawequal(value, secretIdentity) then
         secretIdentityChecked = true
@@ -255,6 +257,8 @@ local files = { "Equipment", "Stats", "ModelControls", "WindowControls", "TabOve
 for _, file in ipairs(files) do
     assert(loadfile(path .. file .. ".lua"))("MSUF_Suite_CharacterPanel", ns)
 end
+assert(loadfile(path .. "Currency.lua"))("MSUF_Suite_CharacterPanel", ns)
+assert(loadfile(path .. "CurrencyControls.lua"))("MSUF_Suite_CharacterPanel", ns)
 local minimizedCount = 0
 local view = ns.View.New({
     tab = function(id) chosenTab = id end, slot = Noop, close = Noop, enter = Noop,
@@ -751,10 +755,23 @@ do
         { id = "overview", label = "Overview" }, { id = "reputation", label = "Reputation" },
         { id = "statistics", label = "Statistics" },
     }
+    local textScale, layouts = 1, 0
+    embedded.frame.GetEffectiveScale = function() return textScale end
+    local setTabs = embedded.SetTabs
+    function embedded:SetTabs(order, selected, force)
+        if force then layouts = layouts + 1 end
+        return setTabs(self, order, selected, force)
+    end
     local size = preview:Paint({}, "own", all, "overview", {}, 800)
     assert(size > 200 and size <= 426 and embedded.gear:IsShown() and embedded.model:IsShown()
         and embedded.left[1].slot == 1 and embedded.rail.cards[1]:IsShown(),
         "the full preview omitted the model, gear slots or Overview rail")
+    local initialLayouts = layouts
+    preview:Paint({}, "own", all, "overview", {}, 800)
+    assert(layouts == initialLayouts, "a stable scale repeatedly invalidated preview tabs")
+    textScale = .864
+    preview:Paint({}, "own", all, "overview", {}, 800)
+    assert(layouts == initialLayouts + 1, "the full character preview retained stale tab layout after menu zoom")
     embedded.left[1].scripts.OnClick(embedded.left[1], "LeftButton")
     assert(embedded.rail.cards[1].title.label.text == "Slot", "preview item selection missed its local details")
     embedded.tabButtons[2].scripts.OnClick(embedded.tabButtons[2])
@@ -1334,6 +1351,44 @@ do
     full:RefreshAppearance(nil)
     assert(full.artMask:GetAlpha() == 1 and full.gearMask:GetAlpha() == 1 and full.headerFill:GetAlpha() == 1,
         "turning off Forever Glass did not restore the native covers")
+    local windowShape = { fill = "continuous_r24_fill.png" }
+    local maskPaints = 0
+    ns.Host.Skin.GetRoundedWindowGeometry = function() return windowShape end
+    ns.Host.Skin.MaskOwnedWindow = function(owner, state, geometry, ...)
+        assert(owner == full.frame, "rounded chrome should follow the Suite window")
+        maskPaints = maskPaints + 1
+        state = state or { regions = {} }
+        for i = 1, select("#", ...) do state.regions[select(i, ...)] = geometry end
+        state.active = geometry ~= nil
+        return state
+    end
+    ns.Host.Skin.PaintRoundedWindowOutline = function(frame, art, pixels, r, g, b, a, strata, level, attached, logical)
+        assert(frame == full.frame and pixels == 2 and attached and not logical,
+            "rounded character outline should follow the hosted window and use pixel width")
+        art = art or Create("Frame", nil, frame)
+        art:Show()
+        return art
+    end
+    local outlineConfig = { windowOutline = 3, windowOutlineColor = "ff6600" }
+    full:RefreshAppearance(transparent, outlineConfig)
+    local roundedMask = assert(full.roundedMask)
+    assert(roundedMask.regions[full.headerFill] == windowShape and roundedMask.regions[full.headerRule] == windowShape
+        and roundedMask.regions[full.tabFill] == windowShape and roundedMask.regions[full.artMask] == windowShape,
+        "origins of square character chrome must be clipped, including the native cover")
+    assert(roundedMask.regions[close.caption.base] == windowShape and roundedMask.regions[close.caption.fill] == windowShape,
+        "the square close-button cover or hover could leak through a rounded corner")
+    assert(full.roundedOutline:IsShown() and not (full.outline and full.outline:IsShown()),
+        "visible character outline did not follow the shell")
+    full:RefreshAppearance(transparent, outlineConfig)
+    assert(maskPaints == 1, "unchanged rounded character chrome was rebound")
+    windowShape = { fill = "round_r20_fill.png" }
+    full:RefreshAppearance(transparent, outlineConfig)
+    assert(full.roundedMask == roundedMask and roundedMask.regions[full.headerFill] == windowShape,
+        "radius or family change did not reuse and update the mask")
+    full:RefreshAppearance(nil, outlineConfig)
+    assert(not roundedMask.active and not full.roundedOutline:IsShown() and full.outline:IsShown(),
+        "disabling the skin did not restore the character window's ordinary chrome")
+    full:RefreshAppearance(nil, {})
     ns.Host.Skin = previousSkin
 
     local noSet = "No equipment set equipped"
@@ -1562,4 +1617,42 @@ do
         "leaving the manager did not restore the standard report")
 end
 
-print("Character Panel appearance: full native, hosted fallback, Inspect, preview, fonts, offsets and warm paint passed")
+for _, forever in ipairs({ false, true }) do
+    ns.Host.Client.isForever = forever
+    CURRENCY_FILTER_TYPE_CHARACTER = "%s Only"
+    CURRENCY_FILTER_TYPE_TRANSFERABLE = "All Warband Transferable"
+    UnitName = function() return forever and "Mapko" or "RetailCharacter" end
+    local currencyTabs = { { id = "currency", label = "Currency" }, { id = "skills", label = "Skills" } }
+    local panel = ns.View.New({ tab = Noop, group = Noop })
+    panel.frame:Show()
+    panel:SetTabs(currencyTabs, "currency")
+    local config, reset = { currencyView = 1 }, false
+    local state = { query = "", groups = groups, module = { tab = "currency", view = panel, config = config } }
+    suite.Set = function(_, key, value) config[key] = value end
+    ns.Currency.Paint = function(_, _, changed) reset = changed end
+    rejectNativeScrollTemplate = true
+    panel:ShowCurrency(state, false)
+    rejectNativeScrollTemplate = false
+    local toolbar, list = panel.currencyControls, panel.currencyReport
+    assert(toolbar:IsShown() and list.scroll:IsShown() and list.track and not panel.report.scroll:IsShown())
+    assert(list.height < panel.report.height and toolbar.parent == list.parent, "currency controls overlap the rows")
+    assert(toolbar.modeLabel:GetText() == "All", "currency selector label has an extra glyph")
+    toolbar.mode.scripts.OnClick(toolbar.mode)
+    assert(menu[2].label == "All Warband Transferable" and menu[3].label == UnitName() .. " Only")
+    menu[3].pick(menu[3].data)
+    assert(config.currencyView == 3, "currency selector failed to save its stable view")
+    panel:ShowCurrency(state, false)
+    assert(toolbar.modeLabel:GetText() == menu[3].label, "currency selector did not display the selected label")
+    toolbar.search:SetText("  Crests ")
+    toolbar.search.scripts.OnTextChanged(toolbar.search, true)
+    assert(state.query == "crests" and reset, "search did not normalize input and reset the scroll")
+    liveCombat = true
+    panel:ShowCurrency(state, true)
+    assert(not toolbar:IsShown() and list.scroll:IsShown() and state.query == "crests")
+    liveCombat = false
+    panel:SetTabs(currencyTabs, "skills")
+    panel:ShowGroups(groups)
+    assert(not list.scroll:IsShown() and not toolbar:IsShown() and panel.report.scroll:IsShown())
+end
+
+print("Character Panel appearance: native, hosted fallback, Inspect, Currency, preview and warm paint passed")

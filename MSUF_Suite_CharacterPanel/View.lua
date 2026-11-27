@@ -163,7 +163,7 @@ local function Header(view)
     header:SetPoint("TOPRIGHT", -1, -1)
     header:SetHeight(HEADER - 1)
     view.headerFill = Fill(view, header, "BACKGROUND", PANEL)
-    Rule(view, header, "TOP", GOLD_LINE)
+    view.headerRule = Rule(view, header, "TOP", GOLD_LINE)
 
     if not view.embedded and (not view.nativeRoot or view.nativeLayout) then
         local drag = CreateFrame("Button", nil, header)
@@ -243,12 +243,13 @@ function View:RefreshAppearance(skin, headerConfig)
         if not self.embedded and skin and skin.RegisterMenu then skin:RegisterMenu(self.frame, true) end
         for frame, record in pairs(self.surfaces) do ApplySurface(self, frame, record) end
     elseif skin then
-        skin:RefreshAll()
+        if not skin.IsCurrent or not skin:IsCurrent() then skin:RefreshAll() end
         for frame, record in pairs(self.surfaces) do
             if not record.themed then ApplySurface(self, frame, record) end
         end
     end
     Window.SyncGlass(self, true)
+    Window.RefreshRoundedChrome(self)
     Window.RefreshOutline(self, headerConfig)
     local reflow, barHeight = RefreshFonts(self), self.reputationHeight
     if reflow and self.tabs then self:SetTabs(self.tabs, self.tab, true) end
@@ -690,12 +691,18 @@ local function GearBody(view)
     view.dismiss:SetSize(82, 24)
 end
 
+local function HideCurrency(view)
+    if view.currencyControls then NS.CurrencyControls.Hide(view) end
+    if view.currencyReport then Visible(view.currencyReport.scroll, false) end
+end
+
 function View:ShowGear(left, right, weapons, groups, selectedSlot, detailGroups, withModel, combat)
     local classic = self.characterView == "classic" and self.nativeLayout ~= nil and withModel == true
     if self.nativeLayout then Window.ApplyNativeGearMode(self, right, withModel, GearClick, GearEnter, GearLeave) end
     local reset = self.contentTab ~= self.tab or self.detailSlot ~= selectedSlot
     self.contentTab, self.detailSlot = self.tab, selectedSlot
     Visible(self.reportCover or self.report.scroll, false)
+    HideCurrency(self)
     if self.combatReport then Visible(self.combatReport.canvas, false) end
     Visible(self.gear, true)
     Visible(self.modelHost, withModel == true)
@@ -735,19 +742,44 @@ function View:RefreshInspectSummary(groups, relayout)
     PaintList(rail, NS.Number(rail.scroll:GetVerticalScroll()) or 0)
 end
 
+local function ShowReport(view)
+    view.contentTab, view.detailSlot = view.tab, nil
+    if view.gear then Visible(view.gear, false) end
+    if view.reportCover then Visible(view.reportCover, true) end
+    Window.SyncGlass(view)
+    Text(view.hint, "")
+end
+
 function View:ShowGroups(groups, combat, search, resetScroll)
     local reset = resetScroll or self.contentTab ~= self.tab
     search = search or self.tabSearch
     if search and not combat then groups = SearchGroups(self, groups, search, false) end
-    self.contentTab, self.detailSlot = self.tab, nil
-    if self.gear then Visible(self.gear, false) end
-    if self.reportCover then Visible(self.reportCover, true) end
-    Window.SyncGlass(self)
+    HideCurrency(self)
+    ShowReport(self)
     -- Forever's hosted report owns its scrollbar. The cached rows can still be
     -- scrolled in combat without running faction queries or native scroll scripts.
     local fixed = combat and not (self.tab == "reputation" and self.report.track)
     self.combatReport = GroupLayout.ShowList(self.report, self.combatReport, groups or GROUP_EMPTY, reset, fixed, Visible, SET_STYLE)
-    Text(self.hint, "")
+end
+
+function View:ShowCurrency(state, combat, reset)
+    if combat then NS.CurrencyControls.Hide(self) else NS.CurrencyControls.Show(self, state, SET_STYLE) end
+    local list = self.currencyReport
+    if not list then
+        local report = self.report
+        local inset = NS.CurrencyControls.Height
+        list = GroupLayout.NewList(self, report.parent, self.bodyWidth, report.height - inset, report.columns, PaintList, false, true)
+        list.scroll:ClearAllPoints()
+        list.scroll:SetPoint("TOPLEFT", 0, -inset)
+        self.currencyReport = list
+    end
+    reset = reset or self.contentTab ~= self.tab
+    Visible(self.report.scroll, false)
+    if self.combatReport then Visible(self.combatReport.canvas, false) end
+    ShowReport(self)
+    local groups = state.groups or GROUP_EMPTY
+    if not combat or list.groups ~= groups or reset then GroupLayout.Paint(list, groups, reset) end
+    Visible(list.scroll, true)
 end
 
 function View:ReflowText()

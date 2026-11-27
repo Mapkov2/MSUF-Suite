@@ -128,7 +128,9 @@ function Preview:Paint(config, mode, order, tab, overrides, width)
     end
     view.previewLayers = overrides
     view:RefreshAppearance(self.context:Skin(), config)
-    view:SetTabs(order, tab)
+    local tabScale = frame:GetEffectiveScale()
+    view:SetTabs(order, tab, self.tabScale ~= tabScale)
+    self.tabScale = tabScale
     local tabsShown = overrides.tabs ~= false
     if view.tabBar:IsShown() ~= tabsShown then view.tabBar:SetShown(tabsShown) end
     view:SetHeader(sample.name, sample.class, sample.itemLevel, sample.portrait, mode, sample)

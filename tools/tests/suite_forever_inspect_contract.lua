@@ -65,7 +65,7 @@ local ns = {
             return true
         end,
     },
-    ControlSkin = { ApplyButton = function(button, _, spec)
+    ControlSkin = { MarkFixedButtonSpec = function(spec) return spec end, ApplyButton = function(button, _, spec)
         if type(button.CreateTexture) ~= "function" or type(button.SetHighlightTexture) ~= "function"
             or type(button.SetPushedTexture) ~= "function" then
             return nil, "invalid button"
@@ -79,8 +79,10 @@ local ns = {
     GenericWindows = { IsCategoryEnabled = function() return true end },
     CharacterDetails = { Apply = noop, Disable = noop },
     WindowControls = { TrackFocus = function() end, Attach = noop },
+    -- InspectPanel tracks its window's opening motion (Rendering/MenuMotion.lua).
+    MenuMotion = { Track = noop },
 }
-ns.Safety = assert(loadfile(root .. "/MSUF_Suite/Appearance/Safety.lua"))("MSUF_Suite_Skin", ns) or ns.Safety
+ns.Safety =assert(loadfile(root .. "/MSUF_Suite/Appearance/Safety.lua"))("MSUF_Suite_Skin", ns) or ns.Safety
 for _, file in ipairs({ "AdapterKit", "PaperDollChrome", "InspectPanel" }) do
     assert(loadfile(root .. "/MSUF_Suite_Skin/Adapters/" .. file .. ".lua"))("MSUF_Suite_Skin", ns)
 end

@@ -136,19 +136,46 @@ function Window.RefreshGlass(view, skin)
     end
 end
 
+local function RoundedChromeRegions(view)
+    local regions = { view.headerFill, view.headerRule, view.tabFill, view.artMask }
+    for _, cell in ipairs(view.window.captionCells or {}) do
+        regions[#regions + 1] = cell.caption.base
+        regions[#regions + 1] = cell.caption.fill
+    end
+    return regions
+end
+
+function Window.RefreshRoundedChrome(view)
+    local skin = NS.Host.Skin
+    if not skin or not skin.GetRoundedWindowGeometry then return end
+    local geometry = view.surfaces[view.frame].themed and skin.GetRoundedWindowGeometry() or nil
+    if geometry == view.roundedGeometry then
+        view.roundedPending = nil
+        return
+    end
+    view.roundedRegions = view.roundedRegions or RoundedChromeRegions(view)
+    view.roundedMask = skin.MaskOwnedWindow(view.frame, view.roundedMask, geometry, unpack(view.roundedRegions))
+    view.roundedGeometry = view.roundedMask and view.roundedMask.active and geometry or nil
+    view.roundedPending = geometry and not view.roundedGeometry and NS.Host.InCombat() or nil
+end
+
 function Window.RefreshOutline(view, config)
     local outline = NS.Suite.WindowOutline
     if not outline then return end
     local pixels = config and config.windowOutline
     pixels = pixels == 3 and 2 or pixels == 2 and 1 or 0
-    if pixels == 0 then
-        if view.outline then view.outline:Hide() end
-        return
-    end
+    local skin = NS.Host.Skin
+    local round = pixels > 0 and view.roundedGeometry ~= nil and skin.PaintRoundedWindowOutline
+    if view.outline and (round or pixels == 0) then view.outline:Hide() end
+    if view.roundedOutline and not round then view.roundedOutline:Hide() end
+    if pixels == 0 then return end
     local r, g, b = NS.Suite.RGB(config.windowOutlineColor or "000000")
-    local frame = view.frame
-    view.outline = outline.Paint(frame, view.outline, pixels, r or 0, g or 0, b or 0, 1,
-        frame:GetFrameStrata(), frame:GetFrameLevel() + 90)
+    local frame, strata, level = view.frame, view.frame:GetFrameStrata(), view.frame:GetFrameLevel() + 90
+    if round then
+        view.roundedOutline = round(frame, view.roundedOutline, pixels, r or 0, g or 0, b or 0, 1, strata, level, true, false)
+    else
+        view.outline = outline.Paint(frame, view.outline, pixels, r or 0, g or 0, b or 0, 1, strata, level)
+    end
 end
 
 function Window.HostNativeView(view)

@@ -17,6 +17,8 @@ function P.BuildHUDCharacterPanel(ctx, builder)
     P.SkinPageKit.BuildCharacter(ctx, builder)
     P.RuleSection(ctx, builder, PAGE, ID, PAGE .. "_" .. ID .. "_reputation", P.Tr("Reputation"),
         P.SectionRules(ID, "reputation"), { open = true, onBuilt = P.HUDMenu.Prepare })
+    P.RuleSection(ctx, builder, PAGE, ID, PAGE .. "_" .. ID .. "_currency", P.Tr("Currency"),
+        P.SectionRules(ID, "currency", function(rule) return not rule.hidden end), { onBuilt = P.HUDMenu.Prepare })
     P.CharacterPanelBindings.Build(ctx, builder)
     local controls = P.catalog[ID].rules
     local sections = {}

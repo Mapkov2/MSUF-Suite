@@ -655,6 +655,11 @@ local function Run(forever)
                             lastGearSummary = lastRail[#lastRail] and lastRail[#lastRail].rows
                         end
                     end,
+                    ShowCurrency = function(self, state, combat)
+                        lastGroup = "currency"
+                        self.currencyCombat = combat
+                        self:ShowGroups(state.groups, false)
+                    end,
                     ApplyWindowPreferences = function(_, state)
                         if not nativeRoot then boundPreferences = state end
                     end,
@@ -679,7 +684,15 @@ local function Run(forever)
     Load("Stats", ns)
     Load("Reputation", ns)
     Load("ReputationList", ns)
+    local currencyFilter = 1
+    C_CurrencyInfo.GetCurrencyFilter = function() return currencyFilter end
+    C_CurrencyInfo.SetCurrencyFilter = function(value) currencyFilter = value end
+    C_CurrencyInfo.IsAccountCharacterCurrencyDataReady = function() return true end
+    C_CurrencyInfo.GetCurrencyListInfo = function() return nil end
+    Enum.CurrencyFilterType = { DiscoveredOnly = 1, DiscoveredAndAllAccountTransferable = 2 }
+    Load("Currency", ns)
     Load("Pages", ns)
+    Load("Statistics", ns)
     local reputationConfig
     ns.Pages.Read = function(tab, _, config)
         lastGroup, groupReads = tab, groupReads + 1
@@ -1699,25 +1712,17 @@ local function Run(forever)
     Flush()
     assert(not hostedView.tabSearch and not runtime.searchState, "disabling search did not update the open custom tab")
     do
-        config.searchTabs = "currency"
         actions.tab("currency")
-        local search = assert(hostedView.tabSearch)
-        search.groups = lastReport
-        local paints = hostedView.reportPaints
+        local currency = assert(runtime.currencies)
+        currency.query = "coin"
+        local cached = lastReport
         locked = true
         Event(runtime, "PLAYER_REGEN_DISABLED")
-        assert(not hostedView.tabSearch and hostedView.reportPaints == paints, "an empty search repainted the currency list in combat")
+        assert(not hostedView.tabSearch and hostedView.currencyCombat and not hostedView.fixedReport
+            and lastReport == cached and currency.query == "coin", "combat lost cached currency rows or search")
         locked = false
         Event(runtime, "PLAYER_REGEN_ENABLED")
-        search.query = "coin"
-        paints = hostedView.reportPaints
-        locked = true
-        Event(runtime, "PLAYER_REGEN_DISABLED")
-        assert(hostedView.reportPaints == paints + 1 and not hostedView.fixedReport,
-            "clearing the active currency filter on combat entry disabled scrolling")
-        locked = false
-        Event(runtime, "PLAYER_REGEN_ENABLED")
-        config.searchTabs = ""
+        assert(not hostedView.currencyCombat and currency.query == "coin")
         actions.tab(home)
     end
     config.customTabs, config.homeTab = "", home

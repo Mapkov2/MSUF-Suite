@@ -16,7 +16,10 @@ Reputation.lua
 ReputationList.lua
 ReputationSearch.lua
 ReputationBar.lua
+Currency.lua
+CurrencyControls.lua
 Pages.lua
+Statistics.lua
 ModelControls.lua
 WindowControls.lua
 TabOverflow.lua

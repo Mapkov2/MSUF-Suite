@@ -28,6 +28,9 @@ local panelSlots = {}
 GetUIPanel = function(slot) return panelSlots[slot] end
 -- Window controls load before the adapters (TOC); none of these windows has any.
 local windowControls = { states = {} }
+-- ContentMotion loads after the adapters (TOC); the geometry registers its
+-- opening cover at run time.
+local openingCovers = {}
 
 local NS = {
     -- Retail: the dossier and its modern equipment rows are available.
@@ -40,6 +43,7 @@ local NS = {
     GenericWindows = { IsCategoryEnabled = function() return true end },
     Surface = { SetVisible = function(frame, visible) frame.surfaceVisible = visible end },
     WindowControls = windowControls,
+    ContentMotion = { SetOpeningCover = function(frame, cover) openingCovers[frame] = cover end },
 }
 local skin = root .. "/MSUF_Suite_Skin/"
 MSUFSuite = { Skin = {} }
@@ -506,7 +510,8 @@ local wasForever = NS.Client.isForever
 NS.Client.isForever = true
 local alphaHooks, refreshes = 0, 0
 local nativeFade, unrelatedFade = { owner = "blizzardWindows" }, { owner = "blizzardWindows" }
-NS.ContentMotion = { records = { [CharacterFrame] = nativeFade }, active = { [nativeFade] = true, [unrelatedFade] = true } }
+NS.ContentMotion.records = { [CharacterFrame] = nativeFade }
+NS.ContentMotion.active = { [nativeFade] = true, [unrelatedFade] = true }
 function NS.ContentMotion.StopOwner(owner, root)
     assert(owner == nativeFade.owner and root == CharacterFrame)
     NS.ContentMotion.active[nativeFade] = nil
@@ -573,6 +578,85 @@ CharacterFrame.GetAlpha = alphaReader
 Check(geometry.SetGlass(CharacterFrame, surface, true, true, true) and CharacterFrame.alpha == 0 and model.ignoreAlpha,
     "an unprotected first combat open was left opaque")
 combatAlpha = false
+
+-- The opening cover. The Suite opens its view one frame after the native
+-- window shows; under Glass the opening frame hides the root already instead
+-- of fading the whole CharacterFrame tree. SetGlass adopts that early glass;
+-- an open the Suite does not take over gets the window back two frames later.
+do
+    local cover = assert(openingCovers[CharacterFrame], "the Suite geometry did not register its opening cover")
+    local glassLook, gamepad, hops, after = true, false, {}, C_Timer.After
+    NS.Surface.UsesGlassCompositing = function() return glassLook end
+    NS.Client.IsGamepadUI = function() return gamepad end
+    C_Timer.After = function(delay, callback) assert(delay == 0) hops[#hops + 1] = callback end
+    local function Hop() table.remove(hops, 1)() end
+    locked = false
+    geometry.SetGlass(CharacterFrame, surface, false, false) -- a close: the view hid with its root
+    Check(CharacterFrame.alpha == .9 and not model.ignoreAlpha, "closing Glass did not give the native window back")
+    Check(cover(CharacterFrame) == true and CharacterFrame.alpha == 0 and not model.ignoreAlpha and #hops == 1,
+        "a Glass opening was not covered, or the model drew through the cover")
+    local rootWrites, writeRootAlpha = 0, CharacterFrame.SetAlpha
+    function CharacterFrame:SetAlpha(value) rootWrites = rootWrites + 1 return writeRootAlpha(self, value) end
+    Check(geometry.SetGlass(CharacterFrame, surface, true, false, false, refreshReport) and rootWrites == 0
+        and CharacterFrame.alpha == 0, "the Suite view restored and faded the covered root again")
+    Hop()
+    Check(#hops == 0 and CharacterFrame.alpha == 0, "the settle timer undid a cover the Suite took over")
+    CharacterFrame.SetAlpha = writeRootAlpha
+    -- An open the Suite does not take over: the window returns on frame N+2.
+    geometry.SetGlass(CharacterFrame, surface, false, false)
+    Check(cover(CharacterFrame) and CharacterFrame.alpha == 0, "the second opening was not covered")
+    Hop()
+    Check(#hops == 1 and CharacterFrame.alpha == 0, "the cover ended before the Suite's open tick")
+    Hop()
+    Check(#hops == 0 and CharacterFrame.alpha == .9 and not surface.ignoreAlpha,
+        "an opening the Suite did not take over stayed hidden")
+    -- In combat the release waits for the combat end, as SetGlass does.
+    Check(cover(CharacterFrame), "the third opening was not covered")
+    Hop()
+    locked = true
+    Hop()
+    Check(CharacterFrame.alpha == 0 and type(pending) == "function", "the cover restored the root during combat")
+    locked = false
+    local restoreCover = pending
+    pending = nil
+    restoreCover()
+    Check(CharacterFrame.alpha == .9, "the combat-deferred cover release did not restore the root")
+    -- Combat starts between the cover and the Suite's open: the open adopts it.
+    Check(cover(CharacterFrame), "the fourth opening was not covered")
+    locked = true
+    Check(geometry.SetGlass(CharacterFrame, surface, true, false, false, refreshReport), "a combat open dropped the cover")
+    Hop()
+    Check(#hops == 0 and pending == nil and CharacterFrame.alpha == 0, "a combat open left its cover to the settle timer")
+    locked = false
+    geometry.SetGlass(CharacterFrame, surface, false, false)
+    Check(CharacterFrame.alpha == .9, "closing after a combat open kept the root hidden")
+    -- A callback from the previous open cannot advance a replacement cover.
+    Check(cover(CharacterFrame), "the first quick opening was not covered")
+    Check(geometry.SetGlass(CharacterFrame, surface, true, false, false, refreshReport),
+        "the first quick opening was not adopted")
+    geometry.SetGlass(CharacterFrame, surface, false, false)
+    Check(cover(CharacterFrame) and #hops == 2, "the second quick opening was not covered")
+    Hop()
+    Hop()
+    Check(#hops == 1 and CharacterFrame.alpha == 0, "the old callback ended a new opening cover a frame too early")
+    Hop()
+    Check(#hops == 0 and CharacterFrame.alpha == .9, "the new opening cover did not restore normally")
+    -- Combat, the Gamepad UI, a non-Glass look and Retail keep the native fade.
+    for _, case in ipairs({ "locked", "gamepad", "look", "retail" }) do
+        locked, gamepad, glassLook, NS.Client.isForever = case == "locked", case == "gamepad", case ~= "look", case ~= "retail"
+        Check(not cover(CharacterFrame) and CharacterFrame.alpha == .9 and #hops == 0, "the cover engaged: " .. case)
+    end
+    locked, gamepad, glassLook, NS.Client.isForever = false, false, true, true
+    -- A deliberate disable with the view open (classic view, Gamepad UI, look)
+    -- ends the cover until the view shows Glass again.
+    Check(geometry.SetGlass(CharacterFrame, surface, true, false, false, refreshReport), "Glass did not reopen")
+    surface.IsVisible = function() return true end
+    geometry.SetGlass(CharacterFrame, surface, false, false)
+    surface.IsVisible = nil
+    Check(CharacterFrame.alpha == .9 and not cover(CharacterFrame) and #hops == 0,
+        "a deliberate Glass disable still covered the next opening")
+    C_Timer.After = after
+end
 NS.Client.isForever = wasForever
 
 locked = true
@@ -600,6 +684,7 @@ Check(closeAnchor == closePoint[1] and closeRelative == closePoint[2] and closeR
     and closeX == closePoint[4] and closeY == closePoint[5] and close.scale == 1 and close.level == 6,
     "Basic did not get its original Close anchor, scale and layer back")
 Check(not geometry.WindowAction(CharacterFrame, "release"), "released geometry still offered native window actions")
+Check(openingCovers[CharacterFrame] == nil, "released geometry still covered the native Character opening")
 Check(CharacterFrame.alpha == .9 and not surface.ignoreAlpha and not flyout.ignoreAlpha and not model.ignoreAlpha,
     "releasing native layout retained the Glass backdrop override")
 local _, restoredControlAnchor, _, _, restoredControlY = modelControls:GetPoint(1)

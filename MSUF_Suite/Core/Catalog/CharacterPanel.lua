@@ -213,6 +213,7 @@ end
 
 -- Reputation already has its own search. Other player tabs opt in by stable ID.
 function Header.TabSearchEnabled(config, id)
+    if id == "currency" then return config.currencySearch ~= false end
     local ids = config.searchTabs
     return type(ids) == "string" and type(id) == "string" and id ~= "reputation"
         and ("," .. ids .. ","):find("," .. id .. ",", 1, true) ~= nil
@@ -222,7 +223,8 @@ function Header.SearchTabs(config, changed, enabled, custom)
     local result = {}
     local function Include(tab)
         local id = tab.id
-        if id ~= "reputation" and ((id == changed and enabled) or (id ~= changed and Header.TabSearchEnabled(config, id))) then
+        if id ~= "reputation" and id ~= "currency"
+            and ((id == changed and enabled) or (id ~= changed and Header.TabSearchEnabled(config, id))) then
             result[#result + 1] = id
         end
     end
@@ -385,6 +387,19 @@ Build.Section(ID, "reputation", "Reputation", {
     }),
     Build.Number("reputationBarHeight", "Bar height", 3, 2, 8),
     reputationColor,
+})
+
+local currencyView = Build.Choice("currencyView", "Currency", 1, { "All", "Warband", "Character" })
+local currencyFavorites = Build.String("currencyFavorites", "Favorites", "", 512)
+currencyView.hidden, currencyFavorites.hidden = true, true
+Build.Section(ID, "currency", "Currency", {
+    currencyView, currencyFavorites,
+    Build.Choice("currencySort", "Sort by", 1, { "Category", "Name", "Quantity" }),
+    Build.Bool("currencyHideZero", "Hide zero balances", false),
+    Build.Bool("currencyShowInactive", "Show inactive currencies", true),
+    Build.Bool("currencyIcons", "Show currency icons", true),
+    Build.Bool("currencyCaps", "Show currency caps", false),
+    Build.Bool("currencySearch", "Search", true),
 })
 
 for reaction, name in ipairs(rankNames) do

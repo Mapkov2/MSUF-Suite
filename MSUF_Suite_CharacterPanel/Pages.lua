@@ -741,64 +741,14 @@ local function ReadHonor(buffer)
     Row(group, Text("Honor progress"), Progress(Number(UnitHonor("player")), Number(UnitHonorMax("player"))))
 end
 
-local function ReadCurrency(buffer)
-    local group
-    for index = 1, Number(C_CurrencyInfo.GetCurrencyListSize()) or 0 do
-        local info = C_CurrencyInfo.GetCurrencyListInfo(index)
-        local name = IsTable(info) and String(info.name)
-        if name then
-            if Flag(info.isHeader) then
-                group = Group(buffer, name, index, not Flag(info.isHeaderExpanded), Number(info.currencyListDepth))
-            else
-                group = group or Group(buffer, Text("Currencies"))
-                Row(group, name, Number(info.quantity))
-            end
-        end
-    end
-end
-
-local function ReadStatisticsCategory(buffer, category)
-    local title = String(GetCategoryInfo(category))
-    local count = Number(GetCategoryNumAchievements(category))
-    if not title or not count or count < 1 then return end
-    local group
-    for index = 1, count do
-        local quantity, skip, statistic = GetStatistic(category, index)
-        statistic = Number(statistic)
-        if Public(skip) and not skip and statistic then
-            local name = String(select(2, GetAchievementInfo(statistic)))
-            if name then
-                group = group or Group(buffer, title)
-                local value = String(quantity)
-                local amount = Number(quantity) or (value and Number(tonumber(value)))
-                Row(group, name, amount and amount > 0 and amount)
-            end
-        end
-    end
-end
-
-local function ReadStatistics(buffer)
-    local categories = GetStatisticsCategoryList()
-    if not IsTable(categories) then return end
-    -- Blizzard also handles sparse ordinal keys in the returned category list.
-    local keys, count = buffer.keys, 0
-    for index, category in pairs(categories) do
-        if Number(index) and Number(category) then
-            count = count + 1
-            keys[count] = index
-        end
-    end
-    for index = #keys, count + 1, -1 do keys[index] = nil end
-    table.sort(keys)
-    for index = 1, count do ReadStatisticsCategory(buffer, categories[keys[index]]) end
-end
-
+-- Statistics.lua reads and caches the Statistics page; Pages.Read hands it the buffer helpers.
 local readers = {
-    reputation = ReadReputation, currency = ReadCurrency, statistics = ReadStatistics,
+    reputation = ReadReputation,
     skills = Forever and ReadSkills or ReadProfessions, pvp = Forever and ReadPvP or ReadHonor,
 }
 
 function Pages.Read(tab, groups, config, catalog)
+    if tab == "statistics" and NS.Statistics.Read(groups, Buffer, Group, Row, Finish) then return groups end
     local buffer = Buffer(groups)
     local reader = readers[tab]
     if reader then reader(buffer, config, catalog) end
@@ -822,14 +772,6 @@ function Pages.Toggle(tab, index)
     elseif tab == "skills" and skills then
         local info = skills.GetSkillLineInfo(index)
         return ToggleHeader(info, index, skills.ExpandSkillHeader, skills.CollapseSkillHeader)
-    elseif tab == "currency" then
-        local info = C_CurrencyInfo.GetCurrencyListInfo(index)
-        if not IsTable(info) or not Flag(info.isHeader) then return false end
-        local expanded = info.isHeaderExpanded
-        if Public(expanded) and type(expanded) == "boolean" then
-            C_CurrencyInfo.ExpandCurrencyList(index, not expanded)
-            return true
-        end
     end
     return false
 end

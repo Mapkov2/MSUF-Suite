@@ -91,6 +91,7 @@ Adapters\CharacterDetails.lua
 Adapters\CharacterStats.lua
 Adapters\EQoLCharacter.lua
 Adapters\PaperDollChrome.lua
+Adapters\CharacterTabViews.lua
 Adapters\CharacterPanel.lua
 Adapters\InspectPanel.lua
 Adapters\SocialUI.lua

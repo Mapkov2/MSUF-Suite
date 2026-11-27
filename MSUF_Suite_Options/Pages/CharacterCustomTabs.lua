@@ -150,7 +150,10 @@ end
 
 function Content.SearchOption(menu, config, id, current)
     menu:CreateCheckbox(Tr("Search"), function() return Header.TabSearchEnabled(config, id) end, function()
-        if current() then P.Set(ID, "searchTabs", Header.SearchTabs(config, id, not Header.TabSearchEnabled(config, id))) end
+        if not current() then return end
+        local show = not Header.TabSearchEnabled(config, id)
+        if id == "currency" then P.Set(ID, "currencySearch", show)
+        else P.Set(ID, "searchTabs", Header.SearchTabs(config, id, show)) end
     end)
 end
 

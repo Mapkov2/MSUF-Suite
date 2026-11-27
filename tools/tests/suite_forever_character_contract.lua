@@ -13,6 +13,9 @@ securecallfunction = function(callback, ...)
     end
     return unpack(results, 2, table.maxn(results))
 end
+-- The client's frame clock: GetTime() stays the same within one frame.
+local clock = 0
+GetTime = function() return clock end
 
 local function Texture(atlas)
     return { atlas = atlas, vertex = { 1, 1, 1, 1 },
@@ -92,6 +95,7 @@ end
 character:UpdateTabLayout()
 character.selectedTab = 2
 function character:SetSelectedModeTabByFrame(index) self.selectedTab = index end
+function character:ShowSubFrame() end
 character.TitleText = Texture()
 CharacterFrame = character
 CharacterModelScene = Frame()
@@ -125,7 +129,7 @@ hooksecurefunc = function(target, method, callback)
         return
     end
     assert(target == character and (method == "SetSelectedModeTabByFrame"
-        or method == "UpdateTabLayout"))
+        or method == "UpdateTabLayout" or method == "ShowSubFrame"))
     hooks[method] = callback
 end
 -- PaperDoll slot updates arrive through this global.
@@ -157,11 +161,23 @@ local function QueueJob(job)
     queuedJobs[#queuedJobs + 1] = job
 end
 local function NextFrame()
+    clock = clock + 1
     local jobs = queuedJobs
     queuedJobs = {}
     for _, job in ipairs(jobs) do job() end
 end
 local gamepadUI = false
+-- Surface.Attach paints; Surface.Ensure leaves a surface alone that shows this
+-- spec and was painted for the current generation (any settings notification
+-- starts a new one, Rendering/Surface.lua).
+local paint = { generation = 1, attaches = 0, ensures = 0, buttons = 0 }
+local reusableControlSpecs = {}
+local function AttachSurface(target, spec)
+    paint.attaches = paint.attaches + 1
+    target.surface, target.paintedFor = spec, paint.generation
+    return spec
+end
+themeListeners.surfaceGeneration = function() paint.generation = paint.generation + 1 end
 local ns = {
     Client = { isForever = true, IsGamepadUI = function() return gamepadUI end },
     DB = { theme = { look = "foreverGlass" } },
@@ -175,22 +191,33 @@ local ns = {
         FadeNineSlice = function() return true end,
     },
     Surface = {
-        Attach = function(target, spec) target.surface = spec; return spec end,
-        -- The update-hook attach (Surface.Ensure) paints like Attach here.
-        Ensure = function(target, spec) target.surface = spec; return spec end,
+        Attach = AttachSurface,
+        Ensure = function(target, spec)
+            paint.ensures = paint.ensures + 1
+            if target.surface == spec and target.paintedFor == paint.generation then return spec end
+            return AttachSurface(target, spec)
+        end,
         SetActive = function(target, active) target.active = active; return true end,
         SetVisible = function(target, shown) target.surfaceVisible = shown; return true end,
     },
-    ControlSkin = { ApplyButton = function(tab, _, spec)
-        tab.surface = spec
-        return true
-    end },
+    ControlSkin = {
+        MarkFixedButtonSpec = function(spec, reusePaint)
+            reusableControlSpecs[spec] = reusePaint
+            return spec
+        end,
+        ApplyButton = function(tab, _, spec)
+            paint.buttons = paint.buttons + 1
+            tab.surface = spec
+            return true
+        end,
+    },
     CharacterStats = { Apply = function() end, Disable = function() end },
     GearAnnotations = { IsWide = function() return false end },
     GearGeometry = { Owns = function() return false end },
     CharacterDetails = { Apply = function() end, Disable = function() end, views = {} },
     EQoLCharacter = { Apply = function() end, Disable = function() end },
-    GenericWindows = { IsCategoryEnabled = function() return true end },
+    GenericWindows = { IsCategoryEnabled = function() return true end, ApplyDescendant = function(list) list.skinnedRows = true return true end },
+    ScrollBarSkin = { Apply = function(bar) if bar then bar.skinned = true end end },
     CombatGate = { RunOrDefer = function(_, callback) callback(); return true end,
         Cancel = function() end },
     IconSkin = { Apply = function(_, _, spec)
@@ -198,7 +225,7 @@ local ns = {
         return {}
     end },
 }
-for _, file in ipairs({ "AdapterKit", "SharedChrome", "PaperDollChrome", "CharacterPanel" }) do
+for _, file in ipairs({ "AdapterKit", "SharedChrome", "PaperDollChrome", "CharacterTabViews", "CharacterPanel" }) do
     assert(loadfile(rootPath .. "/MSUF_Suite_Skin/Adapters/" .. file .. ".lua"))("MSUF_Suite_Skin", ns)
 end
 if secretCase then
@@ -213,15 +240,18 @@ hooks.PaperDollItemSlotButton_Update(rangedSlot)
 assert(rangedSlot.surface, "a native ranged slot update did not refresh its skin (FV-10)")
 assert(hooks.PaperDollFrame_UpdateSidebarTabs, "native sidebar updates were not observed")
 PaperDollSidebarTab4.surface = nil
+clock = clock + 1 -- a later frame
 hooks.PaperDollFrame_UpdateSidebarTabs()
 assert(PaperDollSidebarTab4.surface, "native sidebar update lost the fourth tab")
 -- A three-tab native layout leaves a stray fourth frame alone.
 PAPERDOLL_SIDEBARS[4] = nil
 PaperDollSidebarTab4.surface = nil
+clock = clock + 1
 hooks.PaperDollFrame_UpdateSidebarTabs()
 assert(not PaperDollSidebarTab4.surface and PaperDollSidebarTab3.surface,
     "three-tab native layouts did not retain their own sidebar count")
 PAPERDOLL_SIDEBARS[4] = "Pet"
+clock = clock + 1
 hooks.PaperDollFrame_UpdateSidebarTabs()
 local function Parts(index) return ns.CharacterPanel.tabParts[tabs[index]] end
 assert(itemLevelValue.text == "612.25 / 615.50", "the skin did not format the item level")
@@ -258,12 +288,14 @@ currency.ScrollBox = Frame()
 currency.DetailFrame = Frame()
 TokenFrame = currency
 character.selectedTab = 5
+clock = clock + 1
 hooks.SetSelectedModeTabByFrame()
 assert(currency.ScrollBox.surface.role == "panel"
     and currency.DetailFrame.surface.role == "card"
     and tabs[5].active and Parts(5).rule.shown,
     "lazy native Forever currency content did not receive its skin")
 character.selectedTab = 3
+clock = clock + 1
 hooks.SetSelectedModeTabByFrame()
 assert(not tabs[2].active and tabs[3].active
     and Parts(3).rule.shown and not Parts(2).rule.shown,
@@ -307,6 +339,7 @@ assert(character.ModeTabs.frameStrata == "HIGH"
 -- CharacterFrame.xml:606-610) and puts LB above the first and RB below the
 -- last tab (Tab/TabIndicators.lua:66-72); the native rail stays, still skinned.
 gamepadUI = true
+clock = clock + 1
 hooks.SetSelectedModeTabByFrame()
 assert(character.ModeTabs.points[1][3] == "TOPRIGHT" and character.ModeTabs.points[1][5] == -30
     and tabs[3].points[1][2] == character.ModeTabs and tabs[3].points[1][4] == 0
@@ -314,9 +347,82 @@ assert(character.ModeTabs.points[1][3] == "TOPRIGHT" and character.ModeTabs.poin
     and tabs[2].surface and tabs[2].surface.fillVisible ~= false and tabs[3].active,
     "the Gamepad UI kept the horizontal tab row under its vertical LB/RB prompts (FV-12b)")
 gamepadUI = false
+clock = clock + 1
 hooks.SetSelectedModeTabByFrame()
 assert(character.ModeTabs.points[1][4] == 8 and Parts(2).label.shown == true,
     "leaving the Gamepad UI did not bring the Forever tab row back")
+
+-- One opening frame repeats the selection and sidebar refresh up to three times
+-- (PaperDollFrame_OnShow and RefreshRightPane both run Expand). Surfaces painted
+-- for this generation are ensured, never repainted, and a repeat with unchanged
+-- readable inputs in the same frame does no work. The next frame, a changed
+-- input or a settings notification still repaints.
+reputation.ReputationDetailFrame.ViewRenownButton = Frame()
+local tab1 = PaperDollSidebarTab1
+function tab1:GetChecked() return self.checked end
+clock = clock + 1
+local attaches, ensures, buttons = paint.attaches, paint.ensures, paint.buttons
+hooks.SetSelectedModeTabByFrame()
+local firstEnsures, firstButtons = paint.ensures, paint.buttons
+hooks.SetSelectedModeTabByFrame()
+hooks.SetSelectedModeTabByFrame()
+assert(paint.attaches == attaches, "a warm mode-tab refresh repainted current surfaces instead of ensuring them")
+assert(firstEnsures > ensures and firstButtons > buttons
+    and paint.ensures == firstEnsures and paint.buttons == firstButtons,
+    "a repeated mode-tab refresh in the same frame skinned the tabs and native panes again")
+assert(reusableControlSpecs[reputation.ReputationDetailFrame.ViewRenownButton.surface],
+    "the character action button did not opt in to reuse of its current paint")
+hooks.PaperDollFrame_UpdateSidebarTabs()
+local sidebarButtons = paint.buttons
+hooks.PaperDollFrame_UpdateSidebarTabs()
+hooks.PaperDollFrame_UpdateSidebarTabs()
+assert(sidebarButtons > firstButtons and paint.buttons == sidebarButtons and paint.attaches == attaches,
+    "a repeated sidebar refresh in the same frame skinned the sidebar tabs again")
+assert(reusableControlSpecs[tab1.surface] and tab1.surface.active == false,
+    "the inactive character sidebar tab did not reuse its current paint")
+-- A changed selection, width or checked state within the frame runs in full.
+character.selectedTab = 4
+hooks.SetSelectedModeTabByFrame()
+assert(paint.ensures > firstEnsures and tabs[4].active and not tabs[3].active,
+    "a selection change in the same frame was skipped")
+local selectedEnsures = paint.ensures
+character.width = 647
+hooks.SetSelectedModeTabByFrame()
+assert(paint.ensures > selectedEnsures, "a width change in the same frame was skipped")
+character.width, character.selectedTab = 646, 3
+hooks.SetSelectedModeTabByFrame()
+tab1.checked = true
+hooks.PaperDollFrame_UpdateSidebarTabs()
+assert(paint.buttons > sidebarButtons and tab1.surface.active == true,
+    "a sidebar selection change in the same frame was skipped")
+assert(reusableControlSpecs[tab1.surface], "the active character sidebar tab did not reuse its current paint")
+-- The next frame runs both passes in full again.
+local frameEnsures, frameButtons = paint.ensures, paint.buttons
+clock = clock + 1
+hooks.SetSelectedModeTabByFrame()
+assert(paint.ensures > frameEnsures and paint.buttons > frameButtons, "the next frame's mode-tab refresh was skipped")
+frameButtons = paint.buttons
+hooks.PaperDollFrame_UpdateSidebarTabs()
+assert(paint.buttons > frameButtons, "the next frame's sidebar refresh was skipped")
+-- An unreadable selection is never a key: every pass runs.
+if secretCase then
+    character.selectedTab = secretStrata
+    local secretEnsures = paint.ensures
+    hooks.SetSelectedModeTabByFrame()
+    local once = paint.ensures
+    hooks.SetSelectedModeTabByFrame()
+    assert(once > secretEnsures and paint.ensures - once == once - secretEnsures,
+        "a secret selection was used as a pass key")
+    character.selectedTab = 3
+end
+-- A settings notification starts a new paint generation; the theme job repaints.
+attaches = paint.attaches
+themeListener(nil, "profile", nil)
+NextFrame()
+assert(paint.attaches > attaches and tabs[3].paintedFor == paint.generation
+    and reputation.ScrollBox.paintedFor == paint.generation,
+    "a settings change did not repaint the warm character surfaces")
+tab1.checked = nil
 
 -- Blizzard's PaperDoll post-hooks: a raising pass is reported and never
 -- reaches Blizzard's caller.

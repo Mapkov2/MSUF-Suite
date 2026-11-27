@@ -48,7 +48,33 @@ local function CheckClient(forever)
     env.UnitHonorLevel = Native("honorLevel", false, function() return 3 end)
     env.UnitHonor = Native("honor", false, function() return 2 end)
     env.UnitHonorMax = Native("honorMax", false, function() return 10 end)
-    for _, file in ipairs({ "Stats", "Pages" }) do
+    -- Statistics: two categories; the first statistic of the second is skipped.
+    local statCalls, emptyList = 0, false
+    local function Stat(id, fn)
+        return function(...)
+            statCalls, calls[id] = statCalls + 1, (calls[id] or 0) + 1
+            return fn(...)
+        end
+    end
+    env.GetStatisticsCategoryList = Stat("categories", function() return emptyList and {} or { 10, 20 } end)
+    env.GetCategoryInfo = Stat("categoryInfo", function(id) return id == 10 and "Combat" or "Quests" end)
+    env.GetCategoryNumAchievements = Stat("categoryCount", function() return 2 end)
+    env.GetStatistic = Stat("statistic", function(category, index)
+        if category == 20 and index == 1 then return "--", true, 2001 end
+        return tostring(category * 10 + index), false, category * 100 + index
+    end)
+    env.GetAchievementInfo = Stat("achievement", function(id) return id, "Statistic " .. id end)
+    local watchers = {}
+    env.CreateFrame = function(kind)
+        assert(kind == "Frame" and #watchers == 0, "the statistics cache created more than one watcher")
+        local frame = { events = {} }
+        function frame:RegisterEvent(event) self.events[event] = true end
+        function frame:UnregisterAllEvents() for event in pairs(self.events) do self.events[event] = nil end end
+        function frame:SetScript(script, callback) self[script] = callback end
+        watchers[1] = frame
+        return frame
+    end
+    for _, file in ipairs({ "Stats", "Pages", "Statistics" }) do
         local chunk = assert(loadfile(root .. "/MSUF_Suite_CharacterPanel/" .. file .. ".lua"))
         setfenv(chunk, env)("MSUF_Suite_CharacterPanel", ns)
     end
@@ -66,6 +92,44 @@ local function CheckClient(forever)
         ns.Stats.DefenseTooltip({ AddDoubleLine = function() error("Retail rendered Defense") end })
         assert(calls.professions == 1 and calls.honorLevel == 1 and calls.honor == 1 and calls.honorMax == 1)
     end
+
+    -- Statistics change only with achievement criteria: a reopen or tab switch
+    -- reuses the last complete read until CRITERIA_UPDATE (Blizzard_Statistics'
+    -- own refresh) or RECEIVED_ACHIEVEMENT_LIST drops it.
+    local function Labels(list)
+        local out = {}
+        for _, group in ipairs(list) do
+            out[#out + 1] = group.title
+            for _, row in ipairs(group.rows) do out[#out + 1] = row.label .. "=" .. tostring(row.value) end
+        end
+        return table.concat(out, "|")
+    end
+    local groups = {}
+    assert(ns.Pages.Read("statistics", groups, {}) == groups)
+    local first = Labels(groups)
+    assert(first == "Combat|Statistic 1001=101|Statistic 1002=102|Quests|Statistic 2002=202", first)
+    local watcher = assert(watchers[1], "the statistics cache did not watch for criteria changes")
+    assert(watcher.events.CRITERIA_UPDATE and watcher.events.RECEIVED_ACHIEVEMENT_LIST and watcher.OnEvent,
+        "the statistics cache did not watch both criteria events")
+    ns.Pages.Read("pvp", groups, {})
+    assert(Labels(groups) ~= first, "the PvP page did not replace the statistics groups")
+    local before = statCalls
+    assert(ns.Pages.Read("statistics", groups, {}) == groups and Labels(groups) == first and statCalls == before,
+        "an unchanged statistics page called the client again or lost rows to another page")
+    watcher.OnEvent(watcher, "CRITERIA_UPDATE")
+    assert(not next(watcher.events), "the criteria watcher stayed registered after its event")
+    ns.Pages.Read("statistics", groups, {})
+    assert(statCalls > before and Labels(groups) == first and watcher.events.CRITERIA_UPDATE,
+        "a criteria change did not reread the statistics")
+    ns.Statistics.Drop()
+    assert(not next(watcher.events), "dropping the statistics cache left its watcher registered")
+    -- An empty read is never cached: achievement data may not be loaded yet.
+    emptyList, before = true, calls.categories
+    local empty = {}
+    ns.Pages.Read("statistics", empty, {})
+    ns.Pages.Read("statistics", empty, {})
+    assert(calls.categories == before + 2 and #empty == 1 and empty[1].title == "No data available"
+        and not next(watcher.events), "an empty statistics read was cached")
 end
 
 CheckClient(false)

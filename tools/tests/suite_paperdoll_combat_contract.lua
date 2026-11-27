@@ -25,6 +25,7 @@ end
 local pending, watcher = {}, nil
 local suiteArt = false
 local NS = { IsCombatLocked = function() return combat end,
+    ControlSkin = { MarkFixedButtonSpec = function(spec) return spec end },
     GearGeometry = { Owns = function(root) return suiteArt and root == CharacterFrame end },
     DB = { enabled = true, theme = { iconBorderStyle = "quality", iconBorderThickness = 2, iconBorderPadding = 1 } },
     Defaults = { theme = { iconBorderStyle = "quality" } },
@@ -120,7 +121,15 @@ CharacterFrame:Fire("OnShow")
 Check(applies == 3 and state.painted[1] == 0.8, "safe show lost deferred completion")
 Check(inspectApplies == 1 and structural == 1, "deferred structural work was lost")
 Check(watcher, "icon setting watcher was not retained")
-suiteArt, writes = true, 0
-panel:RefreshSlot(CharacterHeadSlot)
+-- The Suite geometry owns the Character slots: an update stops before it
+-- reads the root's visibility (an opening sends about 30 slot updates).
+local rootReads, rootShown, rootVisible = 0, CharacterFrame.IsShown, CharacterFrame.IsVisible
+function CharacterFrame:IsShown() rootReads = rootReads + 1 return rootShown(self) end
+function CharacterFrame:IsVisible() rootReads = rootReads + 1 return rootVisible(self) end
+suiteArt, writes, probes = true, 0, 0
+for _ = 1, 30 do panel:RefreshSlot(CharacterHeadSlot) end
 Check(writes == 0, "native skin repainted over Suite slot artwork")
+Check(rootReads == 0 and probes == 0, "a slot update under the Suite geometry still read the Character root")
+Check(not panel:SkinSlot(panel:OwnerState("window"), CharacterHeadSlot) and rootReads == 0,
+    "a slot pass under the Suite geometry read the root")
 print("PaperDoll safe combat integration: " .. checks .. " checks passed")
