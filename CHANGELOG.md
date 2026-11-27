@@ -2,25 +2,45 @@
 
 ## 0.5 Alpha - 2026-11-26
 
-Changes since 0.46 Alpha. Requires Midnight Simple Unit Frames. Supports WoW Retail 12.1.5 and 12.1.7 and WoW Forever 1.60.1.
+Changes since 0.46 Alpha. Requires Midnight Simple Unit Frames. Features that integrate with MSUF unit frames or Edit Mode can require a current MSUF 7.0 build. Supports WoW Retail 12.1.5 and 12.1.7 and WoW Forever 1.60.1.
+
+### Cooldown Manager
+
+- Edit and reorder spells directly on the live bars while the Cooldown Manager settings are open. Use the **+** on a bar to add spells, or edit the same bar through the preview when the menu covers it. Edit Mode opens the settings for the bar you selected and exposes the bar's size, height, spacing and icons per row.
+- **All spells** includes inactive and unlearned spells. Buff bars accept received auras by name or spell ID. **Customized spells** shows entries with individual overrides. Visibility settings remain with the bars and the separate visibility inspection action was removed.
+- **List actions** brings together restoring removed spells, resetting or clearing a list, copying entries to other specializations and importing Blizzard layouts. Import the current Blizzard layout or paste a Blizzard export string. Review the affected entries before applying a pasted layout, and use Undo to restore your previous setup.
+- **WoW Forever:** Preview and add the **Shaman starter setup** to your existing bars. It includes a Maelstrom glow at five stacks. Your own totems can show their full lifetime, with optional estimated next-pulse timers for Healing Stream and Mana Tide. Totem Coverage now includes Grounding Totem.
+
+### Buff Reminders
+
+- **Targeted rebuffing:** Enable **Cast missing group buffs** in Buff Reminders. Outside combat, click the reminder to buff an eligible, reachable group member without changing your current target. **Cast next missing self-buff** has its own keybind and works even with group reminders hidden.
+- **WoW Forever:** Expanded class reminders and spell ranks, including Hunter aspects and Trueshot Aura, Paladin auras and blessings, Righteous Fury, Shaman weapon imbues, Warlock Demon Skin or Armor and Demonic Sacrifice. Hunter aspects and Paladin auras can remember your last choice.
+- Added optional Forever reminders for tracking, Find Treasure, Magical Awareness in dungeons, weapon stones, oils and poisons, and additional stat buffs. Raid coverage and ready-check reporting handle more spell ranks and distinguish unreadable buffs.
+- **Retail:** Added Augmentation Evoker reminders for Bestow Weyrnstone and Timelessness.
 
 ### Nameplates and combat
 
-- Set separate width limits for friendly and enemy names. Added NPC filters, foreign totem markers, PvP markers and more controls for tracked auras and the personal resource display.
-- Edit Cooldown Manager bars and spells directly on screen. Preview Blizzard layout imports and undo a paste. Forever gets a Shaman starter setup and totem timing.
-- Added customizable player buff groups, proc alerts, party castbars and shared HUD dimming. Buff Reminders cover more Forever spells and can cast missing group buffs directly outside combat.
+- Set separate maximum name widths for friendly and enemy plates, including when Blizzard restricts access to the name text. Show only the last word of NPC names or, where supported in Forever, the player's first name.
+- Hide, dim or replace selected NPCs with a small icon by name or ID. Mark other players' totems with an icon, glow and optional estimated timer. Added group arrows, arena opponent numbers, specialization abbreviations and missing battleground objective icons.
+- Emphasize tracked auras by spell ID with size, glow and refresh-window options. Hide maximum-level numbers or incoming healing on plates. Choose a compact personal resource display and add a personal buff or debuff row.
+- **WoW Forever:** Add Flame Shock ranks to your Nameplate DoT colors with one action. Added a Shaman utility flyout preset and ready-check warnings for missing totem items.
+- Added proc alerts with spell filters, sounds and readable aura timers or stacks, party castbars and player castbar colors by spell. On English and German Forever clients, the target bar can shade estimated remaining DoT damage when the game exposes the required data.
+- Added shared HUD dimming for selected Suite action bars, Cooldown Manager bars, data bars and proc alerts.
 
-### Bags, objectives and interface
+### Bags, quests and quality of life
 
-- Reserve item slots during bag sorting, hide the search bar and configure cheapest-item settings from Bags.
-- Rearrange quest groups and focus on a single quest in combat. Added a sortable fight summary, Forever profession hints and trainer reminders.
-- Added addon conflict notices and an extension API for tooltip lines, data text sources and profile packs. Tooltip details can be reordered and item comparison windows now avoid overlapping each other.
+- Reserve item slots when sorting bags, hide the search bar while retaining the Tools menu, and find cheapest-item controls in Bags. Improved PvP item quality borders, slot reuse and item data refreshes. Closed bags and bank windows do less background work, and finance views refresh when needed.
+- Arrange quest groups by quest log order, name, level or a custom order. Optionally put the current zone first, or show only the focused quest in combat. The progress column handles full-width colons in localized objective text.
+- The damage meter has a sortable fight summary for damage, DPS, healing and HPS when a completed fight's data is available. The addon-memory data text samples on demand.
+- **WoW Forever:** Profession hints show recipes, gathering zones and where to learn the next rank. Added optional trainer reminders on level-up and reduced work in the XP optimizer and map markers.
+- Added an extension API for tooltip lines and data text sources. Sort MSUF tooltip details separately for players, creatures and items. Item comparison tooltips now reposition when they would overlap.
 
 ### Skinning and performance
 
-- Keep native scrolling for the battleground scoreboard and match results. Improved quest reward transitions and flyout icon styling.
-- Reduced repeated work in bags, window focus, the spellbook, Communities, the micro bar, data texts and other background updates.
-- Updated translation packs.
+- Keep native scroll behavior for battleground scoreboards and the match results window while retaining Suite styling. Improved quest reward transitions and flyout icon styling.
+- Reduced repeated window focus and chrome scans, including when reopening Suite-owned bags. Improved work scheduling for Communities, spellbook tabs, talent trees, character and reputation panels, the AddOn list, the profiler, and the micro bar.
+- Reduced background work for hidden action bars, nameplates, navigation, bag and finance panels, and tooltip health updates. The Suite also skips layout writes when an owned frame is already in the requested position.
+- Updated the Suite translation packs.
 
 ## 0.46 Alpha - 2026-11-25
 
