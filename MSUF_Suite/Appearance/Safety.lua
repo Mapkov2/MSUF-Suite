@@ -99,6 +99,16 @@ function Safety.Read(target, name, ...)
     return nil
 end
 
+-- Two scalar getters on a single readable region. Both values must be public.
+function Safety.ReadPair(target, first, second)
+    if type(target) ~= "table" or IsForbidden(target) then return nil, nil end
+    local readFirst, readSecond = ReadableMethod(target, first), ReadableMethod(target, second)
+    if not readFirst or not readSecond then return nil, nil end
+    local a, b = readFirst(target), readSecond(target)
+    if Public(a) and Public(b) then return a, b end
+    return nil, nil
+end
+
 -- r, g, b, a from a color getter such as GetVertexColor or GetTextColor, or
 -- nil unless every channel is a readable number. A missing alpha reads as 1.
 function Safety.ReadColor(target, name)

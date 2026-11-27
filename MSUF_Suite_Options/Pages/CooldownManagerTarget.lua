@@ -4,14 +4,32 @@ local _, P = ...
 local Page, Suite, S = P.CDMPage, P.Suite, P.S
 local Tr, Public = P.Tr, Page.Public
 local ID, PAGE = Page.ID, Page.PAGE
+local CDM = Suite.CDM
 local PlayerSpec = Page.Spec
 Page.PlayerSpec = PlayerSpec
-local specs, classes, classChoices
+local specs, classes, classChoices, builtForever
 local characterProfile, characterRows
 local EMPTY = {}
 
+-- WoW Forever: a class's one specialization in its two talent groups, each
+-- with its own lists, spell choices and bar layout (CDM.GroupSpec).
+local GROUPS = { "Primary", "Secondary" }
+local function AddGroups(list, primary)
+    local key = CDM.GroupSpec(primary.id, 2)
+    local secondary = {}
+    for field, value in pairs(primary) do secondary[field] = value end
+    primary.group, primary.name = 1, string.format(Tr("%s - %s"), primary.name, Tr(GROUPS[1]))
+    secondary.id, secondary.group = key, 2
+    secondary.name = string.format(Tr("%s - %s"), secondary.name, Tr(GROUPS[2]))
+    specs[key] = secondary
+    list[#list].text = primary.name
+    list[#list + 1] = { value = key, text = secondary.name }
+end
+-- Built once per client flavor (WoW Forever adds the talent groups).
 local function Catalog()
-    if specs then return end
+    local forever = Suite.Client.isForever == true
+    if specs and builtForever == forever then return end
+    builtForever, characterProfile, characterRows = forever, nil, nil
     specs, classes, classChoices = {}, {}, { { value = 0, text = Tr("Your character") } }
     for classID = 1, 13 do
         local info = C_CreatureInfo.GetClassInfo(classID)
@@ -27,6 +45,7 @@ local function Catalog()
                     specs[id] = { id = id, name = title, icon = Public(icon) and icon or nil, classID = classID, className = name,
                         classFile = Public(info.classFile) and info.classFile or nil }
                     list[#list + 1] = { value = id, text = title }
+                    if forever then AddGroups(list, specs[id]) end
                 end
             end
         end
@@ -36,9 +55,27 @@ function Page.Spec()
     Catalog()
     local row = specs[Page.targetSpec]
     if row then return row.id, row.name, row.icon end
-    return PlayerSpec()
+    local id, name, icon = PlayerSpec()
+    -- WoW Forever names the talent group.
+    row = specs[id]
+    if row and row.group then return id, row.name, row.icon or icon end
+    return id, name, icon
 end
 function Page.ForeignSpec() return Page.targetSpec ~= nil and Page.targetSpec ~= PlayerSpec() end
+-- Only a talent group the character can use is offered: the primary one,
+-- and the secondary one of the player's own class once dual specialization
+-- is learned (Blizzard's Camelot talent frame enables its tab on
+-- GetNumSpecGroups() > 1).
+local function OwnClass(row)
+    local _, _, classID = UnitClass("player")
+    return row ~= nil and Public(classID) and row.classID == classID
+end
+local function Usable(row)
+    if row.group ~= 2 then return true end
+    if not OwnClass(row) then return false end
+    local count = GetNumSpecGroups()
+    return Public(count) and type(count) == "number" and count > 1
+end
 function Page.TargetContext()
     if not Page.ForeignSpec() then return nil end
     local get, row = S.CooldownManagerEditorContext, specs[Page.targetSpec]
@@ -48,15 +85,27 @@ function Page.ClassSpecs(out)
     Catalog()
     local row = specs[Page.Spec()]
     local list = row and classes[row.classID]
-    for i = 1, list and #list or 0 do out[#out + 1] = list[i].value end
+    for i = 1, list and #list or 0 do
+        if Usable(specs[list[i].value]) then out[#out + 1] = list[i].value end
+    end
     return out
+end
+-- A secondary talent group opened for the first time starts as a copy of
+-- the primary one (the runtime does the same when the group turns active).
+local function SeedGroup(spec)
+    local lists = CDM.Codec.DecodeLists(P.Get(ID, "listsData"))
+    local spells = CDM.Codec.DecodeSpells(P.Get(ID, "spellsData"))
+    if not CDM.SeedGroup(lists, spells, spec) then return end
+    local listsText, spellsText = CDM.Codec.EncodeLists(lists), CDM.Codec.EncodeSpells(spells)
+    if listsText and spellsText then P.SetMany(ID, { listsData = listsText, spellsData = spellsText }) end
 end
 function Page.SelectSpec(spec)
     if P.Combat() then return false end
     Catalog()
-    if spec ~= nil and not specs[spec] then return false end
+    if spec ~= nil and (not specs[spec] or not Usable(specs[spec])) then return false end
     -- Finish text/drag/popover gestures in their old scope before changing it.
     Page.CommitFocus()
+    if spec ~= nil and CDM.SpecGroup(spec) == 2 then SeedGroup(spec) end
     Page.ClosePopups()
     local ui = Page.ui
     if ui and ui.drag then Page.CancelPreviewDrag(ui.drag) end
@@ -96,6 +145,68 @@ local function CharacterChoices()
     characterProfile, characterRows = profile, rows
     return rows
 end
+-- WoW Forever: the talent groups as two large choices where Retail lists a
+-- class's specializations. Choosing the group that is active in the game
+-- follows it live; the other one is edited offline. A green dot marks the
+-- active group; a group the character cannot use is not offered.
+local function GroupClick(self)
+    if P.Combat() then return end
+    local row = specs[Page.Spec()]
+    if not row then return end
+    local key = CDM.GroupSpec(row.id, self.group)
+    Page.SelectSpec(key ~= PlayerSpec() and key or nil)
+end
+local function GroupEnter(self)
+    Page.ShowTip(self, Tr(GROUPS[self.group]), self.liveShown and Tr("Current specialization")
+        or Tr("Offline view: talent choices and equipped items are not available."))
+end
+local function GroupLeave(self) Page.HideTip(self) end
+local function BuildGroups(ui, body, x, width)
+    ui.groupLabel = P.T.Font(body, "GameFontHighlightSmall", "Edit specialization", P.T.colors.text)
+    ui.groupLabel:SetPoint("TOPLEFT", body, "TOPLEFT", x, 0)
+    local half = math.floor((width - 6) / 2)
+    ui.groups = {}
+    for group = 1, 2 do
+        local button = Page.Button(body, GROUPS[group], half, 26, GroupClick)
+        P.HM.MarkSegmentChoice(button)
+        button.group = group
+        button:SetPoint("TOPLEFT", body, "TOPLEFT", x + (group - 1) * (half + 6), -20)
+        button.live = button:CreateTexture(nil, "OVERLAY")
+        button.live:SetSize(6, 6)
+        button.live:SetPoint("TOPRIGHT", button, "TOPRIGHT", -4, -4)
+        button.live:SetColorTexture(0.3, 0.85, 0.4, 1)
+        button.live:Hide()
+        button:HookScript("OnEnter", GroupEnter)
+        button:HookScript("OnLeave", GroupLeave)
+        ui.groups[group] = button
+    end
+end
+-- Writes only what changed: the shown groups, the chosen one, the live dot.
+local function PaintGroups(ui)
+    local buttons = ui.groups
+    if not buttons then return end
+    local key = Page.Spec()
+    local row = specs[key]
+    local live = PlayerSpec()
+    for group = 1, 2 do
+        local button = buttons[group]
+        local own = row and CDM.GroupSpec(row.id, group)
+        local shown = own ~= nil and Usable(specs[own] or row)
+        local active, dot = shown and own == key, shown and own == live and OwnClass(row)
+        if button.groupShown ~= shown then
+            button.groupShown = shown
+            button:SetShown(shown)
+        end
+        if button.groupActive ~= active then
+            button.groupActive = active
+            button:SetActive(active)
+        end
+        if button.liveShown ~= dot then
+            button.liveShown = dot
+            button.live:SetShown(dot)
+        end
+    end
+end
 function Page.BuildTargetPicker(ui, body)
     Catalog()
     characterProfile, characterRows = nil, nil
@@ -108,8 +219,12 @@ function Page.BuildTargetPicker(ui, body)
             local first = classes[value] and classes[value][1]
             Page.SelectSpec(first and first.value or nil)
         end, meta("editor.class"))
-    ui.specPicker = P.M.BindDropdownAt(ui.ctx, body, Tr("Edit specialization"), cell + gap, 0, SpecChoices, cell,
-        function() return Page.Spec() or 0 end, Page.SelectSpec, meta("editor.spec"))
+    if Suite.Client.isForever then
+        BuildGroups(ui, body, cell + gap, cell)
+    else
+        ui.specPicker = P.M.BindDropdownAt(ui.ctx, body, Tr("Edit specialization"), cell + gap, 0, SpecChoices, cell,
+            function() return Page.Spec() or 0 end, Page.SelectSpec, meta("editor.spec"))
+    end
     local x, y = columns == 3 and 2 * (cell + gap) or 0, columns == 3 and 0 or -48
     ui.characterPicker = P.M.BindDropdownAt(ui.ctx, body, Tr("Characters in this profile"), x, y, CharacterChoices, cell,
         function() return 0 end, function(value)
@@ -124,6 +239,7 @@ function Page.BuildTargetPicker(ui, body)
     ui.profileCaption:SetWordWrap(true)
 end
 function Page.PaintTargetPicker(ui)
+    PaintGroups(ui)
     local profile = Suite.Database.GetActiveProfileName()
     local text
     if P.Get(ID, "specPositions") then

@@ -51,7 +51,7 @@ function Editor.Remember()
         rows.defaults[slot] = copy
     end
     local _, _, classID = UnitClass("player")
-    local presets = { C.Presets.RaidEssentials(spec) or EMPTY, C.Presets.Defensives(classID), C.Presets.RACIALS }
+    local presets = { C.Presets.RaidEssentials(CDM.BaseSpec(spec)) or EMPTY, C.Presets.Defensives(classID), C.Presets.RACIALS }
     for _, ids in ipairs(presets) do
         for i = 1, #ids do rows.knownSpells[ids[i]] = C.EntryFill.Known(ids[i]) == true end
     end
@@ -135,7 +135,8 @@ local function SavedCatalog(context)
     local root = NS.RootDB
     local all = root and root.cdmEditorCatalog
     local mine = type(all) == "table" and all[context.profile]
-    local rows = type(mine) == "table" and mine[context.spec]
+    -- A talent group never active yet shows what its specialization knew.
+    local rows = type(mine) == "table" and (mine[context.spec] or mine[context.base])
     if type(rows) ~= "table" then return end
     for i = 1, math.min(#rows, 600) do
         local row = rows[i]
@@ -157,7 +158,7 @@ local function SavedCatalog(context)
     end
 end
 local function GuideCatalog(context)
-    local guide = C.GuideProfiles[context.spec]
+    local guide = C.GuideProfiles[context.base]
     if not guide then return end
     local order, moves = guide.order or EMPTY, guide.moves or EMPTY
     for i = 1, math.min(#order, 600) do
@@ -216,7 +217,7 @@ local function Defaults(context)
             end
         end
     end
-    local guide = not context.observed and C.GuideProfiles[context.spec]
+    local guide = not context.observed and C.GuideProfiles[context.base]
     if guide and guide.buffIcons then
         local list = {}
         context.defaultByBar.buf = list
@@ -226,7 +227,7 @@ local function Defaults(context)
             if row and row.slot == "buf" then list[#list + 1] = key end
         end
     end
-    Preset(context, context.config.raidEssentials ~= false and C.Presets.RaidEssentials(context.spec) or nil, "ess", spellKey)
+    Preset(context, context.config.raidEssentials ~= false and C.Presets.RaidEssentials(context.base) or nil, "ess", spellKey)
     Preset(context, C.Presets.Defensives(context.classID), "def", spellKey)
     -- A foreign character's race cannot be inferred from its class.
     Preset(context, C.Presets.RACIALS, "ext", spellKey)
@@ -400,8 +401,12 @@ function Editor.Context(spec, classID, config, classToken)
         listsText = config.listsData, spellsText = config.spellsData, raid = config.raidEssentials,
         records = {}, order = {}, claims = {}, sharedClaims = {}, alias = {}, stand = {}, slotHome = {}, presets = {},
         defaultByBar = {}, knownSpells = EMPTY, bars = {}, signature = signature }
+    cache.base = CDM.BaseSpec(spec)
     cache.lists = CDM.Codec.DecodeLists(config.listsData)
-    cache.choices = CDM.EffectiveSpells(CDM.Codec.DecodeSpells(config.spellsData), spec)
+    -- A secondary talent group without its own data reads as the primary's copy.
+    local spells = CDM.Codec.DecodeSpells(config.spellsData)
+    CDM.SeedGroup(cache.lists, spells, spec)
+    cache.choices = CDM.EffectiveSpells(spells, spec)
     Defaults(cache)
     Aliases(cache)
     Claims(cache)

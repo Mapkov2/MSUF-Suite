@@ -106,6 +106,7 @@ local DEFENSIVES = {
         196555,  -- Netherwalk
         187827,  -- Metamorphosis (Vengeance)
         204021,  -- Fiery Brand
+        203720,  -- Demon Spikes
         263648,  -- Soul Barrier
         196718,  -- Darkness
     },
@@ -120,15 +121,15 @@ local DEFENSIVES = {
 -- intentionally short: major throughput windows and the buttons needed to
 -- prepare them. Talent alternatives may coexist; Resolve shows only learned
 -- spells. Personal defensives, consumables and racials have their own bars.
--- Sources: current Wowhead Midnight Season 2 rotation/cooldown guides. The
+-- Sources: current Method and Wowhead Midnight Season 2 rotation guides. The
 -- Warcraft Logs candidate reports in the local audit still need cast/buff
 -- verification. The client's CooldownViewer catalog decides which spell can
 -- be tracked.
 local RAID_ESSENTIALS = {
-    [62] = { 365350, 321507, 12051 },                         -- Arcane Mage
+    [62] = { 365350, 321507, 153626, 12051 },                 -- Arcane Mage: Arcane Orb alongside the burst window
     [63] = { 190319, 153561, 108853 },                        -- Fire Mage
-    [64] = { 205021, 153595, 84714 },                         -- Frost Mage: Comet Storm replaces Ray of Frost after use
-    [65] = { 31884, 375576, 31821, 114165, 200025, 6940 },      -- Holy Paladin, incl. Blessing of Sacrifice
+    [64] = { 205021, 1247777, 153595, 84714 },                -- Frost Mage: Ray of Frost and Comet Storm variants
+    [65] = { 31884, 375576, 31821, 20473, 200025, 6940 },     -- Holy Paladin: Holy Shock and throughput cooldowns
     [66] = { 31884, 389539, 375576, 432472 },                  -- Protection Paladin: Avenging Wrath / Sentinel choice
     [70] = { 31884, 375576, 343527, 255937, 427453 },          -- Retribution Paladin
     [71] = { 107574, 167105, 227847, 1269383 },               -- Arms Warrior
@@ -144,7 +145,7 @@ local RAID_ESSENTIALS = {
     [253] = { 19574, 34026, 466930 },                       -- Beast Mastery Hunter
     [254] = { 288613, 19434, 257044, 212431, 260243, 466930 }, -- Marksmanship Hunter: Explosive Shot / Volley choices
     [255] = { 1250646, 259495, 1261193 },                   -- Survival Hunter
-    [256] = { 472433, 421453, 194509, 10060, 62618, 33206 },   -- Discipline Priest, incl. Barrier and Pain Suppression
+    [256] = { 472433, 421453, 194509, 47540, 62618, 33206 },  -- Discipline Priest: Penance, Barrier and Pain Suppression
     [257] = { 64843, 47788, 200183, 120517, 10060 },           -- Holy Priest, incl. Power Infusion
     [258] = { 10060, 228260, 263165, 120644 },                -- Shadow Priest
     [259] = { 360194, 385627, 1856, 5938 },                    -- Assassination Rogue: Shiv for Deathstalker
@@ -152,14 +153,14 @@ local RAID_ESSENTIALS = {
     [261] = { 185313, 121471, 280719, 426591, 1856 },          -- Subtlety Rogue
     [262] = { 191634, 114050, 198067, 443454 },               -- Elemental Shaman
     [263] = { 384352, 114051, 197214, 444995 },               -- Enhancement Shaman: Ascendance replaces Doom Winds
-    [264] = { 114052, 98008, 108280, 378081, 444995 },         -- Restoration Shaman: Surging Totem for Totemic
+    [264] = { 114052, 98008, 108280, 444995, 61295, 5394 },   -- Restoration Shaman: Surging Totem, Riptide and Healing Stream Totem
     [265] = { 1257052, 442726, 205180 },                     -- Affliction Warlock
     [266] = { 265187, 104316, 1276452, 1276467, 1276672 },     -- Demonology Warlock
     [267] = { 1122, 80240, 152108, 442726 },                  -- Destruction Warlock
     [268] = { 132578, 325153, 1241059, 119582 },              -- Brewmaster Monk
     [269] = { 1249625, 123904, 1251001, 322109, 443028 },      -- Windwalker Monk: Zenith, Xuen, Fists of Fury, Touch of Death, Conduit
     [270] = { 116680, 115310, 388615, 322118, 325197, 116849, 443028 }, -- Mistweaver Monk: Revival/Restoral, Yu'lon/Chi-Ji, Cocoon, Conduit
-    [577] = { 191427, 198013, 258860, 370965 },               -- Havoc Demon Hunter
+    [577] = { 191427, 198013, 188499, 258860, 370965 },        -- Havoc Demon Hunter: Blade Dance in the burst window
     [581] = { 212084, 207407, 390163 },                       -- Vengeance Demon Hunter
     [1467] = { 375087, 357210, 433874, 357208, 359073, 370553 }, -- Devastation Evoker: base and steerable Deep Breath
     [1468] = { 370537, 359816, 363534, 370553, 357170 },       -- Preservation Evoker, incl. Time Dilation
@@ -177,7 +178,7 @@ end
 -- known. WoW Forever has its own list (Enhance QoL's, ForeverPresets.lua,
 -- below); its catalog lists the racial as a Utility record hidden by default
 -- (Perception 20600, in game): the preset claims that record for this bar.
-local RACIALS = {
+local RETAIL_RACIALS = {
     7744,    -- Will of the Forsaken
     20549,   -- War Stomp
     20572, 33697, 33702, -- Blood Fury
@@ -212,8 +213,7 @@ local RACIALS = {
     20554, 26296, -- Berserking
 }
 local FOREVER = C.FOREVER_PRESETS
-if FOREVER then RACIALS = FOREVER.racials end
-Presets.RACIALS = RACIALS
+Presets.RACIALS = FOREVER and FOREVER.racials or RETAIL_RACIALS
 
 -- Bag consumables on the Potions and racials bar, in this order after
 -- Blizzard's entries and before the racial. Warlocks with Pact of Gluttony
@@ -225,14 +225,25 @@ local CONSUMABLES = {
     { item = 224464, category = SPELL_CATEGORY.DEMONIC_HEALTHSTONE },
 }
 
--- Bag items behind Blizzard's potion and healthstone entries (spellCategory),
--- every quality rank: their counts add up to the number shown on the icon.
+-- Bag items behind Blizzard's potion and healthstone entries (spellCategory).
+-- The generic icon shows a category total; a stocked potion shows its own count.
+-- Prefer current-season potions and the higher quality when first picking one.
 local CATEGORY_ITEMS = {
-    [SPELL_CATEGORY.COMBAT_POTION] = { 241308, 241309, 245897, 245898, 241288, 241289, 245902, 245903, 271886, 271887, 274763, 274764 },
-    [SPELL_CATEGORY.HEALTH_POTION] = { 241304, 241305, 271883, 271884 },
+    [SPELL_CATEGORY.COMBAT_POTION] = { 271887, 271886, 274764, 274763, 271890, 271889,
+        241309, 241308, 245898, 245897, 241289, 241288, 245903, 245902, 241297, 241296, 241293, 241292 },
+    [SPELL_CATEGORY.HEALTH_POTION] = { 271884, 271883, 241305, 241304, 241307, 241306, 241299, 241298, 258138 },
     [SPELL_CATEGORY.HEALTHSTONE] = { 5512 },
     [SPELL_CATEGORY.DEMONIC_HEALTHSTONE] = { 224464 },
 }
+local foreverHealing = { 118, 282011, 268881, 2456, 858, 268882, 929, 268883, 1710, 9144,
+    3928, 18839, 274935, 13446, 23579, 18253 }
+local picker = C.FOREVER_PICKER or C.EMPTY
+Presets.PICKER_POTIONS = { CATEGORY_ITEMS[SPELL_CATEGORY.COMBAT_POTION], CATEGORY_ITEMS[SPELL_CATEGORY.HEALTH_POTION],
+    { 241286, 241287, 241294, 241295, 241300, 241301, 241302, 241303, 241338, 245916, 245917,
+        191378, 191379, 191380, 211878, 211879, 211880,
+        212239, 212240, 212241, 212242, 212243, 212244, 212245, 212246, 212247 },
+    foreverHealing, picker.manaPotions, picker.combatPotions }
+Presets.PICKER_RACIALS = { RETAIL_RACIALS, picker.racials or C.EMPTY, { 69041 } } -- Rocket Barrage shares Rocket Jump's cooldown.
 
 -- WoW Forever has no single Healthstone or health potion item: every rank
 -- is an item of its own (Improved Healthstone adds two per rank), all on
@@ -267,8 +278,7 @@ if P.NS.Client.isForever then
     end
     CATEGORY_ITEMS[SPELL_CATEGORY.HEALTHSTONE] = { 5512, 19004, 19005, 19006, 5511, 19007, 19008, 5509, 19009,
         19010, 5510, 19011, 19012, 9421, 19013 }
-    CATEGORY_ITEMS[SPELL_CATEGORY.HEALTH_POTION] = { 118, 282011, 268881, 2456, 858, 268882, 929, 268883, 1710, 9144,
-        3928, 18839, 274935, 13446, 23579, 18253 }
+    CATEGORY_ITEMS[SPELL_CATEGORY.HEALTH_POTION] = foreverHealing
 end
 Presets.CONSUMABLES, Presets.CATEGORY_ITEMS = CONSUMABLES, CATEGORY_ITEMS
 

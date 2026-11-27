@@ -9,6 +9,8 @@ local EMPTY, QUESTION = C.EMPTY, K.QUESTION_ICON
 local STACK_COLOR = NS.CDM.SPELL_DEFAULTS.stackColor
 local Px = K.Px
 local holders = {} -- addon-owned samples and missing-aura placeholders per cell
+local targetHolds = {} -- the harmful target stand-ins configured to glow
+local targetEligible = false
 
 -- A plain, reusable sample shares the live bar's style. It never binds a
 -- unit, reads aura state, or writes an entry; menu and Edit Mode use it alike.
@@ -57,11 +59,10 @@ function AuraButtons.Sample(parent, row, view, ov, texture, name)
     part.name:SetShown(view.barName ~= false)
     -- The sample's 8 seconds in the countdown's stages (K.Countdown).
     local state = C.state
-    part.dur:SetText((state.tenths or 0) > 8 and "8.0" or "8")
+    local threshold, tenths, r, g, b = K.CountdownSettings(ov)
+    part.dur:SetText(tenths > 8 and "8.0" or "8")
     part.dur:SetShown(K.Choice(ov.timeText, K.BarTime(view)))
-    local threshold = ov.threshold
-    if threshold == nil then threshold = state.threshold or 0 end
-    if threshold > 8 then part.dur:SetTextColor(state.thR or 1, state.thG or 1, state.thB or 1) end
+    if threshold > 8 then part.dur:SetTextColor(r or 1, g or 1, b or 1) end
     if (state.urgent or 0) > 8 then part.dur:SetTextColor(state.urR or 1, state.urG or 1, state.urB or 1) end
     part.count:SetText(amount > 1 and tostring(amount) or "")
     part.count:SetShown(K.Choice(ov.stackText, K.BarStacks(view, false)))
@@ -140,6 +141,7 @@ end
 local Missing
 local function UnholdPlain(cell)
     local h = cell and holders[cell]
+    if h then targetHolds[cell] = nil end
     if h and h.glow then Missing(cell, h, nil, nil, false) end
     if h and h.shown then
         h.shown = false
@@ -289,6 +291,39 @@ AuraButtons.Held = Held
 -- in combat" shows it in combat only (MissingCombat, the combat edges).
 local lit = {} -- cell -> its glow frame while one is wanted
 local function Allowed() return not C.state.allGlowsCombat or C.state.inCombat or C.state.preview end
+local function TargetAllows(cell)
+    return not targetHolds[cell] or targetEligible
+end
+function AuraButtons.WantsTargetMissing(entry)
+    return entry.unit == "target" and not entry.auraHelpful and entry.src ~= "p"
+        and (entry.ov or EMPTY).missingGlow == true
+end
+local function SetTargetContent(h, show)
+    h.icon:SetShown(show and h.targetIcon)
+    if h.targetBar then
+        h.bg:SetShown(show)
+        h.name:SetShown(show and h.targetName)
+    end
+    if h.skinFrame then h.skinFrame:SetShown(show and h.skinned == true) end
+end
+local function EligibleTarget()
+    local attackable = UnitCanAttack("player", "target")
+    if not S.Public(attackable) or attackable ~= true then return false end
+    local dead = UnitIsDeadOrGhost("target")
+    return S.Public(dead) and dead == false
+end
+function AuraButtons.TargetMissingChanged()
+    if not next(targetHolds) then return end
+    local eligible = EligibleTarget()
+    if targetEligible == eligible then return end
+    targetEligible = eligible
+    local glow = eligible and Allowed()
+    for cell, h in pairs(targetHolds) do
+        SetTargetContent(h, eligible)
+        local g = lit[cell]
+        if g then g:SetShown(glow) end
+    end
+end
 local function Paint(g, style, r, gg, b)
     local spec = K.GLOW[style]
     local px = Px()
@@ -331,13 +366,13 @@ function Missing(cell, h, entry, view, on)
     g:SetFrameLevel(cell:GetFrameLevel())
     Paint(g, K.GlowSpec(entry.ov or EMPTY, view.glowStyle, view.glowTint, view.glowR, view.glowG, view.glowB))
     lit[cell] = g
-    g:SetShown(Allowed())
+    g:SetShown(Allowed() and TargetAllows(cell))
     if g.anim then g.anim:Play() end
 end
 -- Combat edges and the "only in combat" switch: lit glows show or hide.
 function AuraButtons.MissingCombat()
     local allowed = Allowed()
-    for _, g in pairs(lit) do g:SetShown(allowed) end
+    for cell, g in pairs(lit) do g:SetShown(allowed and TargetAllows(cell)) end
 end
 C.MissingGlowGate = AuraButtons.MissingCombat
 -- Diagnostics and tests: the glow a cell's stand-in shows (nil: none).
@@ -353,6 +388,7 @@ local function Placeholders(slot, view, plan, barMeta, preview)
     local cap = #entries
     local limit = view.maxIcons
     if type(limit) == "number" and limit > 0 and limit < cap then cap = limit end
+    local targetWanted = false
     for i = 1, cap do
         local entry = entries[i]
         local show, glow = preview, false
@@ -364,8 +400,17 @@ local function Placeholders(slot, view, plan, barMeta, preview)
         end
         if show then
             local cell = Cell(slot, i)
+            local target = glow and AuraButtons.WantsTargetMissing(entry)
+            if targetHolds[cell] and not target then Unhold(cell) end
             Hold(cell, entry, barMeta, not preview, view)
             local h = holders[cell]
+            if target then
+                targetWanted, targetHolds[cell] = true, h
+                h.targetBar = barMeta.role == "bar"
+                h.targetIcon = not h.targetBar or barMeta.lk.icon == true
+                h.targetName = view.barName ~= false
+                SetTargetContent(h, targetEligible)
+            end
             if glow or h.glow then Missing(cell, h, entry, view, glow) end
         else
             Unhold(bar.cells[i])
@@ -373,6 +418,7 @@ local function Placeholders(slot, view, plan, barMeta, preview)
     end
     local cells = bar.cells
     for i = cap + 1, #cells do Unhold(cells[i]) end
+    if targetWanted then AuraButtons.TargetMissingChanged() end
 end
 
 AuraButtons.Unholds, AuraButtons.Placeholders = Unholds, Placeholders

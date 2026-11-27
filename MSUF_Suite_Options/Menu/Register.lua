@@ -389,14 +389,23 @@ end
 -- the page's MatchShape would set it right after: the page then finds the
 -- shape matching, and the module restyles once. No skin (also a Like default
 -- whose default is none, as after the page's reset) leaves the shape alone.
-local function WriteSkin(id, skinKeys, shapeKeys, ids, value)
+local function WriteSkin(id, skinKeys, shapeKeys, ids, value, borderKeys)
     local wanted = Suite.HostBridge.IconSkinShape(value)
     local index = wanted and wanted ~= SharedShape(id, shapeKeys, ids) and IndexOf(ids, wanted)
-    if not index then return WriteAll(id, skinKeys, value) end
+    if not index and not borderKeys then return WriteAll(id, skinKeys, value) end
     local values = {}
     for i = 1, #skinKeys do values[skinKeys[i]] = value end
-    for i = 1, #shapeKeys do values[shapeKeys[i]] = index end
+    if index then for i = 1, #shapeKeys do values[shapeKeys[i]] = index end end
+    if borderKeys then for i = 1, #borderKeys do values[borderKeys[i]] = true end end
     return P.SetMany(id, values)
+end
+
+local function NeedsSkinBorder(id, borderKeys, value)
+    if not borderKeys or not Suite.HostBridge.IconSkinShape(value) then return false end
+    for i = 1, #borderKeys do
+        if not P.Get(id, borderKeys[i]) then return true end
+    end
+    return false
 end
 -- The page sets an area's shape when a new default skin wants another one
 -- (Page.SelectDefault: after writing the default, before applying it).
@@ -420,7 +429,8 @@ local function FlushShapes(refreshed)
             local a = areaWrites[key]
             for i = 1, #a.shapeKeys do
                 local skinKey, shapeKey = a.skinKeys[i] or a.skinKeys[1], a.shapeKeys[i]
-                local wanted = P.Get(a.id, skinKey) == "DEFAULT" and Suite.HostBridge.IconSkinShape("DEFAULT")
+                local hasBorder = not a.borderKeys or P.Get(a.id, a.borderKeys[i])
+                local wanted = hasBorder and P.Get(a.id, skinKey) == "DEFAULT" and Suite.HostBridge.IconSkinShape("DEFAULT")
                 local index = wanted and IndexOf(a.ids, wanted)
                 if index and wanted ~= a.ids[P.Get(a.id, shapeKey)] then
                     local values = batches[a.id] or {}
@@ -437,8 +447,9 @@ local function FlushShapes(refreshed)
     for key in pairs(marked) do marked[key] = nil end
 end
 Suite.HostBridge.OnIconSkinsChanged("MSUF_Suite_Options.shapes", FlushShapes)
-local function SkinArea(key, group, label, order, id, skinKeys, shapeKeys, ids, icon)
-    areaWrites[key] = { id = id, skinKeys = skinKeys, shapeKeys = shapeKeys, ids = ids }
+local function SkinArea(key, group, label, order, id, skinKeys, shapeKeys, ids, icon, borderKeys)
+    areaWrites[key] = { id = id, skinKeys = skinKeys, shapeKeys = shapeKeys, ids = ids, borderKeys = borderKeys }
+    local deferred
     return {
         key = key, group = P.Tr(group), label = P.Tr(label), order = order, icon = icon, module = id,
         -- The custom bars' row reads Like default while any of them follows the
@@ -451,14 +462,27 @@ local function SkinArea(key, group, label, order, id, skinKeys, shapeKeys, ids, 
             end
             return P.Get(id, skinKeys[1])
         end,
-        write = function(value) return WriteSkin(id, skinKeys, shapeKeys, ids, value) end,
+        write = function(value)
+            if NeedsSkinBorder(id, borderKeys, value) then
+                -- The host also tries to match the shape during this gesture.
+                -- A pending confirmation owns both changes until accepted.
+                deferred = true
+                return P.CDMPage.ConfirmIconBorder(key, true, function()
+                    WriteSkin(id, skinKeys, shapeKeys, ids, value, borderKeys)
+                end)
+            end
+            return WriteSkin(id, skinKeys, shapeKeys, ids, value)
+        end,
         shape = function() return SharedShape(id, shapeKeys, ids) end,
         setShape = function(shape)
-            if not IndexOf(ids, shape) or Suite.InCombat() then return false end
+            if deferred or not IndexOf(ids, shape) or Suite.InCombat() then return false end
             marked[key] = true
             return true
         end,
-        refresh = function() FlushShapes() end,
+        refresh = function()
+            deferred = nil
+            FlushShapes()
+        end,
     }
 end
 -- An area drawn square only (no shape setting): the page offers it only the
@@ -506,18 +530,19 @@ local function Running(ids, reason)
 end
 local function RegisterIconSkinAreas()
     if not Suite.HostBridge.HasIconSkinAreas(M) then return end
-    local CDM, specs, customSkins, customShapes = Suite.CDM, {}, {}, {}
+    local CDM, specs, customSkins, customShapes, customBorders = Suite.CDM, {}, {}, {}, {}
     for i, slot in ipairs(CDM.SLOTS) do
         local keys = CDM.KEYS[slot.key]
         if slot.custom then
             customSkins[#customSkins + 1], customShapes[#customShapes + 1] = keys.iconSkin, keys.iconShape
+            customBorders[#customBorders + 1] = keys.showIconBorder
         else
             specs[#specs + 1] = SkinArea(P.IconSkinKey(slot.key), "Cooldown manager", slot.title, i, "cooldownManager",
-                { keys.iconSkin }, { keys.iconShape }, Suite.IconShapeIds, SKIN_SAMPLES[slot.key])
+                { keys.iconSkin }, { keys.iconShape }, Suite.IconShapeIds, SKIN_SAMPLES[slot.key], { keys.showIconBorder })
         end
     end
     specs[#specs + 1] = SkinArea(P.IconSkinKey("c1"), "Cooldown manager", "Custom bars", #CDM.SLOTS, "cooldownManager",
-        customSkins, customShapes, Suite.IconShapeIds)
+        customSkins, customShapes, Suite.IconShapeIds, nil, customBorders)
     specs[#specs + 1] = SkinArea(P.IconSkinKey("actionbars"), "Action bars", "All action bars", 1, "actionbars",
         { "iconSkin" }, { "buttonShape" }, Suite.ActionBarEnum.BUTTON_SHAPE_IDS, "Interface\\Icons\\Ability_Warrior_Charge")
     -- Blizzard's own player buffs and debuffs beside the minimap, as the

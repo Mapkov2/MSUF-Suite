@@ -171,14 +171,30 @@ function Page.CloseOrphans()
         end
     end
 end
+-- Popups of the live bars open beside their bar (CooldownManagerScreen.lua).
 function Page.PlacePopup(popup, anchor)
     popup.anchor = anchor
+    if Page.PlaceLivePopup(popup, anchor) then return end
+    popup.liveCanvas = nil
     popup:ClearAllPoints()
     popup:SetPoint("TOPLEFT", anchor, "BOTTOMLEFT", 0, -4)
 end
 
 local function Wheel(self, delta)
     self:SetVerticalScroll(max(0, min(self:GetVerticalScrollRange(), self:GetVerticalScroll() - delta * 48)))
+end
+-- Rows and controls cover a scroll viewport and would swallow the wheel:
+-- they hand it to the scroll frame's current handler, so the host stays the
+-- sole owner of scrolling and its easing.
+local function ForwardWheel(self, delta)
+    local scroll = self.wheelScroll
+    local handler = scroll:GetScript("OnMouseWheel")
+    if handler then handler(scroll, delta) end
+end
+function Page.ForwardWheel(frame, scroll)
+    frame.wheelScroll = scroll
+    frame:EnableMouseWheel(true)
+    frame:SetScript("OnMouseWheel", ForwardWheel)
 end
 function Page.ScrollArea(parent, width)
     local scroll = CreateFrame("ScrollFrame", nil, parent)
@@ -582,11 +598,12 @@ end
 function Page.HideGhost()
     if Page.ghost then Page.ghost:Hide() end
 end
--- A drop onto another bar's chip moves the entry there; a drop on this bar
--- puts it before beforeKey (last without one). One history entry.
+-- A drop onto another bar (its chip, or the bar on screen) moves the entry
+-- there; a drop on this bar or a live bar puts it before beforeKey (last
+-- without one). One history entry.
 function Page.CommitDrop(key, family, name, slot, beforeKey)
     if slot then
-        local ok, reason = Page.MoveEntry(key, slot, nil, family)
+        local ok, reason = Page.MoveEntry(key, slot, beforeKey, family)
         if ok then Page.Note(format(Tr("Moved %s to %s."), name, Page.BarName(slot))) else Page.Fail(reason) end
         return ok
     end

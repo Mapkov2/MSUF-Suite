@@ -134,6 +134,7 @@ for _,host in ipairs({'_repo_backups/6.22','MidnightSimpleUnitFrames-7.0'}) do
         assert(loadfile(root..'/MSUF_Suite/Core/HostBridgeMenu.lua'))('MSUF_Suite',suite)
         P.HM=suite.HostBridge.Menu2(P.M)
         assert(P.HM.mode==mode,'fixture did not select requested host bridge')
+        assert(loadfile(root..'/MSUF_Suite_Options/Menu/Workspace.lua'))('MSUF_Suite_Options',P)
         assert(loadfile(root..'/MSUF_Suite_Options/Pages/CooldownManagerPreview.lua'))('MSUF_Suite_Options',P)
         Build(1040,host,mode)
         Build(720,host,mode)

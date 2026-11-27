@@ -178,18 +178,13 @@ end
 local Recall = K.Recall
 
 ------------------------------------------------------------------ countdown
--- One countdown formatter per (warning seconds, warning color) and the
--- Text section's tenths and urgent stage: whole seconds (below the warning
--- threshold in the warning color, below the urgent one in the urgent color,
--- below the tenths one with tenths), m:ss from a minute, hours from an hour.
--- Nothing set: plain seconds. Shared by the cooldown swipes
--- (SetCountdownFormatter) and the aura buttons' duration text bindings,
--- built on first use and kept (bounded). Only breakpoints: the remaining
--- time, secret in combat, stays in C.
+-- Cooldown swipes and aura bindings share the same cached formatter.
+-- Configured cutoffs select the warning and urgent colors and decimal
+-- precision. The remaining time, secret in combat, stays in C.
 local countdowns = K.NewCache()
-local function Whole(value)
+local function RoundedUnits(value, units)
     if type(value) ~= "number" or value <= 0 then return 0 end
-    return floor(value + .5)
+    return floor(value * units + .5)
 end
 local function Bytes(r, g, b) return floor((r or 1) * 255 + .5), floor((g or 1) * 255 + .5), floor((b or 1) * 255 + .5) end
 -- Where the look below a minute changes, rising, each value once.
@@ -210,13 +205,14 @@ local function Stage(from, seconds, tenths, urgent, warn, alarm, up)
     return { threshold = from, format = format, rounding = up, step = step }
 end
 function K.CountdownFormatter(seconds, r, g, b, tenths, urgent, ur, ug, ub)
-    seconds, tenths, urgent = Whole(seconds), Whole(tenths), Whole(urgent)
+    local secondsKey, tenthsKey = RoundedUnits(seconds, 10), RoundedUnits(tenths, 10)
+    seconds, tenths, urgent = secondsKey / 10, tenthsKey / 10, RoundedUnits(urgent, 1)
     local R, G, B = 0, 0, 0
     if seconds > 0 then R, G, B = Bytes(r, g, b) end
-    local key = seconds * 16777216 + R * 65536 + G * 256 + B
+    local key = secondsKey * 16777216 + R * 65536 + G * 256 + B
     local UR, UG, UB = 0, 0, 0
     if urgent > 0 then UR, UG, UB = Bytes(ur, ug, ub) end
-    if tenths > 0 or urgent > 0 then key = ("%d:%d:%d:%d"):format(key, tenths, urgent, UR * 65536 + UG * 256 + UB) end
+    if tenths > 0 or urgent > 0 then key = ("%d:%d:%d:%d"):format(key, tenthsKey, urgent, UR * 65536 + UG * 256 + UB) end
     local formatter = countdowns.young[key] or Recall(countdowns, key)
     if formatter then return formatter end
     local rounding = Enum.NumericRuleFormatRounding
@@ -237,30 +233,40 @@ function K.CountdownFormatter(seconds, r, g, b, tenths, urgent, ur, ug, ub)
     return Remember(countdowns, key, formatter)
 end
 
--- The Text section's countdown stages for a warning threshold (seconds: an
--- entry's own or the bar's): its formatter, nil while nothing asks for one
--- (the swipe keeps Blizzard's own countdown text). C.state.cdExtra: tenths
--- or an urgent stage set (Settings.ReadGlobals).
-function K.Countdown(seconds)
+-- Unset entry choices inherit the shared Text settings.
+local function CountdownDefaults(seconds, tenths, hex)
     local state = C.state
-    if not (state.cdExtra or type(seconds) == "number" and seconds > 0) then return nil end
-    return K.CountdownFormatter(seconds, state.thR, state.thG, state.thB, state.tenths, state.urgent, state.urR, state.urG, state.urB)
+    seconds, tenths = seconds or state.threshold or 0, tenths or state.tenths or 0
+    if hex and hex ~= "" then return seconds, tenths, K.HexRGB(hex) end
+    return seconds, tenths, state.thR, state.thG, state.thB
 end
 
--- Duration text options per countdown formatter: a binding template that
--- Blizzard copies into each aura button, around the shared formatter. The
--- fallbacks must ride on the binding, and without a formatter on it no text
--- renders at all. Every entry of a sync asks for the same few signatures,
--- so the last answer is kept: a repeat costs four compares. The Text
--- section's tenths and urgent stage drop it (K.ForgetDurationText, the
--- settings read).
-local textOpts = K.NewCache()
-local lastSeconds, lastR, lastG, lastB, lastOpts
-function K.DurationText(seconds)
+function K.CountdownSettings(value)
+    local kind = type(value)
+    if kind == "table" then return CountdownDefaults(value.threshold, value.tenthsSeconds, value.thresholdColor) end
+    return CountdownDefaults(kind == "number" and value or 0)
+end
+
+function K.Countdown(value)
     local state = C.state
+    local seconds, tenths, r, g, b = K.CountdownSettings(value)
+    if seconds <= 0 and tenths <= 0 and (state.urgent or 0) <= 0 then return nil end
+    return K.CountdownFormatter(seconds, r, g, b, tenths, state.urgent, state.urR, state.urG, state.urB)
+end
+
+-- Blizzard copies this template into each aura button. Aura text always
+-- needs a formatter. Settings invalidates the last options when the shared
+-- tenths or urgent stage changes.
+local textOpts = K.NewCache()
+local lastSeconds, lastTenths, lastHex, lastR, lastG, lastB, lastOpts
+function K.DurationText(seconds, tenths, hex)
+    local state = C.state
+    seconds = seconds or state.threshold
     local r, g, b = state.thR, state.thG, state.thB
-    if lastOpts and seconds == lastSeconds and r == lastR and g == lastG and b == lastB then return lastOpts end
-    local formatter = K.CountdownFormatter(seconds, r, g, b, state.tenths, state.urgent, state.urR, state.urG, state.urB)
+    if lastOpts and seconds == lastSeconds and tenths == lastTenths and hex == lastHex
+        and r == lastR and g == lastG and b == lastB then return lastOpts end
+    local warn, digits, wr, wg, wb = CountdownDefaults(seconds, tenths, hex)
+    local formatter = K.CountdownFormatter(warn, wr, wg, wb, digits, state.urgent, state.urR, state.urG, state.urB)
     local opts = textOpts.young[formatter] or Recall(textOpts, formatter)
     if not opts then
         local binding = C_DurationUtil.CreateDurationTextBinding()
@@ -271,7 +277,7 @@ function K.DurationText(seconds)
         binding:SetEnabled(true)
         opts = Remember(textOpts, formatter, { binding = binding })
     end
-    lastSeconds, lastR, lastG, lastB, lastOpts = seconds, r, g, b, opts
+    lastSeconds, lastTenths, lastHex, lastR, lastG, lastB, lastOpts = seconds, tenths, hex, r, g, b, opts
     return opts
 end
 function K.ForgetDurationText() lastOpts = nil end
@@ -431,8 +437,10 @@ end
 -- Texture crop for an iw x ih art area: zoom percent is the total crop,
 -- split over both sides; the shorter axis is cropped further so non-square
 -- icons keep the art's aspect. Returns left, right, top, bottom.
-function K.Crop(zoom, iw, ih)
-    local crop = (zoom or 0) / 200
+function K.Crop(view, iw, ih)
+    local crop = (view.zoom or 0) / 200
+    -- Match the Core aura crop so the bevel baked into some icon art is hidden.
+    if view.showIconBorder == false then crop = max(.07, crop) end
     local span = 1 - 2 * crop
     local left, right, top, bottom = crop, 1 - crop, crop, 1 - crop
     if iw > 0 and ih > 0 then
@@ -491,6 +499,11 @@ end
 
 -- Four edges inside owner's rect (shared with the action bars).
 K.PlaceEdges = S.PlaceEdges
+
+function K.BorderWidth(view)
+    if view.showIconBorder == false then return 0 end
+    return view.border or 0
+end
 
 -- MSUF's ring art per shape ({ ring, desaturate } or false), read once out
 -- of combat (the settings read's K.ShapeOf and a shape's decoration ask

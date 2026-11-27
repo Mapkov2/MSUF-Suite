@@ -18,12 +18,12 @@ C.AuraLooks = AuraLooks
 -- buttons draw it as their edges, at least one pixel wide; shaped ones
 -- tint their rings.
 local function Border(rec, part, ov, dry)
-    local hex = ov.activeBorder
+    local lk = rec.lk
+    local hex = lk.borders ~= false and ov.activeBorder or nil
     if hex == "" then hex = nil end
     if part.borderHex == hex then return false end
     if dry then return true end
     part.borderHex = hex
-    local lk = rec.lk
     local r, g, b = lk.er, lk.eg, lk.eb
     if hex then r, g, b = K.HexRGB(hex) end
     if rec.role ~= "bar" and lk.shape ~= K.SQUARE then

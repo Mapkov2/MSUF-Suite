@@ -25,7 +25,8 @@ end
 -- Whether Masque skins this bar's icons: switched on for a bar of cooldown
 -- icons, with Masque loaded.
 function Masque.Active(view)
-    return view.masque == true and view.kind == KIND.COOLDOWN and not view.cooldownDuration and Library() ~= nil
+    return view.showIconBorder ~= false and view.masque == true
+        and view.kind == KIND.COOLDOWN and not view.cooldownDuration and Library() ~= nil
 end
 
 local function Add(pool, icon)
@@ -68,11 +69,16 @@ function Masque.Update(slot, pool, view)
         if pool.free[i].masqued then Masque.Remove(pool, pool.free[i]) end
     end
     if not active then
-        group:Delete()
-        pool.group = nil
+        -- Border visibility is reversible. Keep the registered group and
+        -- its settings while its buttons are temporarily unskinned.
+        if not (view.masque and view.showIconBorder == false) then
+            group:Delete()
+            pool.group = nil
+        end
     elseif changed then
         group:ReSkin()
     end
+    return active
 end
 -- A new or reused icon of a bar whose icons are skinned.
 function Masque.Join(pool, icon)

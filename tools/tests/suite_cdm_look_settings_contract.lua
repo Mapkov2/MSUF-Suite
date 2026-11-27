@@ -33,6 +33,15 @@ end
 assert(CDM.AURA_SWIPE == "ffd100", "the active buff swipe's gold")
 assert(rules.tenthsSeconds.default == 0 and rules.urgentSeconds.default == 0 and rules.urgentColor.default == "ff2020",
     "the countdown's new stages are off")
+assert(rules.thresholdSeconds.step == .1 and rules.tenthsSeconds.step == .1, "warning and tenths are fractional settings")
+local saved = CDM.Codec.EncodeSpells({ e = { b1 = { threshold = 5.5, tenthsSeconds = 2.5, thresholdColor = "44aaee" } },
+    s = { [62] = { b1 = { tenthsSeconds = 0, thresholdColor = "" } } } })
+local decoded = CDM.Codec.DecodeSpells(saved)
+local shared, spec = decoded.e.b1, CDM.EffectiveSpells(decoded, 62).b1
+assert(shared.threshold == 5.5 and shared.tenthsSeconds == 2.5 and shared.thresholdColor == "44aaee", "shared choices persist")
+assert(spec.threshold == 5.5 and spec.tenthsSeconds == 0 and spec.thresholdColor == "", "specialization can override inherited choices")
+assert(not CDM.SPELL_FIELDS.threshold(-.1) and not CDM.SPELL_FIELDS.threshold(2.55) and not CDM.SPELL_FIELDS.tenthsSeconds(10.1)
+    and not CDM.SPELL_FIELDS.thresholdColor("red"), "countdown overrides are validated")
 assert(CDM.DEFAULTS_VERSION == 3, "new rules need no defaults reset")
 assert(CDM.SPELL_FIELDS.glowStyle(5) and CDM.SPELL_FIELDS.glowStyle(6) and not CDM.SPELL_FIELDS.glowStyle(7)
     and CDM.SPELL_FIELDS.glowStyle(0), "a spell may choose Pixel and Autocast")

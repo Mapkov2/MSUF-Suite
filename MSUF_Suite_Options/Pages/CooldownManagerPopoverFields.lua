@@ -118,9 +118,13 @@ local function RemainingFields()
         { key = "textTop", label = "Text on top", kind = "choice", cd = true, aura = true, bar = "textTop",
           fromBar = { 2, 3 }, values = { { 0, "Bar setting" }, { 2, "Stacks" }, { 3, "Countdown" } },
           help = "Which number is drawn on top when both show." },
-        { key = "threshold", label = "Warn below (seconds)", kind = "number", cd = true, aura = true, step = 1, max = 10,
-          fallback = "All bars",
+        { key = "threshold", label = "Warn below (seconds)", kind = "number", cd = true, aura = true,
+          step = CDM.COUNTDOWN_STEP, max = CDM.COUNTDOWN_MAX, global = "thresholdSeconds", fallback = "All bars",
+          color = "thresholdColor", colorGlobal = "thresholdColor", colorLabel = "Warning countdown color",
           help = "The countdown turns to the warning color below this many seconds. All bars: the Text section's setting." },
+        { key = "tenthsSeconds", label = "Decimals below sec", kind = "number", cd = true, aura = true,
+          step = CDM.COUNTDOWN_STEP, max = CDM.COUNTDOWN_MAX, global = "tenthsSeconds", fallback = "All bars",
+          help = "Show tenths below (seconds, 0 = off)" },
         { key = "timerDuration", label = "Custom duration (seconds)", kind = "number", aura = true, timer = true, off = true,
           step = 1, max = 600,
           help = "Zero uses the game's duration. A custom duration starts on the trigger spell's successful cast. Summon timers use fixed places." },
@@ -202,6 +206,34 @@ local function SwatchItem(value, text, hex)
     local r, g, b = P.RGB(hex)
     return { value = value, text = text, swatchColor = { r, g, b, 1 } }
 end
+
+function Page.PopoverWarningColors(inherited)
+    local menu = { SwatchItem("", "All bars", inherited) }
+    for i = 2, #Page.COLOR_MENU do menu[i] = Page.COLOR_MENU[i] end
+    return menu
+end
+
+function Page.OpenPopoverWarningColor(swatch, field, key, current)
+    local open = P.W.OpenContextColors
+    if not open then return false end
+    local profile, config, epoch = P.Suite.DB, P.S.Config(Page.ID), P.ColorHistoryEpoch()
+    local spec, scope = Page.Spec(), Page.spellSpecScope
+    local original = current:lower()
+    local draft, title = original, P.Tr(field.colorLabel)
+    -- Keep previews in the picker and write once on accept, using the same
+    -- undo and scope as the popover. Cancel preserves inherited values.
+    local target = { label = title, get = function() return P.RGB(draft) end }
+    target.set = function(r, g, b)
+        local floor = math.floor
+        draft = ("%02x%02x%02x"):format(floor(r * 255 + .5), floor(g * 255 + .5), floor(b * 255 + .5))
+    end
+    return open(swatch, { title = title, maxTargets = 1 }, { target }, function(cancelled)
+        if cancelled or draft == original or P.Suite.DB ~= profile or P.S.Config(Page.ID) ~= config
+            or P.ColorHistoryEpoch() ~= epoch or Page.Spec() ~= spec or Page.spellSpecScope ~= scope then return end
+        local ok, reason = Page.SetSpellField(key, field.color, draft)
+        if not ok then Page.Fail(reason) end
+    end)
+end
 -- Choice menus, row resets, the inline comparison and the sections are
 -- prepared on the first open, so loading the options pays only for the
 -- field literals.
@@ -259,7 +291,7 @@ function Page.PreparePopoverFields()
         { label = "Action bars",
           keys = "actionUsableGlow actionGlowSpell actionGlowUnit actionGlowMode actionGlowRequireSpell actionAuraDisplay "
               .. "actionAuraGlow" },
-        { label = "Text", keys = "timeText stackText textTop threshold" },
+        { label = "Text", keys = "timeText stackText textTop threshold tenthsSeconds" },
         { label = "Custom timer", keys = "timerDuration timerSpell" },
         { label = "Sounds", keys = "sound lossSound usedSound chargeSound tts" },
         { label = "Conditions", keys = "requireSpell1 excludeSpell1 requireSpell2 excludeSpell2 requireSpell3 excludeSpell3" },

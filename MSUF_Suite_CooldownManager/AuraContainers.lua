@@ -427,9 +427,12 @@ local function RegionSet(fam, role, fixed, view)
     want.text, want.name, want.fill, want.pandemic, want.glow = text, name, fill, pan, glow
     want.stack, want.kit, want.stackFill, want.stackExtra, want.color = stack, kit, stackFill, stackExtra, color
     want.glowLines, want.panLines = glowLines ~= "", panLines ~= ""
+    local reduced = NS.HostBridge and NS.HostBridge.MenuReducedMotion
+    want.animation = aura and role ~= "bar" and C.state.animateNewIcons and not (reduced and reduced())
     return (fixed and "s" or "g") .. role .. (text and 1 or 0) .. (name and 1 or 0) .. (pan and 1 or 0) .. (glow and 1 or 0)
         .. (stack and 1 or 0) .. (kit and 1 or 0) .. fill .. (stackFill and 1 or 0) .. (color and 1 or 0) .. (stackExtra and 1 or 0)
         .. (need.timers or "") .. (view.shape and view.shape ~= K.SQUARE and view.shape or "") .. glowLines .. panLines
+        .. (want.animation and "A" or "")
 end
 
 -- A new container for one bar, family and unit with the region set in `want`.
@@ -444,7 +447,7 @@ local function NewContainer(bar, slot, fam, unit, role, fixed, bind, eager)
     if container.SetEditModePreviewEnabled then container:SetEditModePreviewEnabled(false) end
     if fixed then container:SetPoint("TOPLEFT", parent, "TOPLEFT", 0, 0) end
     local rec = { frame = container, slot = slot, fam = fam, role = role, fixed = fixed, bind = bind, prefix = fixed and "s" or "g",
-        eager = eager == true,
+        eager = eager == true, animation = want.animation,
         text = want.text, name = want.name, pandemic = want.pandemic, glow = want.glow, stack = want.stack, kit = want.kit,
         glowLines = want.glowLines, panLines = want.panLines, label = need.label,
         fill = want.fill, geo = 0, stackFill = want.stackFill, stackExtra = want.stackExtra, color = want.color,

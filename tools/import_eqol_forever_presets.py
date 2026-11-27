@@ -70,9 +70,8 @@ local C = P.CDM
 -- Spell groups per classID: cast IDs, first rank each (RankData.lua names the
 -- other ranks), then another cast ID of the same ability where Enhance QoL
 -- lists one. Racials: every race, every variant. Item lists run weakest first.
--- Presets.lua uses these on Forever only; Retail loads nothing here.
-if not P.NS.Client.isForever then return end
-C.FOREVER_PRESETS = {{
+-- Both clients can browse the racials and potions in the cooldown picker.
+C.FOREVER_PICKER = {{
 """
 
 
@@ -194,8 +193,7 @@ def render(root):
     build, groups = parse_groups(read(root, GROUPS_FILE))
     racials = parse_racials(read(root, PANELS_FILE))
     mana, bandages, combat = consumables(parse_items(read(root, CONSUMABLES_FILE)), read(root, POTIONS_FILE))
-    lines = render_groups(groups, families())
-    lines.append("    racials = {")
+    lines = ["    racials = {"]
     for ids, name in racials:
         lines.append("        %s, -- %s" % (", ".join(str(x) for x in ids), name))
     lines.append("    },")
@@ -205,6 +203,10 @@ def render(root):
     lines += render_items("manaPotions", [(i["id"], ("%s mana" % i["mana"] if "mana" in i else "mana potion")
                                            + level(i)) for i in mana])
     lines += render_items("combatPotions", combat)
+    lines += ["}", "", "if not P.NS.Client.isForever then return end", "C.FOREVER_PRESETS = {",
+              "    racials = C.FOREVER_PICKER.racials,", "    manaPotions = C.FOREVER_PICKER.manaPotions,",
+              "    combatPotions = C.FOREVER_PICKER.combatPotions,"]
+    lines += render_groups(groups, families())
     lines += render_items("bandages", [(i["id"], "%s health (First Aid %s)" % (i["health"], i.get("requiredSkillRank", "1")))
                                        for i in bandages])
     count = sum(len(groups[s]) for s, _ in GROUPS)

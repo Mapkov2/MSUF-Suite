@@ -24,6 +24,18 @@ P.CDMPage = Page
 Page.ID, Page.PAGE, Page.CROP_MIN, Page.CROP_MAX = ID, PAGE, CROP_MIN, CROP_MAX
 Page.QUESTION = QUESTION
 
+function Page.ConfirmIconBorder(key, enable, apply)
+    if P.Combat() then return false end
+    local config = S.Config(ID)
+    local prompt = enable and Tr("Icon skins require icon borders. Turn on the required borders and apply the skin?")
+        or Tr("Turn off the icon border? Icon skins and Masque will stop applying to this bar.")
+    P.Confirm("suite.cdm.iconBorder." .. key, prompt, function()
+        if not P.Combat() and S.Config(ID) == config then apply() end
+    end)
+    P.Refresh()
+    return false
+end
+
 ------------------------------------------------------------------ basics
 -- The suite's secret check (MSUF_Suite/Core/Platform.lua, always loaded).
 local Public = Suite.Public
@@ -338,7 +350,8 @@ function Page.Spec()
     if not Public(index) or type(index) ~= "number" or index < 1 then return nil end
     local id, name, _, icon = C_SpecializationInfo.GetSpecializationInfo(index)
     if not Public(id) or type(id) ~= "number" or id <= 0 then return nil end
-    return id, Public(name) and type(name) == "string" and name or nil, Public(icon) and icon or nil
+    -- WoW Forever's active talent group, as the runtime keys it.
+    return CDM.PlayerSpecKey(id), Public(name) and type(name) == "string" and name or nil, Public(icon) and icon or nil
 end
 
 function Page.ClassSpecs(out)

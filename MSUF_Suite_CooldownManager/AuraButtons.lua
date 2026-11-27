@@ -52,7 +52,7 @@ local STACK_COLOR = NS.CDM.SPELL_DEFAULTS.stackColor
 -- Every field Look writes: the signature changes exactly when a button needs restyling.
 local LOOK = { "w", "h", "px", "bw", "er", "eg", "eb", "l", "r", "t", "b", "font", "flags", "rendering", "shadow", "shadowOpacity",
     "shadowDistance", "cs", "ss", "sp", "cr", "cg", "cb", "sr", "sg", "sb", "swipe", "edge", "tip", "tex", "fr", "fg", "fb", "bgA", "icon", "side",
-    "smax", "marks", "relook", "skinSig", "shape" }
+    "smax", "marks", "borders", "relook", "skinSig", "shape" }
 local NO_MARKS = {}
 
 local sig = {}
@@ -76,9 +76,7 @@ local Edges, NewGlow, NewStack, BindStack = Glows.Edges, Glows.NewGlow, Glows.Ne
 local ApplyGlow, ApplyStack, ApplyCombatGate = Glows.ApplyGlow, Glows.ApplyStack, Glows.ApplyCombatGate
 local NewPandemic, ApplyPandemic = Glows.NewPandemic, Glows.ApplyPandemic
 
--- Duration text options per (threshold, warning color, the Text section's
--- tenths and urgent stage): a binding template that Blizzard copies into
--- each button, around the shared countdown formatter (both Const's).
+-- Countdown options for Blizzard's aura bindings live in Const.
 local TextOpts = K.DurationText
 
 -- Stack text options per (stackColorAt, stackColor): one formatter per
@@ -127,7 +125,8 @@ local function Look(rec, view)
     local skin = view.skin
     rec.skinLook = skin
     lk.skinSig, lk.shape = skin and skin.signature or false, view.shape or K.SQUARE
-    local bw = (skin and not bar) and 0 or floor(view.border or (bar and 1 or 0)) * px
+    lk.borders = view.showIconBorder ~= false
+    local bw = lk.borders and (not skin or bar) and floor(view.border or (bar and 1 or 0)) * px or 0
     lk.w, lk.h, lk.px, lk.bw = w, h, px, bw
     local r, g, b
     if view.borderClass then r, g, b = ClassRGB() end
@@ -136,7 +135,7 @@ local function Look(rec, view)
     -- Same crop as the cooldown icons (a bar's icon is square).
     local iw, ih = w - 2 * bw, h - 2 * bw
     if bar then iw = ih end
-    lk.l, lk.r, lk.t, lk.b = K.Crop(view.zoom, iw, ih)
+    lk.l, lk.r, lk.t, lk.b = K.Crop(view, iw, ih)
     lk.font, lk.flags = state.font, state.fontFlags
     lk.rendering, lk.shadow, lk.shadowOpacity, lk.shadowDistance =
         state.fontRendering, state.fontShadow, state.fontShadowOpacity, state.fontShadowDistance
@@ -535,7 +534,7 @@ local function ApplyEntry(rec, part, entry, dry)
             end
         end
         if shown and part.bound then
-            local opts = TextOpts(ov.threshold or C.state.threshold)
+            local opts = TextOpts(ov.threshold, ov.tenthsSeconds, ov.thresholdColor)
             if part.textOpts ~= opts then
                 if dry then return true end
                 part.textOpts = opts
@@ -555,6 +554,9 @@ end
 -- Every region of a new button, as its descendants, in our own part record.
 local function NewPart(rec, button, k)
     local part = { button = button, pos = k, rec = rec }
+    if rec.animation and button.AddAuraShownAnimation then
+        button:AddAuraShownAnimation(C.Icons.NewIconFade(button, 0, 1))
+    end
     part.edges = Edges(button)
     part.icon = button:CreateTexture(nil, "ARTWORK")
     -- Every layer at its own level above the button. Bars (K.AURA_LEVEL):
@@ -637,7 +639,8 @@ local function Bind(rec, part, k)
         end
     end
     if part.dur and part.durOn and not part.external then
-        local opts = TextOpts(((rec.entry[k] or NO_ENTRY).ov or EMPTY).threshold or C.state.threshold)
+        local ov = (rec.entry[k] or NO_ENTRY).ov or EMPTY
+        local opts = TextOpts(ov.threshold, ov.tenthsSeconds, ov.thresholdColor)
         button:SetDurationText(part.dur, opts)
         part.textOpts = opts
     end

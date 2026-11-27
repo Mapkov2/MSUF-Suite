@@ -22,6 +22,10 @@ assert(Section("barstyle"):find("barFill,barSpark,", 1, true), "the spark follow
 for _, key in ipairs({ "tenthsSeconds", "urgentSeconds" }) do
     assert(Control(key).parent == ui.sections.text, "the Text section holds " .. key)
 end
+for _, key in ipairs({ "thresholdSeconds", "tenthsSeconds" }) do
+    local control = Control(key)
+    assert(control.row.step == .1 and not control.row.roundStep, key .. " accepts tenths in the shared Text section")
+end
 assert(Control("urgentColor"), "the urgent color has its swatch")
 -- The line rules need Pixel or Autocast as the glow style or (orKey) the pandemic window's.
 local lines = Suite.SuiteCatalog[ID].rules[KEYS.c1.glowLines].requiresChoice

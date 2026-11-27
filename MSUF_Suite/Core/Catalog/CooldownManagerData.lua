@@ -46,8 +46,13 @@ local function Range(min, max)
             and math.floor(value) == value
     end
 end
+local COUNTDOWN_UNITS = 1 / CDM.COUNTDOWN_STEP
+local function CountdownSeconds(value)
+    return type(value) == "number" and value >= 0 and value <= CDM.COUNTDOWN_MAX
+        and math.floor(value * COUNTDOWN_UNITS + .5) / COUNTDOWN_UNITS == value
+end
 local function Hex(value) return type(value) == "string" and #value == 6 and not value:find("[^%x]") end
--- A per-spell color, or "" for the bar's color (the default stack color).
+-- A per-spell color, or "" for the inherited setting's default color.
 local function OwnHex(value) return value == "" or Hex(value) end
 local function Sound(value)
     if type(value) ~= "string" or #value > 120 then return false end
@@ -89,7 +94,8 @@ CDM.SPELL_FIELDS = {
     chargeSwipe = Bool01, chargeEdge = Bool01, auraGlow = Bool01, pandemic = Bool01, glowStyle = Range(0, 6), glowColor = OwnHex,
     desat = Range(1, 3), hideReady = Bool01, hideAvailableCharges = Bool01, readyAlpha = Range(0, 100), cdAlpha = Range(0, 100),
     showAura = Bool01, replaceAura = Range(0, 2147483647), swipe = Range(1, 3), sound = Sound, lossSound = Sound, tts = Bool01,
-    threshold = Range(0, 10), icon = Range(1, 2147483647), showMissing = Bool01, totemCoverage = Bool01,
+    threshold = CountdownSeconds, thresholdColor = OwnHex, tenthsSeconds = CountdownSeconds,
+    icon = Range(1, 2147483647), showMissing = Bool01, totemCoverage = Bool01,
     totemPulse = Bool01,
     stackGlow = Range(0, 99), stackGlowOp = Range(1, 5), stackColorAt = Range(0, 99), stackColor = OwnHex,
     -- Where a buff-bar aura is looked for: 1 automatic (audited native aura
@@ -273,6 +279,51 @@ function CDM.EffectiveSpells(data, spec)
         out[key] = merged
     end
     return out
+end
+
+-- WoW Forever has one specialization per class and two talent groups (dual
+-- specialization). The secondary group keeps its lists, spell choices and
+-- bar layout under its specialization plus SECONDARY_SPEC; the primary group
+-- keeps the plain specialization, so saved data from before stays its own.
+-- Presets, guide rows and Blizzard's catalog read the base specialization.
+CDM.SECONDARY_SPEC = 50000
+function CDM.BaseSpec(spec)
+    local offset = CDM.SECONDARY_SPEC
+    if type(spec) == "number" and spec > offset and spec < 2 * offset then return spec - offset end
+    return spec
+end
+function CDM.SpecGroup(spec) return CDM.BaseSpec(spec) ~= spec and 2 or 1 end
+function CDM.GroupSpec(spec, group)
+    spec = CDM.BaseSpec(spec)
+    if group == 2 and type(spec) == "number" then return spec + CDM.SECONDARY_SPEC end
+    return spec
+end
+-- The storage key of the player's specialization: on WoW Forever the active
+-- talent group's (Blizzard_PlayerSpells Camelot ClassTalentsFrame reads
+-- C_SpecializationInfo.GetActiveSpecGroup, 1 primary, 2 secondary). The
+-- group cannot change in combat: there the last key stands, unread.
+function CDM.PlayerSpecKey(spec, last)
+    if spec == nil or not NS.Client.isForever then return spec end
+    if last ~= nil and CDM.BaseSpec(last) == spec and NS.InCombat() then return last end
+    local group = C_SpecializationInfo.GetActiveSpecGroup()
+    return CDM.GroupSpec(spec, NS.Public(group) and group == 2 and 2 or 1)
+end
+local function Copy(value)
+    if type(value) ~= "table" then return value end
+    local out = {}
+    for key, item in pairs(value) do out[key] = Copy(item) end
+    return out
+end
+-- The secondary group starts as a copy of the primary one: lists, removed
+-- spells, replaced bars and spell choices, while it has none of its own.
+-- lists and spells: decoded copies the caller owns. True when it copied.
+function CDM.SeedGroup(lists, spells, spec)
+    local base = CDM.BaseSpec(spec)
+    if base == spec or lists.specs[spec] or lists.hidden[spec] or lists.replace[spec] or spells.s[spec] then return false end
+    if not (lists.specs[base] or lists.hidden[base] or lists.replace[base] or spells.s[base]) then return false end
+    lists.specs[spec], lists.hidden[spec] = Copy(lists.specs[base]), Copy(lists.hidden[base])
+    lists.replace[spec], spells.s[spec] = Copy(lists.replace[base]), Copy(spells.s[base])
+    return true
 end
 
 -- "Save bar layout per specialization" (runtime Settings.lua): spec is the

@@ -44,7 +44,7 @@ end
 
 local function HitEnter(self)
     local ui = self.ui
-    if P.Combat() or ui.drag.active then return end
+    if P.Combat() or ui.drag.active or Page.previewDragging then return end
     self.hovered = true
     self.hover:Show()
     Ring(self, true)
@@ -64,22 +64,26 @@ local function HitLeave(self)
     Page.HideTip(self)
 end
 
--- Drag within the drawing. The flow (axis and direction from the first item
--- to the second) is read once when the drag starts; the marker moves only
--- when the target changes.
+-- Drag within the drawing; an icon of a live bar also drops on another live
+-- bar of its family. The flow (axis and direction from the first item to the
+-- second) is read when the drag starts and when it reaches another bar; the
+-- marker moves only when the target changes.
 local function DragCancel(drag)
     drag.host:SetScript("OnUpdate", nil)
     local hit, active = drag.hit, drag.active
     if hit then hit.dim:SetShown(hit.dimmed == true) end
     drag.hit, drag.active, drag.key, drag.family, drag.name = nil, nil, nil, nil, nil
     drag.dropHit, drag.dropAfter, drag.dropSlot, drag.chip, drag.markTarget = nil, nil, nil, nil, nil
+    drag.dropUi, drag.flowUi = nil, nil
     drag.marker:Hide()
     if active then
+        Page.previewDragging = nil
         Page.HideGhost()
         Page.HighlightChip(nil)
     end
 end
 local function Flow(drag, ui)
+    drag.flowUi = ui
     local axis, sign = "x", 1
     if ui.kind == KIND.AURA_BAR then axis, sign = "y", -1 end
     local first, second = ui.hits[1], ui.hits[2]
@@ -113,6 +117,7 @@ local function DragStart(drag)
     local hit = drag.hit
     local tile = HitTile(hit)
     drag.active, drag.key = true, hit.key
+    Page.previewDragging = true
     drag.family = tile and tile.family or Page.Family(BarSlot(hit.ui))
     drag.name = HitName(hit, tile)
     Page.ClosePopups()
@@ -140,6 +145,23 @@ local function Mark(drag, target, after)
     end
     marker:Show()
 end
+-- The icon (or + tile) of ui under the cursor.
+local function Under(ui)
+    for i = 1, ui.hitCount do
+        local hit = ui.hits[i]
+        if hit:IsMouseOver() then return hit end
+    end
+    if ui.plus.pvShown and ui.plus:IsMouseOver() then return ui.plus end
+end
+-- Whether a drop on target lands after it, in the flow of target's bar.
+local function After(drag, target, x, y)
+    if target.plus then return false end
+    local cx, cy = target:GetCenter()
+    local scale = Page.Scale(target)
+    if not (Page.Public(cx) and Page.Public(cy) and type(cx) == "number" and type(cy) == "number") then return false end
+    local delta = drag.axis == "y" and (y / scale - cy) or (x / scale - cx)
+    return delta * TargetSign(drag, target) > 0
+end
 local function DragTarget(drag, x, y)
     local ui = drag.hit.ui
     local chip = Page.ChipUnderCursor()
@@ -148,36 +170,29 @@ local function DragTarget(drag, x, y)
         drag.chip = chip
         Page.HighlightChip(chip)
     end
-    drag.dropSlot = chip
+    drag.dropSlot, drag.dropUi = chip, nil
     if chip then
         drag.dropHit = nil
         Mark(drag, nil)
         return
     end
-    local target, after = nil, false
-    for i = 1, ui.hitCount do
-        local hit = ui.hits[i]
-        if hit:IsMouseOver() then
-            target = hit
-            local cx, cy = hit:GetCenter()
-            local scale = Page.Scale(hit)
-            if Page.Public(cx) and Page.Public(cy) and type(cx) == "number" and type(cy) == "number" then
-                local delta = drag.axis == "y" and (y / scale - cy) or (x / scale - cx)
-                after = delta * TargetSign(drag, hit) > 0
-            end
-            break
-        end
+    local into, target = ui, Under(ui)
+    -- A live icon off its own bar: another live bar on screen.
+    if not target and ui.slot then
+        into, target = Page.ScreenDropTarget(ui.slot, drag.family)
+        if into then drag.dropSlot, drag.dropUi = into.slot, into end
     end
-    if not target and ui.plus.pvShown and ui.plus:IsMouseOver() then target = ui.plus end
+    if target and drag.flowUi ~= into then Flow(drag, into) end
+    local after = target and After(drag, target, x, y) or false
     drag.dropHit, drag.dropAfter = target, after
     Mark(drag, target, after)
 end
 local function DragDrop(drag)
     local ui = drag.hit.ui
     local key, family, name, slot = drag.key, drag.family, drag.name, drag.dropSlot
-    local target, after = drag.dropHit, drag.dropAfter
-    local targetKey = target and target ~= ui.plus and target.key
-    local nextHit = targetKey and target.index < ui.hitCount and ui.hits[target.index + 1]
+    local target, after, into = drag.dropHit, drag.dropAfter, drag.dropUi or ui
+    local targetKey = target and not target.plus and target.key
+    local nextHit = targetKey and target.index < into.hitCount and into.hits[target.index + 1]
     local beforeKey = nextHit and nextHit.key or nil
     DragCancel(drag)
     if not (slot or targetKey or target == ui.plus) or not SelectBar(ui) then return end
@@ -185,7 +200,7 @@ local function DragDrop(drag)
         local grid = Page.ui and Page.ui.grid
         if not after then
             beforeKey = targetKey
-        elseif grid and grid.mSlot == BarSlot(ui) and grid.mSpec == Page.Spec() and grid:Tile(targetKey) then
+        elseif into == ui and grid and grid.mSlot == BarSlot(ui) and grid.mSpec == Page.Spec() and grid:Tile(targetKey) then
             beforeKey = grid:NextKey(targetKey)
         end
     end
@@ -303,7 +318,7 @@ local function NewHit(ui, index)
 end
 
 local function PlusEnter(self)
-    if P.Combat() or self.ui.drag.active then return end
+    if P.Combat() or self.ui.drag.active or Page.previewDragging then return end
     self.hover:Show()
     Page.ShowTip(self, self.ui.tips.plusTitle, self.ui.tips.plus)
 end

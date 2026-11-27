@@ -11,9 +11,67 @@ local C = P.CDM
 -- Spell groups per classID: cast IDs, first rank each (RankData.lua names the
 -- other ranks), then another cast ID of the same ability where Enhance QoL
 -- lists one. Racials: every race, every variant. Item lists run weakest first.
--- Presets.lua uses these on Forever only; Retail loads nothing here.
+-- Both clients can browse the racials and potions in the cooldown picker.
+C.FOREVER_PICKER = {
+    racials = {
+        20572, -- Blood Fury
+        1299026, -- Shatter Curse
+        20554, -- Berserking
+        1260270, -- Rapid Regeneration
+        7744, -- Will of the Forsaken
+        20577, -- Cannibalize
+        20549, -- War Stomp
+        1259718, -- Will to Survive
+        20600, -- Perception
+        20594, -- Stoneform
+        20580, -- Shadowmeld
+        1259799, -- Elune's Light
+        20589, -- Escape Artist
+        1259812, 1259813, 1259817, 1259821, 1259823, -- Eureka! (class variants)
+        1259416, -- Walk on Air
+        1259686, -- Skysight
+        1259705, -- Read Ley Line
+    },
+    manaPotions = {
+        2455, -- 160 mana (level 5)
+        3087, -- 160 mana
+        282013, -- mana potion (level 1)
+        3385, -- 320 mana (level 14)
+        3827, -- 520 mana (level 22)
+        6149, -- 800 mana (level 31)
+        13443, -- 1200 mana (level 41)
+        18841, -- 1200 mana (level 41)
+        13444, -- 1800 mana (level 49)
+        23578, -- 1800 mana (level 49)
+    },
+    combatPotions = {
+        2459, -- Swiftness Potion
+        3387, -- Limited Invulnerability Potion
+        3823, -- Lesser Invisibility Potion
+        4623, -- Lesser Stoneshield Potion
+        5633, -- Great Rage Potion
+        5634, -- Free Action Potion
+        6372, -- Swim Speed Potion
+        9036, -- Magic Resistance Potion
+        9172, -- Invisibility Potion
+        13442, -- Mighty Rage Potion
+        13455, -- Greater Stoneshield Potion
+        13456, -- Greater Frost Protection Potion
+        13457, -- Greater Fire Protection Potion
+        13458, -- Greater Nature Protection Potion
+        13459, -- Greater Shadow Protection Potion
+        13460, -- Greater Holy Protection Potion
+        13461, -- Greater Arcane Protection Potion
+        13462, -- Purification Potion
+        20008, -- Living Action Potion
+    },
+}
+
 if not P.NS.Client.isForever then return end
 C.FOREVER_PRESETS = {
+    racials = C.FOREVER_PICKER.racials,
+    manaPotions = C.FOREVER_PICKER.manaPotions,
+    combatPotions = C.FOREVER_PICKER.combatPotions,
     defensives = {
         [1] = { -- Warrior
             871, -- Shield Wall
@@ -222,58 +280,6 @@ C.FOREVER_PRESETS = {
         [11] = { -- Druid
             417141, -- Berserk
         },
-    },
-    racials = {
-        20572, -- Blood Fury
-        1299026, -- Shatter Curse
-        20554, -- Berserking
-        1260270, -- Rapid Regeneration
-        7744, -- Will of the Forsaken
-        20577, -- Cannibalize
-        20549, -- War Stomp
-        1259718, -- Will to Survive
-        20600, -- Perception
-        20594, -- Stoneform
-        20580, -- Shadowmeld
-        1259799, -- Elune's Light
-        20589, -- Escape Artist
-        1259812, 1259813, 1259817, 1259821, 1259823, -- Eureka! (class variants)
-        1259416, -- Walk on Air
-        1259686, -- Skysight
-        1259705, -- Read Ley Line
-    },
-    manaPotions = {
-        2455, -- 160 mana (level 5)
-        3087, -- 160 mana
-        282013, -- mana potion (level 1)
-        3385, -- 320 mana (level 14)
-        3827, -- 520 mana (level 22)
-        6149, -- 800 mana (level 31)
-        13443, -- 1200 mana (level 41)
-        18841, -- 1200 mana (level 41)
-        13444, -- 1800 mana (level 49)
-        23578, -- 1800 mana (level 49)
-    },
-    combatPotions = {
-        2459, -- Swiftness Potion
-        3387, -- Limited Invulnerability Potion
-        3823, -- Lesser Invisibility Potion
-        4623, -- Lesser Stoneshield Potion
-        5633, -- Great Rage Potion
-        5634, -- Free Action Potion
-        6372, -- Swim Speed Potion
-        9036, -- Magic Resistance Potion
-        9172, -- Invisibility Potion
-        13442, -- Mighty Rage Potion
-        13455, -- Greater Stoneshield Potion
-        13456, -- Greater Frost Protection Potion
-        13457, -- Greater Fire Protection Potion
-        13458, -- Greater Nature Protection Potion
-        13459, -- Greater Shadow Protection Potion
-        13460, -- Greater Holy Protection Potion
-        13461, -- Greater Arcane Protection Potion
-        13462, -- Purification Potion
-        20008, -- Living Action Potion
     },
     bandages = {
         1251, -- 66 health (First Aid 1)

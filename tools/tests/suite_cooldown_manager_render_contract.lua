@@ -384,6 +384,9 @@ C.plans.uti={slot="uti",kind=1,entries={s300,b6}}
 ------------------------------------------------------------------ Icons: pools, styling, memoization
 I.Sync("ess");I.Sync("uti")
 assert(C.Diagnostics.IconCount("ess")==5 and C.Diagnostics.IconCount("uti")==2)
+local zoomLeft, zoomRight = K.Crop({zoom=20,showIconBorder=false}, 40, 40)
+assert(math.abs(zoomLeft-.10)<1e-9 and math.abs(zoomRight-.90)<1e-9,
+    "a stronger explicit zoom must win over the borderless minimum")
 assert(b1.icon.template=="PingReceiverAttributeTemplate" and b1.icon.ping==true
     and b1.icon.attributes["ping-receiver"]==true and not b1.icon:GetAllowRadialWheel(),"live icons are contextual ping receivers")
 assert(b1.icon:GetIsPingable() and b1.icon:GetTargetInfo().spellID==100,"spell ping target")
@@ -398,8 +401,9 @@ for _,entry in ipairs(C.plans.ess.entries) do
     assert(icon.w==40 and icon.h==36 and Calls(icon,"SetSize")==1)
     -- Wider than tall: the art is cropped top and bottom to keep its aspect.
     local tex=icon.tex
-    assert(math.abs(tex.tcL-.04)<1e-9 and math.abs(tex.tcR-.96)<1e-9 and tex.tcT>.04 and tex.tcB<.96,"10:9 crop")
-    assert(math.abs((tex.tcB-tex.tcT)/(tex.tcR-tex.tcL)-34/38)<1e-9,"texture aspect must match the inner rect")
+    assert(math.abs(tex.tcL-.07)<1e-9 and math.abs(tex.tcR-.93)<1e-9 and tex.tcT>.07 and tex.tcB<.93,
+        "borderless 10:9 crop must hide the artwork rim")
+    assert(math.abs((tex.tcB-tex.tcT)/(tex.tcR-tex.tcL)-36/40)<1e-9,"texture aspect must match the full icon")
     local countdown=icon.cd.countdown
     assert(countdown.font=="Fonts\\TEST.TTF" and countdown.size==math.max(10,math.floor(36*.38)) and countdown.flags=="OUTLINE",
         "countdown size follows the icon height")
@@ -746,7 +750,7 @@ do
     T.Refresh(b4,"item")
     assert(count.last.SetText==3 and b4.icon.countOff==false,"summed ranks; secret counts and other categories stay out")
     assert(countQueries==queries+#items,"one count per rank after a bag change")
-    assert(countArgs.bank==false and countArgs.uses==true,"bag counts include uses, not the bank")
+    assert(countArgs.bank==false and countArgs.uses==false,"potions count physical bag stacks")
     local quiet=writes
     T.Refresh(b4,"item");T.Refresh(b4,"cooldown");T.Refresh(b4,"full")
     assert(count.last.SetText==3 and b4.icon.lastCount==3,"an unchanged count stays")
@@ -869,6 +873,9 @@ do
     bag[first],bag[second]=0,2
     T.BagsChanged();T.Refresh(p1,"item")
     assert(p1.categoryItem==second and p1.icon.tex.last.SetTexture==second+100000,"stocked potion not displayed")
+    bag[first]=10
+    T.BagsChanged();T.Refresh(p1,"item")
+    assert(p1.categoryItem==second and p1.icon.count.last.SetText==2,"the stocked potion must show its own count")
     bag[first],bag[second]=3,0
     T.BagsChanged();T.Refresh(p1,"item")
     assert(p1.categoryItem==first and p1.icon.tex.last.SetTexture==first+100000,"depleted potion did not switch")
@@ -876,9 +883,22 @@ do
     T.Refresh(p1,"item")
     assert(countQueries==reads,"unchanged potion refreshed its inventory")
     C.state.potionStockIcon=false
+    bag[second]=10
+    T.BagsChanged()
     T.Refresh(p1,"item")
     assert(p1.categoryItem==nil and p1.icon.tex.last.SetTexture==K.CATEGORY_ICONS[4],"generic category did not restore")
+    assert(p1.icon.count.last.SetText==13,"the generic category still totals all ranks")
     bag[first],bag[second]=oldFirst,oldSecond
+
+    local healing,otherHealing=Presets.CATEGORY_ITEMS[30][1],Presets.CATEGORY_ITEMS[30][2]
+    local oldHealing,oldOtherHealing=bag[healing],bag[otherHealing]
+    p2.spellCategory=30
+    C.state.potionStockIcon=true
+    bag[healing],bag[otherHealing]=8,12
+    T.BagsChanged();T.Refresh(p2,"item")
+    assert(p2.categoryItem==healing and p2.icon.count.last.SetText==8,"healing potion must show its own bag count")
+    bag[healing],bag[otherHealing]=oldHealing,oldOtherHealing
+    C.state.potionStockIcon=false
     T.BagsChanged()
     table.remove(C.plans.uti.entries)
     table.remove(C.plans.uti.entries)
@@ -1351,6 +1371,20 @@ do
     assert(b3.icon==pooled and pooled.shown and b3.rangeSpell==300 and Count(300,true)==2,"pooled icon reused")
 end
 
+do
+    local range, tint, generation = ess.range, ess.usable, ess.behaviorGen
+    ess.range, ess.usable, ess.behaviorGen = false, false, generation + 1
+    E.Update(b1)
+    usable[100], inRange[100] = false, false
+    E.Usable(b1)
+    E.Range(b1, false)
+    assert(not b1.rangeSpell and not b1.outOfRange and b1.icon.tex.last.SetVertexColor == 1,
+        "with both tints off, unusable/out-of-range spell updates must leave icon brightness alone")
+    usable[100], inRange[100] = nil, nil
+    ess.range, ess.usable, ess.behaviorGen = range, tint, generation
+    E.Update(b1)
+end
+
 ------------------------------------------------------------------ Effects: glows
 do
     IndexIconEntries()
@@ -1404,9 +1438,18 @@ do
         I.StyleIcon(icon,ess)
     end
     E.Update(b1)
+    ess.showIconBorder = true
     Reshape("CIRCLE")
     assert(icon.shape=="CIRCLE" and glow.shown and glow.rings and glow.rings[1].shown and glow.rings[1].last.SetTexture=="ring:CIRCLE"
         and not glow.edges[1].shown,"a shape change must repaint a running glow with rings")
+    assert(icon.rings and icon.rings[1].shown,"a round icon must start with a static outline")
+    ess.showIconBorder = false
+    Reshape("CIRCLE")
+    assert(icon.shape=="CIRCLE" and not icon.rings[1].shown and glow.rings[1].shown,
+        "disabling the static outline must preserve the shape and running glow")
+    ess.showIconBorder = true
+    Reshape("CIRCLE")
+    assert(icon.rings[1].shown and glow.rings[1].shown,"the static outline must return independently of the glow")
     -- A relayout (a later row's own size, also in combat) shows the glow again
     -- at the new size; its rings follow the icon texture: nothing is placed and
     -- MSUF is not asked.
@@ -1921,8 +1964,8 @@ end
 -- color) for the swipes and the aura buttons' duration text, automatic
 -- text sizes with their floors, and the glow spec behind every glow.
 do
-    local formatter=I.Formatter(4,1,.5,0)
-    assert(formatter and formatter==K.CountdownFormatter(4,1,.5,0) and formatter==I.Formatter(4.2,1,.5,0),
+    local formatter=I.Formatter(4.2,1,.5,0)
+    assert(formatter and formatter==K.CountdownFormatter(4.2,1,.5,0) and formatter~=I.Formatter(4,1,.5,0),
         "the swipes and the aura buttons share one countdown formatter per threshold and color")
     assert(I.Formatter(0,1,1,1)==nil and K.CountdownFormatter(0)~=formatter,"no threshold: Blizzard's own countdown")
     local font=K.FONT

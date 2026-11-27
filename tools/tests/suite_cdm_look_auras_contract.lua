@@ -197,6 +197,17 @@ state.tenths, state.cdExtra = 0, false
 K.ForgetDurationText()
 assert(C.AuraButtons.TextOpts(0) ~= opts and C.AuraButtons.TextOpts(0).binding.calls.SetFormatter.points[1].format == "%.0f",
     "back to whole seconds")
+local own = { threshold = 4.5, thresholdColor = "00ff00", tenthsSeconds = 1.5 }
+local auraText = C.AuraButtons.TextOpts(own.threshold, own.tenthsSeconds, own.thresholdColor)
+local formatter = auraText.binding.calls.SetFormatter
+assert(formatter == K.Countdown(own), "aura bindings and cooldown swipes share the formatter")
+points = formatter.points
+assert(points[1].format == "|cff00ff00%.1f|r" and points[2].threshold == 1.5
+    and points[3].threshold == 4.5, "the aura binding uses the entry's countdown stages")
+own.tenthsSeconds = 0
+local whole = C.AuraButtons.TextOpts(own.threshold, own.tenthsSeconds, own.thresholdColor)
+assert(whole ~= auraText and whole.binding.calls.SetFormatter.points[1].format == "|cff00ff00%.0f|r",
+    "switching decimals off replaces the previous binding")
 print("suite_cdm_look_auras_contract: ok")
 end)() end
 end

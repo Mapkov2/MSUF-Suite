@@ -296,7 +296,7 @@ local function StylePlain(icon, view, width, height)
     icon.over:SetFrameLevel(level + K.LEVEL.text)
     -- Masque places the art and draws the border of the icons it takes over.
     local masqued = icon.masqued
-    local border = masqued and 0 or K.Pixels(view.border or 0)
+    local border = masqued and 0 or K.Pixels(K.BorderWidth(view))
     icon.border = border
     local r, g, b = view.borderR or 0, view.borderG or 0, view.borderB or 0
     if view.borderClass then
@@ -310,7 +310,7 @@ local function StylePlain(icon, view, width, height)
         tex:ClearAllPoints()
         tex:SetPoint("TOPLEFT", icon, "TOPLEFT", border, -border)
         tex:SetPoint("BOTTOMRIGHT", icon, "BOTTOMRIGHT", -border, border)
-        tex:SetTexCoord(K.Crop(view.zoom, w - 2 * border, h - 2 * border))
+        tex:SetTexCoord(K.Crop(view, w - 2 * border, h - 2 * border))
     end
     local cooldown = icon.cd
     r, g, b = K.SwipeRGB(view)
@@ -417,7 +417,7 @@ local function Decorate(icon, view, decor)
             if cr then r, g, b = cr, cg, cb end
         end
         icon.rings = icon.rings or {}
-        K.PlaceRings(icon.rings, icon, tex, not skin and icon.shape, math.floor(view.border or 0), r, g, b)
+        K.PlaceRings(icon.rings, icon, tex, not skin and icon.shape, math.floor(K.BorderWidth(view)), r, g, b)
     end
     icon.decorated = (icon.skinned or icon.shape) and true or nil
     icon.decorRef, icon.decorGen = decor, view.styleGen
@@ -500,8 +500,7 @@ local function Restyle(icon, view)
 end
 
 ------------------------------------------------------------------ threshold formatter
--- The shared countdown formatter for a warning threshold; nil when off
--- (the swipe keeps Blizzard's own countdown text).
+-- The shared formatter for an explicit warning cutoff and color.
 function Icons.Formatter(seconds, r, g, b)
     if type(seconds) ~= "number" or seconds <= 0 then return nil end
     return K.CountdownFormatter(seconds, r, g, b)
@@ -553,7 +552,7 @@ function Icons.Apply(entry)
     if icon.durationBar then C.TrackingBars.Entry(icon, entry, view) end
     Texts(icon, view, ov)
     Icons.StyleCharge(icon)
-    local cooldown, state = icon.cd, C.state
+    local cooldown = icon.cd
     -- A totem slot counts down its totem like a buff: reversed by default.
     local swipe = view.cooldownDuration and SWIPE.HIDDEN or ov.swipe or entry.src == "t" and SWIPE.REVERSED or SWIPE.NORMAL
     if icon.lastSwipe ~= swipe then
@@ -566,9 +565,7 @@ function Icons.Apply(entry)
         icon.lastBling = bling
         cooldown:SetDrawBling(bling)
     end
-    local seconds = ov.threshold
-    if seconds == nil then seconds = state.threshold or 0 end
-    local formatter = K.Countdown(seconds)
+    local formatter = K.Countdown(ov)
     if icon.lastFmt ~= formatter then
         icon.lastFmt = formatter
         cooldown:SetCountdownFormatter(formatter)
@@ -603,13 +600,14 @@ end
 
 -- Mouse motion and ping handling leave clicks passing through.
 local function SetMouse(icon, on, visible)
+    if icon.cdmExit and icon.layShown == false then on, visible = false, false end
     if not on and visible and icon.entry.src == "t" and TotemCoverage.WantsHover then on = TotemCoverage.WantsHover(icon) end
     if icon.mouse == on then return end
     icon.mouse = on
     icon:EnableMouseMotion(on)
 end
 local function SetPing(icon, on)
-    on = on == true and PingTarget(icon.entry) ~= nil
+    on = on == true and not (icon.cdmExit and icon.layShown == false) and PingTarget(icon.entry) ~= nil
     if icon.ping == on then return end
     icon.ping = on
     icon:SetAttribute("ping-receiver", on)
@@ -657,6 +655,8 @@ local function Recycle(pool, icon)
     -- icon rebound within the same flush is placed and reported again.
     C.Auras.OverlayShown(entry, false, icon)
     C.Layout.Forget(icon)
+    if icon.cdmAppearance then icon.cdmAppearance:Stop() end
+    if icon.cdmExit then icon.cdmExit:Stop() end
     local fx = C.Effects
     fx.ResetIcon(icon)
     if entry and entry.icon == icon then
@@ -704,7 +704,7 @@ function Icons.Sync(slotKey)
     if not (bar and bar.frame) then bar = C.Layout.EnsureBar(slotKey) end
     if not (bar and bar.frame) then return end
     local pool = Pool(slotKey)
-    if view.masque or pool.group then C.Masque.Update(slotKey, pool, view) end
+    local masqued = (view.masque or pool.group) and C.Masque.Update(slotKey, pool, view)
     syncGen = syncGen + 1
     local byKey, entries = pool.byKey, plan.entries
     local time, fx = C.Time, C.Effects
@@ -717,7 +717,7 @@ function Icons.Sync(slotKey)
         if not icon then
             icon = Acquire(pool, bar.frame)
             byKey[entry.key] = icon
-            if pool.group then C.Masque.Join(pool, icon) end
+            if masqued then C.Masque.Join(pool, icon) end
         end
         icon.mark = syncGen
         local fresh = icon.entry ~= entry or entry.icon ~= icon
@@ -808,4 +808,51 @@ end
 
 ------------------------------------------------------------------ options preview
 -- Standalone icons live outside the pools; the preview styles and fills them.
+function Icons.NewIconFade(icon, fromAlpha, toAlpha)
+    local group = icon:CreateAnimationGroup()
+    local alpha = group:CreateAnimation("Alpha")
+    alpha:SetFromAlpha(fromAlpha)
+    alpha:SetToAlpha(toAlpha)
+    alpha:SetDuration(.18)
+    return group
+end
+
+function Icons.ShowLayoutIcon(icon, view, bar, animate)
+    if icon.cdmExit then
+        icon.cdmExit:Stop()
+        local ping = not bar.hidden
+        SetMouse(icon, MouseWanted(view, bar), ping)
+        SetPing(icon, ping)
+    end
+    if animate then
+        local group = icon.cdmAppearance
+        if not group then
+            group = Icons.NewIconFade(icon, 0, 1)
+            icon.cdmAppearance = group
+        end
+        group:Stop()
+        group:Play()
+    end
+end
+
+local function FinishLayoutExit(exit)
+    local icon = exit.icon
+    if icon.layShown == false then icon:Hide() end
+end
+
+function Icons.FadeLayoutIcon(icon)
+    icon.layShown = false
+    SetMouse(icon, false, false)
+    SetPing(icon, false)
+    if icon.cdmAppearance then icon.cdmAppearance:Stop() end
+    local exit = icon.cdmExit
+    if not exit then
+        exit = Icons.NewIconFade(icon, 1, 0)
+        icon.cdmExit, exit.icon = exit, icon
+        exit:SetScript("OnFinished", FinishLayoutExit)
+        exit:SetScript("OnStop", FinishLayoutExit)
+    end
+    exit:Play()
+end
+
 function Icons.CreateStandalone(parent) return CreateIcon(parent) end

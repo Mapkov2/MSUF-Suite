@@ -1,16 +1,9 @@
 local _, P = ...
 local NS, S = P.NS, P.Suite
 local C = P.CDM
--- Sample state for MSUF Edit Mode ("edit") and the options page
--- ("options"): every bar visible, rules suspended, unlearned spells shown
--- and three sample icons on empty bars. The options page also gets a
--- standalone drawing of one bar (never a live bar) and an optional
--- simulation that plays every icon with its own settings (see below),
--- from duration objects built out of plain numbers. The simulation runs
--- only while the page is open and out of combat; its one ticker exists
--- only while it runs. At load it reads only C.EMPTY, C.Const.QUESTION_ICON,
--- C.Const.KIND and C.Layout.Shown (Const.lua and Layout.lua load first), so
--- the options contract loads it with a stub CDM table that has those.
+-- Edit Mode and Options show all bars and include absent spells and samples.
+-- Options also draws a standalone bar and can simulate casts while open and
+-- out of combat, using only synthetic duration objects and one shared ticker.
 local Preview = { mode = nil, sim = false }
 C.Preview = Preview
 local EMPTY = C.EMPTY
@@ -93,23 +86,10 @@ function Preview.SetMode(mode)
 end
 
 ------------------------------------------------------------------ simulation
--- The simulation plays every icon as its spell and its bar are set up, never
--- a fixed sample. Each loop casts every icon once, SIM_GAP apart in bar
--- order, so ready and cooling icons sit side by side as in play:
---  * a cooldown spell cools down with its own swipe, countdown,
---    desaturation, opacity and timer-bar choices, then is ready again;
---  * a charge spell (its real maximum) spends one charge: the count and the
---    recharge swipe or edge run as the spell draws them, and it stays usable;
---  * Glow when ready shows while the spell is ready, Glow when all charges
---    are ready while every charge is back; resources count as available;
---  * the spell alert glow lights PROC_LEAD before the cast, only on spells
---    that showed a real spell alert this session (Effects.Procced) or whose
---    alert glow is switched on for the spell itself;
---  * a buff icon (options canvas) is active for SIM_LENGTH and glows only
---    with Glow while active or a stack glow (whose count it then shows).
--- Nothing hides and nothing plays a sound. While an icon is simulated
--- (icon.simFx) its glows come from Preview.Glows, also when Effects
--- refreshes the entry after a settings change.
+-- Simulated casts follow each spell's cooldown, recharge, text and glow
+-- settings. Proc alerts use the spell's setting or an observed real alert.
+-- Compact aura samples show only active buffs and keep the remaining icons
+-- together as effects expire. All simulated effects are silent.
 local durations = setmetatable({}, { __mode = "k" })
 local touched = {}   -- entry -> true while simulated
 local canvases = {}  -- canvas holders by parent
@@ -262,6 +242,7 @@ end
 -- Canvas samples join on a repaint, which only refreshes their glows (a
 -- slider tick restarts nothing); a sample that now draws another spell or
 -- bar starts over. The loop step (step set) moves them.
+local Reflow, RestoreReflow
 local function Canvas(holder, step)
     local kind = holder.kind
     if kind == KIND.AURA_BAR then return end
@@ -278,6 +259,7 @@ local function Canvas(holder, step)
         end
         if step then Visit(fake, i, aura) end
     end
+    if holder.reflowing then Reflow(holder, step) end
 end
 
 local function StopAll()
@@ -285,6 +267,7 @@ local function StopAll()
         touched[entry] = nil
         Unsim(entry)
     end
+    for _, holder in pairs(canvases) do RestoreReflow(holder) end
 end
 
 -- One step of the loop over the live cooldown bars and the shown canvases.
@@ -444,6 +427,123 @@ local function HideFrom(list, first)
     for i = first, #list do Shown(list[i], false) end
 end
 
+local function FinishSlide(group)
+    local holder = group.holder
+    if not holder then return end
+    group.holder = nil
+    Place(group.icon, holder, group.x, group.y)
+end
+local function StopSlide(icon)
+    local group = icon.pvSlide
+    if not group or not group.holder then return end
+    group:Stop()
+    FinishSlide(group)
+end
+local function Slide(icon, holder, x, y)
+    local group = icon.pvSlide
+    if not group then
+        group = icon:CreateAnimationGroup()
+        icon.pvSlide = group
+        group.icon = icon
+        group.translation = group:CreateAnimation("Translation")
+        group.translation:SetDuration(.18)
+        group.translation:SetSmoothing("OUT")
+        group:SetScript("OnFinished", FinishSlide)
+    end
+    group.holder, group.x, group.y = holder, x, y
+    group.translation:SetOffset(x - icon.pvX, y - icon.pvY)
+    group:Play()
+end
+
+local function MoveSample(icon, holder, x, y, animate)
+    local slide = icon.pvSlide
+    if slide and slide.holder then
+        if slide.x == x and slide.y == y then return end
+        StopSlide(icon)
+    end
+    if icon.pvX == x and icon.pvY == y then return end
+    if animate and icon.layShown and icon.pvX and icon.pvY then
+        Slide(icon, holder, x, y)
+    else
+        Place(icon, holder, x, y)
+    end
+end
+
+local function StopExit(icon)
+    local exit = icon.pvExit
+    if exit and exit.pending then
+        exit.pending = nil
+        exit:Stop()
+    end
+end
+
+local function FinishExit(exit)
+    if not exit.pending then return end
+    exit.pending = nil
+    Shown(exit.icon, false)
+end
+
+local function LeaveSample(icon, animate, reducedMotion)
+    local exit = icon.pvExit
+    if exit and exit.pending then
+        if not reducedMotion then return end
+        StopExit(icon)
+    end
+    if not animate then
+        Shown(icon, false)
+        return
+    end
+    if not exit then
+        exit = C.Icons.NewIconFade(icon, 1, 0)
+        icon.pvExit, exit.icon = exit, icon
+        exit:SetScript("OnFinished", FinishExit)
+    end
+    exit.pending = true
+    exit:Play()
+end
+RestoreReflow = function(holder)
+    if not holder.reflowing then return end
+    holder.reflowing = false
+    for i = 1, holder.count do
+        local icon = holder.icons[i]
+        StopSlide(icon)
+        StopExit(icon)
+        Place(icon, holder, holder.out[2 * i - 1], holder.out[2 * i])
+        Shown(icon, true)
+    end
+end
+
+-- Only the synthetic canvas moves. Its full footprint keeps the editor steady.
+Reflow = function(holder, animate)
+    local icons, view, count = holder.icons, holder.layoutView, 0
+    for i = 1, holder.count do
+        if icons[i].simActive then count = count + 1 end
+    end
+    holder.reflowOut = holder.reflowOut or {}
+    local out = holder.reflowOut
+    local width, height = C.Layout.Offsets(view, count, out)
+    local align = view.align == K.ALIGN.START and 0 or view.align == K.ALIGN.END and 1 or .5
+    local point = C.Layout.Point(view)
+    local x = C.Layout.Snap((holder.pvW - width) * (view.vertical and (point == "RIGHT" and 1 or 0) or align))
+    local y = C.Layout.Snap(-(holder.pvH - height) * (view.vertical and align or (point == "BOTTOM" and 1 or 0)))
+    local reduced = NS.HostBridge and NS.HostBridge.MenuReducedMotion
+    local reduceMotion = reduced and reduced()
+    animate = animate and not reduceMotion
+    local index = 0
+    for i = 1, holder.count do
+        local icon = icons[i]
+        if icon.simActive then
+            StopExit(icon)
+            index = index + 2
+            MoveSample(icon, holder, x + out[index - 1], y + out[index], animate)
+            Shown(icon, true)
+        elseif icon.layShown then
+            StopSlide(icon)
+            LeaveSample(icon, animate, reduceMotion)
+        end
+    end
+end
+
 local function Icons(holder, view, count, slot)
     local icons, fakes, out, textures = holder.icons, holder.fakes, holder.out, holder.textures
     for i = 1, count do
@@ -479,8 +579,10 @@ local function Icons(holder, view, count, slot)
             if not icon.simFx then C.TrackingBars.Charges(icon, SAMPLE_CHARGES) end
         end
         C.Icons.SetTexture(icon, textures[i])
-        Place(icon, holder, out[2 * i - 1], out[2 * i])
-        Shown(icon, true)
+        if not holder.reflowing then
+            Place(icon, holder, out[2 * i - 1], out[2 * i])
+            Shown(icon, true)
+        end
     end
     HideFrom(icons, count + 1)
     HideFrom(holder.rows, 1)
@@ -538,6 +640,13 @@ local function EditorLayout(holder, view)
     return holder.layoutView
 end
 
+local function ReflowEnabled(view, slot, count, kind)
+    if not Preview.sim or kind ~= KIND.AURA_ICON or count < 1 then return false end
+    local plan = C.plans[slot]
+    local fixed, _, split = C.Layout.FixedAuras(view, plan and plan.entries or EMPTY)
+    return not fixed and not split
+end
+
 function Preview.Render(parent, slot, maxWidth, maxHeight, classSample)
     local view = parent and C.views[slot]
     if not view then return nil end
@@ -572,6 +681,9 @@ function Preview.Render(parent, slot, maxWidth, maxHeight, classSample)
             holder.n = n
         end
     end
+    local reflow = ReflowEnabled(view, slot, n, kind)
+    if not reflow or holder.slot ~= slot or holder.count > n then RestoreReflow(holder) end
+    holder.reflowing = reflow
     local width, height, count = C.Layout.Offsets(EditorLayout(holder, view), n, holder.out)
     Rest(holder, kind ~= KIND.AURA_BAR and count or 0)
     if kind == KIND.AURA_BAR then
@@ -604,6 +716,7 @@ end
 function Preview.Release(parent)
     local holder = canvases[parent]
     if not holder then return end
+    RestoreReflow(holder)
     Rest(holder, 0)
     holder.shown, holder.cSlot = false, nil
     holder:Hide()

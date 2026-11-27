@@ -37,8 +37,8 @@ local function SectionDefinitions()
             "anchor", "anchorFrame", "side", "gap", "align", "alpha", "cooldownDuration", "shareContents" } },
         { id = "layout", title = "Layout", suffixes = { "height", "spacing", "cooldownFixed", "centerFirst", "overflow",
             "vertical", "grow", "x", "y" } },
-        { id = "look", title = "Look", suffixes = { "iconShape", "masque", "zoom", "border", "borderColor", "borderClass", "swipeAlpha",
-            "swipeColor", "swipeClass", "edge", "strata", "layer" } },
+        { id = "look", title = "Look", suffixes = { "iconShape", "zoom", "showIconBorder", "border", "borderColor", "borderClass",
+            "masque", "swipeAlpha", "swipeColor", "swipeClass", "edge", "strata", "layer" } },
         { id = "text", title = "Text", module = "text", suffixes = { "cdText", "cdSize", "stackText", "stackSize", "textTop",
             "stackPos", "keybind", "keybindSize", "keybindPos", "keybindBadge", "keybindBackground", "keybindBorder", "keybindPadding" } },
         { id = "effects", title = "Cooldown effects", suffixes = { "desat", "cdAlpha", "readyAlpha", "hideReady", "procGlow",
@@ -197,6 +197,33 @@ local function AnchorSet(value)
     P.Set(ID, key, value)
 end
 
+local function SetIconBorder(value)
+    local keys = KEYS[Page.selected]
+    local key = keys.showIconBorder
+    if value == false and P.Get(ID, key) then
+        return Page.ConfirmIconBorder(key, false, function() P.Set(ID, key, false) end)
+    end
+    if value == true then
+        local wanted = Suite.HostBridge.IconSkinShape(P.Get(ID, keys.iconSkin))
+        for index, shape in ipairs(Suite.IconShapeIds) do
+            if shape == wanted and P.Get(ID, keys.iconShape) ~= index then
+                return P.SetMany(ID, { [key] = true, [keys.iconShape] = index })
+            end
+        end
+    end
+    return P.Set(ID, key, value)
+end
+
+local function SetMasque(value)
+    local key, border = Page.Key("masque"), Page.Key("showIconBorder")
+    if value and not P.Get(ID, border) then
+        return Page.ConfirmIconBorder(key, true, function()
+            P.SetMany(ID, { [key] = true, [border] = true })
+        end)
+    end
+    return P.Set(ID, key, value)
+end
+
 local function OverflowStatus(ctx, body, widget, width)
     local note = P.Text(body, "", 0, 0, width, T.colors.muted)
     note:ClearAllPoints()
@@ -219,9 +246,15 @@ local function RuleGrid(ctx, body, rules, y, width, sectionId)
             elseif rule.key == KEYS.c1.anchor then
                 row.values = anchorValues
                 row.set = function(value) AnchorSet(tonumber(value) or rule.default) end
+            elseif rule.key == KEYS.c1.showIconBorder then
+                row.set = SetIconBorder
+            elseif rule.key == KEYS.c1.masque then
+                row.set = SetMasque
             elseif rule.key == KEYS.c1.overflow then
                 row.values = overflowValues
                 row.height = 90
+            elseif rule.key == "thresholdSeconds" or rule.key == "tenthsSeconds" then
+                row.step, row.roundStep = rule.step, false
             elseif rule.key == "blizzard" and #blizzardValues > 0 then
                 row.values = blizzardValues
             end

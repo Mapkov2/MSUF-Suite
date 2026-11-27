@@ -115,7 +115,7 @@ local function Consumables(out)
 end
 local function PresetLists()
     local gen = Catalog.content
-    local specID = C.state.specID
+    local specID = CDM.BaseSpec(C.state.specID)
     local raid = C.state.raidEssentials ~= false
     if presetGen == gen and presetSpec == specID and presetRaid == raid then return presetKeys end
     presetGen, presetSpec, presetRaid = gen, specID, raid

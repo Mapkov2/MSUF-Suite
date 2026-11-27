@@ -201,6 +201,32 @@ ess.styleGen = ess.styleGen + 1
 I.Sync("ess")
 assert(b1.icon.cd.formatter == nil, "back to Blizzard's countdown")
 
+-- The same entry settings feed the main cooldown and the recharge swipe.
+do
+    local state = C.state
+    state.threshold, state.thR, state.thG, state.thB, state.tenths = 5.5, 1, .5, 0, 2.5
+    local own = { threshold = 3.5, thresholdColor = "44aaee", tenthsSeconds = 1.5 }
+    local formatter = K.Countdown(own)
+    local points = formatter.points
+    assert(points[1].format == "|cff44aaee%.1f|r" and points[2].threshold == 1.5
+        and points[2].format == "|cff44aaee%.0f|r" and points[3].threshold == 3.5
+        and points[3].format == "%.0f", "the native formatter keeps fractional cuts and the entry's warning color")
+    assert(K.CountdownFormatter(3.6, 68/255, 170/255, 238/255, 1.5) ~= formatter
+        and K.CountdownFormatter(3.5, 68/255, 170/255, 238/255, 1.6) ~= formatter, "adjacent fractional cuts have distinct cache keys")
+    local inherited = K.Countdown({ thresholdColor = "" }).points
+    assert(inherited[1].format == "|cffff8000%.1f|r" and inherited[2].threshold == 2.5 and inherited[3].threshold == 5.5,
+        "missing thresholds and the default color follow the shared settings")
+    local disabled = K.Countdown({ threshold = 0, tenthsSeconds = 0 })
+    assert(disabled == nil, "explicit zero overrides shared warning and tenths")
+    b2.ov = own
+    I.Apply(b2)
+    assert(b2.icon.cd.formatter == formatter and b2.icon.chargeCd.formatter == formatter,
+        "the cooldown and charge swipes share the entry's formatter")
+    state.threshold, state.tenths = 0, 0
+    b2.ov = C.EMPTY
+    I.Apply(b2)
+end
+
 -- The spark of cooldown timer bars: anchored to the fill texture's moving
 -- edge, so the client carries it; both directions fill from the left.
 assert(rules[NS.CDM.KEYS.ess.barSpark].default == false, "no spark by default")

@@ -174,7 +174,7 @@ local looks = 0
 local function DisplayLook(rec, view, ov)
     local shows, lk = rec.shows, rec.lk
     rec.view = view
-    rec.textOpts = shows.time and K.DurationText(ov.threshold or C.state.threshold) or nil
+    rec.textOpts = shows.time and K.DurationText(ov.threshold, ov.tenthsSeconds, ov.thresholdColor) or nil
     if lk.looks == looks then return end
     lk.looks = looks
     local target = IconOf(rec.button)

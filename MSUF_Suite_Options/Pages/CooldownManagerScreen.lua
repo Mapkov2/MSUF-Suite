@@ -3,6 +3,10 @@ local _, P = ...
 local Page, S = P.CDMPage, P.S
 local slots, kit = P.Suite.CDM.SLOTS, P.Suite.PreviewKit
 local EDIT_LEVEL = 360 -- Above MSUF movers in FULLSCREEN, below the options window.
+-- Popup gaps beside a live bar; above clears the bar's name label.
+local ABOVE_GAP, BELOW_GAP = 22, 6
+local floor = math.floor
+local Public = Page.Public
 local surfaces, data = {}, {}
 local owner
 
@@ -79,6 +83,59 @@ function Page.RefreshScreenEditor(ready)
     end
     owner = page
     for _, slot in ipairs(slots) do PaintBar(slot.key, page, S.CooldownManagerEditorBar) end
+end
+
+-- A frame edge in screen units; nil while the client does not answer it.
+local function Edge(value, scale)
+    if Public(value) and type(value) == "number" then return value * scale end
+end
+
+-- A popup of a live icon or + tile opens on the side of its bar with more
+-- room, so the bar it edits stays in sight while changes apply. Writes only
+-- when the side or the offset changed.
+function Page.PlaceLivePopup(popup, anchor)
+    local ui = anchor and anchor.ui
+    local surface = ui and ui.slot and surfaces[ui.slot]
+    if not surface or surface ~= ui or not surface.shown then return false end
+    local canvas, scale = surface.canvas, Page.Scale(surface.canvas)
+    local top, bottom = Edge(canvas:GetTop(), scale), Edge(canvas:GetBottom(), scale)
+    local left, from = Edge(anchor:GetLeft(), Page.Scale(anchor)), Edge(canvas:GetLeft(), scale)
+    local screen = Edge(UIParent:GetTop(), Page.Scale(UIParent))
+    if not (top and bottom and left and from and screen) then return false end
+    local above = screen - top > bottom
+    local x = floor((left - from) / Page.Scale(popup) + 0.5)
+    if popup.liveCanvas == canvas and popup.liveAbove == above and popup.liveX == x then return true end
+    popup.liveCanvas, popup.liveAbove, popup.liveX = canvas, above, x
+    popup:ClearAllPoints()
+    if above then
+        popup:SetPoint("BOTTOMLEFT", canvas, "TOPLEFT", x, ABOVE_GAP)
+    else
+        popup:SetPoint("TOPLEFT", canvas, "BOTTOMLEFT", x, -BELOW_GAP)
+    end
+    return true
+end
+
+-- The other live bar under a dragged icon, of the same family, and where the
+-- drop lands there: one of its spells, or its + tile (the end of the bar).
+local function DropOn(surface)
+    local plus = surface.plus
+    if plus.pvShown and plus:IsMouseOver() then return plus end
+    if not surface.canvas:IsMouseOver() then return nil end
+    for i = 1, surface.hitCount do
+        local hit = surface.hits[i]
+        if hit.key and hit:IsMouseOver() then return hit end
+    end
+    return plus.pvShown and plus or false
+end
+function Page.ScreenDropTarget(except, family)
+    if not owner then return nil end
+    for _, info in ipairs(slots) do
+        local surface = surfaces[info.key]
+        if surface and surface.shown and info.key ~= except then
+            local target = DropOn(surface)
+            if target ~= nil and Page.Family(info.key) == family then return surface, target or nil end
+        end
+    end
 end
 
 -- Switching to an offline specialization does not move or select the live bars.

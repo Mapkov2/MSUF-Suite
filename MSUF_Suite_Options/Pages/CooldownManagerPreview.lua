@@ -21,6 +21,7 @@ local PaintHits, PaintMarks, FollowPopover = Page.PaintPreviewIcons, Page.PaintP
 -- hint line, the tip goes through Tr), so every language orders its parts.
 local HINT = "Click a spell for its settings \194\183 drag to reorder or onto a bar above \194\183 middle-click removes \194\183 + adds"
 local LIVE_HINT = "Click HUD icons or preview icons to edit. Use + to add spells."
+local SIM_HINT = "Plays sample cooldowns, glows and buffs on your bars while this page is open."
 local TIP = "Click: settings \194\183 Drag: reorder \194\183 Middle-click: remove"
 
 ------------------------------------------------------------------ activation
@@ -142,13 +143,19 @@ local function NewChip(ui, slot)
 end
 -- Measures a chip when its caption changes and moves it when its place
 -- changes: a repaint of the same strip writes nothing.
-local function PlaceChip(ui, chip, text, x, row, width)
-    if chip._cdmText ~= text then
+local function PlaceChip(ui, chip, text, x, row, width, remeasure)
+    local changed = chip._cdmText ~= text
+    if changed then
         chip._cdmText = text
         Page.ButtonText(chip, text)
-        local w = T.MeasureButtonWidth and T.MeasureButtonWidth(chip, 64, 170) or 110
-        chip._cdmWidth = w
-        chip:SetWidth(w)
+    end
+    if changed or remeasure then
+        local maxWidth = chip.slot and Page.SlotInfo(chip.slot).custom and math.min(170, width) or width
+        local w = math.min(maxWidth, P.MenuWorkspace.TabWidth(chip, 64))
+        if chip._cdmWidth ~= w then
+            chip._cdmWidth = w
+            chip:SetWidth(w)
+        end
     end
     local w = chip._cdmWidth
     if x > 0 and x + w > width then x, row = 0, row + 1 end
@@ -167,7 +174,7 @@ local function ShowChip(chip, show)
 end
 -- Every listed bar: shown ones, the built-in bars and custom bars that were
 -- set up; bars that are off are dimmed. Returns the strip height.
-local function PaintStrip(ui, width)
+local function PaintStrip(ui, width, remeasure)
     if ui.stripPicker then
         ShowChip(ui.addChip, Page.FreeCustom() ~= nil)
         return 48
@@ -179,7 +186,7 @@ local function PaintStrip(ui, width)
         local show = Page.Listed(slot)
         ShowChip(chip, show)
         if show then
-            x, row = PlaceChip(ui, chip, Page.BarName(slot), x, row, width)
+            x, row = PlaceChip(ui, chip, Page.BarName(slot), x, row, width, remeasure)
             local active, alpha = slot == Page.selected, Page.IsOn(slot) and 1 or 0.5
             if chip._cdmActive ~= active then
                 chip._cdmActive = active
@@ -194,7 +201,7 @@ local function PaintStrip(ui, width)
     local add = ui.addChip
     local free = Page.FreeCustom() ~= nil
     ShowChip(add, free)
-    if free then x, row = PlaceChip(ui, add, Tr("+ Add bar"), x, row, width) end
+    if free then x, row = PlaceChip(ui, add, Tr("+ Add bar"), x, row, width, remeasure) end
     local height = (row + 1) * STRIP_ROW
     if ui.stripHeight ~= height then
         ui.stripHeight = height
@@ -244,7 +251,7 @@ end
 ------------------------------------------------------------------ build
 -- Toolbar: a short hint and Simulate, whose tooltip says why it is greyed.
 local function SimulateEnter(self)
-    Page.ShowTip(self, Tr("Simulate"), Tr("Plays sample cooldowns, glows and buffs on your bars while this page is open."),
+    Page.ShowTip(self, Tr("Simulate"), Tr(SIM_HINT),
         not Page.Running() and Tr("Turn the cooldown manager on in Basics to play it.") or nil)
 end
 local function BuildToolbar(ui, toolbar)
@@ -349,7 +356,7 @@ local function BuildNoteLine(ui, body)
             Page.SetRaw(line, Page.note)
             if Page.noteError then line:SetTextColor(1, 0.4, 0.35) else line:SetTextColor(Page.TextColor()) end
         else
-            local hint = ui.screenEditor and LIVE_HINT or HINT
+            local hint = ui.previewReflow and SIM_HINT or ui.screenEditor and LIVE_HINT or HINT
             Page.SetRaw(line, Page.CatalogUnavailable() or Page.SpellSearchHint() or Tr(hint, true))
             line:SetTextColor(Page.MutedColor())
         end
@@ -398,6 +405,16 @@ local function Render(ui)
     end
     return frame
 end
+local function FitCanvas(ui, remeasure)
+    local stripHeight = Page.PaintTargetPicker(ui) + PaintStrip(ui, ui.width, remeasure)
+    local room = ui.compact and (ui.compactHeight - 46 - LINE - 8) or (EXPANDED - 84 - LINE - 8)
+    local height = max(40, room - stripHeight)
+    if ui.canvasHeight ~= height then
+        ui.canvasHeight = height
+        ui.canvas:SetHeight(height)
+    end
+end
+
 local function Paint(ui)
     if not ui.previewBody:IsVisible() or P.Combat() then return end
     -- The layout on screen keeps the runtime's preview mode on (the module
@@ -406,15 +423,14 @@ local function Paint(ui)
         Page.Activate()
         Page.SyncScreenEditor(ui)
     end
-    local stripHeight = Page.PaintTargetPicker(ui) + PaintStrip(ui, ui.width)
-    local room = ui.compact and (ui.compactHeight - 46 - LINE - 8) or (EXPANDED - 84 - LINE - 8)
-    local height = max(40, room - stripHeight)
-    if ui.canvasHeight ~= height then
-        ui.canvasHeight = height
-        ui.canvas:SetHeight(height)
-    end
+    FitCanvas(ui)
     local frame = Render(ui)
-    PaintHits(ui, frame, frame ~= nil and not Page.EditorBlocked())
+    local reflow = frame and frame.reflowing == true
+    if ui.previewReflow ~= reflow then
+        ui.previewReflow = reflow
+        ui.PaintPreviewNote()
+    end
+    PaintHits(ui, frame, frame ~= nil and not ui.previewReflow and not Page.EditorBlocked())
     ui.handle:EnableMouse(true)
     FollowPopover(ui)
     ui.simulate:SetEnabled(not Page.ForeignSpec() and S.CooldownManagerSimulate ~= nil and Page.Running())
@@ -454,6 +470,9 @@ local function BuildBody(section, ui)
     ui.status:SetHeight(42)
     ui.PaintPreview = function() Paint(ui) end
     ui.PaintHitMarks = function() PaintMarks(ui) end
+    P.MenuWorkspace.TrackZoomLayout(body, function()
+        if body:IsVisible() and not P.Combat() then FitCanvas(ui, true) end
+    end)
     body.ApplyCompactPreviewPresentation = ApplyCompact
     body:SetScript("OnHide", function() ui.host:Deactivate() end)
     return body

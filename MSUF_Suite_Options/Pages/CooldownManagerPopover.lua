@@ -10,7 +10,7 @@ local FAMILY = CDM.FAMILY
 local ID = Page.ID
 local SLOTS, KEYS = CDM.SLOTS, CDM.KEYS
 local CROP_MIN, CROP_MAX = Page.CROP_MIN, Page.CROP_MAX
-local floor, max, min, format = math.floor, math.max, math.min, string.format
+local max, min, format = math.max, math.min, string.format
 local Public, SetIcon, SetRaw = Page.Public, Page.SetIcon, Page.SetRaw
 local Accent, TextColor = Page.Accent, Page.TextColor
 local Button, Label, ButtonText = Page.Button, Page.Label, Page.ButtonText
@@ -38,7 +38,7 @@ local pop
 -- A totem slot (kind t) counts its totem down: no charges, glows, ready
 -- state or use. Its appearance, spell conditions and supported coverage can
 -- be edited here.
-local TOTEM_FIELDS = { swipe = true, timeText = true, threshold = true, icon = true, barColor = true, barText = true,
+local TOTEM_FIELDS = { swipe = true, timeText = true, threshold = true, tenthsSeconds = true, icon = true, barColor = true, barText = true,
     requireSpell1 = true, requireSpell2 = true, requireSpell3 = true, excludeSpell1 = true, excludeSpell2 = true, excludeSpell3 = true }
 local function CoverageSlot(key)
     if not Suite.Client.isForever or CDM.EntryKind(key) ~= "t" then return end
@@ -72,7 +72,7 @@ local function BarSetting(suffix)
     if key then return P.Get(ID, key) end
 end
 local function BarValue(field)
-    if field.key == "threshold" then return P.Get(ID, "thresholdSeconds") end
+    if field.global then return P.Get(ID, field.global) end
     if field.key == "showGCD" then return P.Get(ID, "showGCD") end
     -- Countdown and charges say what the runtime shows (K.BarTime and
     -- K.BarStacks in MSUF_Suite_CooldownManager/Const.lua): timer bars also
@@ -185,8 +185,7 @@ local function StepClick(self)
     local current = Page.SpellField(pop.key, field.key)
     if current == nil then current = field.off and 0 or tonumber(BarValue(field)) or 0 end
     local multiplier = IsControlKeyDown() and 10 or IsShiftKeyDown() and 5 or 1
-    local value = max(0, min(field.max, current + self.delta * field.step * multiplier))
-    value = floor(value / field.step + 0.5) * field.step
+    local value = Page.BoundPopoverNumber(field, current + self.delta * field.step * multiplier)
     SetField(field, not (field.off and value == 0 and not Page.spellSpecScope) and value or nil)
 end
 -- The chosen color clicked again follows the bar: cleared, or, in a
@@ -200,25 +199,39 @@ local function SwatchClick(self)
         SetField(field, Page.spellSpecScope and "" or nil)
     end
 end
--- Default ("") clears a shared stack color; a specialization stores it.
+local function DefaultColor(field)
+    return field.colorGlobal and P.Get(ID, field.colorGlobal) or STACK_COLOR
+end
+-- An inherited color ("") clears a shared choice; a specialization stores it.
 local function ColorClick(self)
-    local name = self.row.field.color
-    local current = Page.SpellField(pop.key, name) or ""
+    local field, key = self.row.field, pop.key
+    local name, menu = field.color, COLOR_MENU
+    local current = Page.SpellField(key, name) or ""
+    if field.colorGlobal then
+        local inherited = DefaultColor(field)
+        if Page.OpenPopoverWarningColor(self, field, key, current ~= "" and current or inherited) then return end
+        menu = Page.PopoverWarningColors(inherited)
+    end
     local function Pick(value)
-        local ok, reason = Page.SetSpellField(pop.key, name, (value ~= "" or Page.spellSpecScope) and value or nil)
+        local ok, reason = Page.SetSpellField(key, name, (value ~= "" or Page.spellSpecScope) and value or nil)
         if not ok then Page.Fail(reason) end
     end
     if W.OpenDropdown then
         Page.dropdownOpen = true
-        W.OpenDropdown(self, COLOR_MENU, current, Pick)
+        W.OpenDropdown(self, menu, current, Pick)
         return
     end
     -- Without Menu2's list, step through the colors.
     local index = 1
-    for i = 1, #COLOR_MENU do if COLOR_MENU[i].value == current then index = i end end
-    Pick(COLOR_MENU[index % #COLOR_MENU + 1].value)
+    for i = 1, #menu do if menu[i].value == current then index = i end end
+    Pick(menu[index % #menu + 1].value)
 end
 local function ColorEnter(self)
+    local field = self.row.field
+    if field.colorLabel then
+        ShowTip(self, Tr(field.colorLabel), Tr(field.help))
+        return
+    end
     ShowTip(self, Tr("Stack color"), Tr("Stacks show in this color from the number on the left."))
 end
 -- None clears a shared sound; a specialization stores it ("", silent).
@@ -283,10 +296,11 @@ local function NumberControls(row, field, x)
         row.swatch:SetPoint("LEFT", row.plus, "RIGHT", 8, 0)
         row.swatch:SetScript("OnEnter", ColorEnter)
         row.swatch:SetScript("OnLeave", HideTip)
-    elseif not field.off then
+    end
+    if not field.off and (not row.swatch or field.colorGlobal) then
         -- "Bar" (or the field's fallback) marks a value that follows the bar.
         row.hint = Label(row, "GameFontDisableSmall", "", "muted")
-        row.hint:SetPoint("LEFT", row.plus, "RIGHT", 6, 0)
+        row.hint:SetPoint("LEFT", row.swatch or row.plus, "RIGHT", 6, 0)
         row.hint:SetWidth(60)
     end
 end
@@ -420,22 +434,27 @@ local function Row(field)
     elseif kind == "icon" or kind == "spell" or kind == "text" then
         InputControls(row, kind, x)
     end
+    -- Every control of the row (label help included) scrolls the popover.
+    for _, child in ipairs({ row:GetChildren() }) do Page.ForwardWheel(child, pop.scroll) end
     pop.rows[field.key] = row
     return row
 end
 
--- companion: the stack color ("" is a specialization's explicit default).
-local function PaintNumber(row, field, value, companion)
+-- An empty color follows the default, even over a shared choice.
+local function PaintNumber(row, field, value, companion, custom)
     if companion == "" then companion = nil end
     local shown = value
     if shown == nil then shown = field.off and 0 or tonumber(BarValue(field)) or 0 end
     row.shownNumber = shown
     ButtonText(row.value, field.off and shown == 0 and Tr("Off") or tostring(shown))
     row.value:SetAlpha(value ~= nil and 1 or 0.6)
-    if row.hint then SetRaw(row.hint, value ~= nil and "" or Tr(field.fallback or "Bar")) end
+    if row.hint then
+        local showHint = value == nil and not (row.swatch and custom)
+        SetRaw(row.hint, showHint and Tr(field.fallback or "Bar") or "")
+    end
     local swatch = row.swatch
     if swatch then
-        local r, g, b = P.RGB(companion or STACK_COLOR)
+        local r, g, b = P.RGB(companion or DefaultColor(field))
         swatch.fill:SetColorTexture(r, g, b, 1)
         if companion then r, g, b = Accent() else r, g, b = 0, 0, 0 end
         swatch.edge:SetColorTexture(r, g, b, companion and 1 or 0.8)
@@ -487,7 +506,7 @@ local function PaintRow(row, fields)
             ButtonText(row.choice, Tr(text))
         end
     elseif kind == "number" then
-        PaintNumber(row, field, value, companion)
+        PaintNumber(row, field, value, companion, custom)
         if row.op then ButtonText(row.op, OpMenuItem(row.op.field, fields and fields[field.op]).mark) end
     elseif kind == "color" then
         PaintColors(row, value)
@@ -750,14 +769,21 @@ function Page.TogglePopover(tile, anchor)
     pop.scroll:SetVerticalScroll(0)
     Page.PaintPopover()
     pop:Show()
-    P.Suite.Skin.RegisterMenu(pop, "cdmMenuMotion")
+    -- The host already smooths this ScrollFrame: the skin adopts the authored
+    -- content only, or it adds a second translation to every scroll update.
+    P.Suite.Skin.RegisterMenu(pop, "cdmMenuMotion", true)
     P.Suite.Skin.AnimateContent(pop.content, pop.key, "cdmMenuMotion")
     Light(anchor, true)
     return true
 end
 -- The preview moves the open popover to the icon that now holds its entry.
 function Page.MovePopover(anchor)
-    if not (pop and pop:IsShown()) or pop.anchor == anchor then return end
+    if not (pop and pop:IsShown()) then return end
+    if pop.anchor == anchor then
+        -- A live bar that moved or grew keeps its popover beside it.
+        if pop.liveCanvas then Page.PlacePopup(pop, anchor) end
+        return
+    end
     Light(pop.anchor, false)
     Page.PlacePopup(pop, anchor)
     Light(anchor, true)

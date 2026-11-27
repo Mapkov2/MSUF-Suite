@@ -280,6 +280,9 @@ Setter("SetCooldownFromDurationObject",function(self,duration)
 end)
 Setter("Clear",function(self) self.running=nil end)
 Setter("SetTimerDuration",function(self,duration) self.timerDuration=duration end)
+Setter("SetOrder")
+Setter("SetSmoothing")
+Setter("SetOffset",function(self,x,y) self.dx,self.dy=x,y end)
 Setter("Play",function(self) self.playing=true end)
 Setter("Stop",function(self) self.playing=false end)
 Setter("SetUnit",function(self,unit) self.unit=unit end,true)
@@ -459,6 +462,8 @@ local SPEC_IDS={62,63,64}
 C_SpecializationInfo={
     GetSpecialization=function() return specIndex end,
     GetSpecializationInfo=function(index) return SPEC_IDS[index],"Spec"..index,"",6000+index end,
+    -- WoW Forever's talent group (Blizzard_PlayerSpells Camelot ClassTalentsFrame): the primary one.
+    GetActiveSpecGroup=function() return 1 end,
 }
 Constants={SpellCooldownConsts={GLOBAL_RECOVERY_CATEGORY=133}}
 INVSLOT_TRINKET1,INVSLOT_TRINKET2=13,14
@@ -674,7 +679,7 @@ C_Item={
     GetItemCooldown=function(item) local cd=C_Item.cooldowns[item];if cd then return cd[1],cd[2],cd[3] end return 0,0,true end,
     countReads={},
     GetItemCount=function(item,bank,uses)
-        assert(bank==false and uses==true,"item counts must include remaining uses")
+        assert(bank==false and type(uses)=="boolean","bag reads must choose stacks or remaining uses")
         C_Item.countReads[item]=(C_Item.countReads[item] or 0)+1
         return bagCounts[item] or 2
     end,
@@ -1859,6 +1864,61 @@ module:Refresh()
 assert(writes==before and #timers==queued,"an unchanged refresh did work")
 C.Layout.ApplyAll()
 assert(writes==before,"a repeated unchanged layout pass made widget calls")
+-- Hide a selected bar's own edges and its host skin, including the menu sample.
+do
+    local bridge = Suite.HostBridge
+    local read, paint = bridge.IconSkinLook, bridge.PaintIconSkin
+    local skin = { signature = "border-test" }
+    bridge.IconSkinLook = function(choice) return choice == "BORDER_TEST" and skin or nil end
+    bridge.PaintIconSkin = function(_, look) return look == skin end
+    local border, choice, toggle = config.ess_border, config.ess_iconSkin, config.ess_showIconBorder
+    local stage = New("Frame", UIParent)
+    local function Refresh()
+        module:Refresh()
+        Run()
+        return assert(S.CooldownManagerRenderPreview(stage, "ess", 400, 200)).icons[1]
+    end
+    config.ess_border, config.ess_iconSkin, config.ess_showIconBorder = 2, "CUSTOM", true
+    local tile = Refresh()
+    local icon = e11.icon
+    assert(icon.border > 0 and icon.edges[1]:IsShown() and tile.edges[1]:IsShown(), "baseline border is missing")
+    config.ess_showIconBorder = false
+    assert(Refresh() == tile and not icon.edges[1]:IsShown() and not tile.edges[1]:IsShown() and icon.border == 0,
+        "the border switch must clear both live and preview edges without replacing the tile")
+    config.ess_showIconBorder, config.ess_iconSkin = true, "BORDER_TEST"
+    Refresh()
+    assert(icon.skinned and tile.skinned, "the selected skin should paint both icons")
+    config.ess_showIconBorder = false
+    Refresh()
+    assert(not icon.skinned and not tile.skinned and not ess.skin and config.ess_iconSkin == "BORDER_TEST",
+        "the border switch must suppress the selected skin without discarding it")
+    config.ess_showIconBorder = true
+    Refresh()
+    assert(icon.skinned and tile.skinned, "re-enabling borders must restore the selected skin")
+    local stub, masque = LibStub, config.ess_masque
+    local groups, deletes = 0, 0
+    local group = { AddButton = function() end, RemoveButton = function() end,
+        ReSkin = function() end, Delete = function() deletes = deletes + 1 end }
+    local library = { Group = function() groups = groups + 1 return group end }
+    LibStub = { GetLibrary = function(_, name) if name == "Masque" then return library end end }
+    config.ess_masque = true
+    Refresh()
+    assert(icon.masqued, "the Masque fixture must skin the icon")
+    config.ess_showIconBorder = false
+    Refresh()
+    assert(not icon.masqued and not icon.edges[1]:IsShown() and config.ess_masque and deletes == 0,
+        "border off must set Masque aside without discarding the bar's selection")
+    config.ess_showIconBorder = true
+    Refresh()
+    assert(icon.masqued and groups == 1, "re-enabling borders must reuse the original Masque group")
+    config.ess_masque = false
+    Refresh()
+    LibStub, config.ess_masque = stub, masque
+    config.ess_border, config.ess_iconSkin, config.ess_showIconBorder = border, choice, toggle
+    Refresh()
+    S.CooldownManagerReleasePreview(stage)
+    bridge.IconSkinLook, bridge.PaintIconSkin = read, paint
+end
 -- Later rows with their own size: a style-only change styles every icon
 -- once, at the size its row takes (no second pass from the layout, and no
 -- later-row icon left at the first row's size).
@@ -2385,6 +2445,57 @@ local order=C.plans.ess.entries
 assert(order[1].key=="b14" and order[2].key=="b11" and order[3].key=="b12","per-spec explicit order")
 assert(S.CooldownManagerSpec()==62)
 
+------------------------------------------------------------------ WoW Forever talent groups
+-- The secondary talent group keeps its lists and spell choices under its
+-- specialization plus 50000 and starts as a copy of the primary one the
+-- first time it is active: in use at once, written a frame later. The
+-- primary group keeps the plain specialization. Combat never reads the group.
+do
+    local group,reads,realGroup,forever=2,0,C_SpecializationInfo.GetActiveSpecGroup,Suite.Client.isForever
+    C_SpecializationInfo.GetActiveSpecGroup=function() reads=reads+1;return group end
+    local savedLists,savedSpells=config.listsData,config.spellsData
+    config.spellsData=assert(Codec.EncodeSpells({e={b11={readyGlow=true}},s={[62]={b11={showGCD=true}}}}))
+    module:Refresh();Run()
+    Suite.Client.isForever=true
+    assert(Fire("ACTIVE_TALENT_GROUP_CHANGED"))
+    Run()
+    assert(C.state.specID==50062 and S.CooldownManagerSpec()==50062,"the secondary talent group has its own key")
+    assert(C.entries.b11.ov.showGCD==true and C.plans.c1.entries[1].key=="s9001" and C.plans.ess.entries[1].key=="b14",
+        "a new secondary group starts as a copy of the primary one")
+    Run(1)
+    local lists,spells=Codec.DecodeLists(config.listsData),Codec.DecodeSpells(config.spellsData)
+    assert(lists.specs[50062] and lists.specs[50062].c1[1]=="s9001" and spells.s[50062].b11.showGCD==true
+        and lists.specs[62].c1[1]=="s9001","the copy is stored and the primary group keeps its own")
+    lists.specs[50062].c1={"i9002"}
+    config.listsData=assert(Codec.EncodeLists(lists));module:Refresh();Run()
+    assert(#C.plans.c1.entries==1 and C.plans.c1.entries[1].key=="i9002","the secondary group keeps its own list")
+    group=1
+    assert(Fire("ACTIVE_TALENT_GROUP_CHANGED"));Run()
+    assert(C.state.specID==62 and C.plans.c1.entries[1].key=="s9001","the primary group keeps its list")
+    group=2
+    assert(Fire("ACTIVE_TALENT_GROUP_CHANGED"));Run()
+    local seeded=config.listsData
+    assert(C.state.specID==50062 and C.plans.c1.entries[1].key=="i9002" and config.listsData==seeded,
+        "a secondary group with its own data is never copied over")
+    reads=0
+    combat=true
+    Fire("PLAYER_REGEN_DISABLED")
+    Run(1)
+    assert(S.CooldownManagerSpec()==50062 and Fire("SPELLS_CHANGED") ~= nil,"probe: the combat catalog pass")
+    Run()
+    assert(reads==0,"combat read the talent group")
+    combat=false
+    Fire("PLAYER_REGEN_ENABLED")
+    group=1
+    assert(Fire("ACTIVE_TALENT_GROUP_CHANGED"));Run()
+    Suite.Client.isForever=false
+    module:Refresh();Run()
+    assert(C.state.specID==62,"Retail keeps the plain specialization")
+    Suite.Client.isForever,C_SpecializationInfo.GetActiveSpecGroup=forever,realGroup
+    config.listsData,config.spellsData=savedLists,savedSpells
+    module:Refresh();Run()
+end
+
 ------------------------------------------------------------------ MSUF Edit Mode preview
 config.c2_on=true
 module:Refresh()
@@ -2666,8 +2777,17 @@ do
     -- Buff icons on the canvas: active for six seconds a loop, glowing only
     -- with Glow while active.
     local buffStage=New("Frame",UIParent)
+    local buffKeys=Suite.CDM.KEYS.buf
+    local oldKeep,oldSpells=config[buffKeys.keepSlots],config.spellsData
+    local choices=Codec.DecodeSpells(oldSpells)
+    choices.e.b32={auraUnit=2}
+    config.spellsData=assert(Codec.EncodeSpells(choices))
+    config[buffKeys.keepSlots]=false
+    module:Refresh();Run()
     local buffs=assert(S.CooldownManagerRenderPreview(buffStage,"buf",400,100))
     local buff=buffs.icons[1]
+    local survivor=assert(buffs.icons[2],"fixture: at least two buff samples")
+    assert(buffs.reflowing,"Simulate compacts a bar of active aura icons")
     assert(buffs.kind==Suite.CDM.KIND.AURA_ICON and buff.simFx and not buff.gProc and not buff.gReady,"buff samples join the simulation")
     PlayTo(0)
     assert(buff.simActive and buff.cd.running and not buff.gAura,"an active buff glows only with Glow while active")
@@ -2675,8 +2795,32 @@ do
     module:Refresh();Run()
     S.CooldownManagerRenderPreview(buffStage,"buf",400,100)
     assert(buff.gAura,"Glow while active lights the active buff")
+    PlayTo(3)
+    local beforeX,beforeY=survivor.pvX,survivor.pvY
+    assert(buff.layShown and survivor.layShown,"the active icons share the preview")
     PlayTo(6)
     assert(not buff.simActive and not buff.gAura,"the glow ends with the buff")
+    local exit=assert(buff.pvExit,"the expired aura should get an exit animation")
+    assert(buff.layShown and exit.pending and exit.playing,"the old artwork remains while fading")
+    local slide=assert(survivor.pvSlide,"a surviving icon should slide into the compact layout")
+    assert(survivor.layShown and survivor.pvX==beforeX and survivor.pvY==beforeY
+        and slide.playing and (slide.x~=beforeX or slide.y~=beforeY),"the animation starts at the old slot")
+    exit.playing=false
+    exit.scripts.OnFinished(exit)
+    assert(not buff.layShown and not exit.pending,"the aura must hide after fading out")
+    slide.playing=false
+    slide.scripts.OnFinished(slide)
+    assert(survivor.pvX==slide.x and survivor.pvY==slide.y and not slide.holder,
+        "the survivor settled at the compact slot when its translation finished")
+    assert(not S.CooldownManagerSimulate(false))
+    assert(not buffs.reflowing and buff.layShown and survivor.layShown and not survivor.pvSlide.playing
+        and survivor.pvX==buffs.out[3] and survivor.pvY==buffs.out[4],"stopping restores all slots and ends the motion")
+    assert(S.CooldownManagerSimulate(true))
+    config[buffKeys.keepSlots]=true
+    module:Refresh();Run()
+    S.CooldownManagerRenderPreview(buffStage,"buf",400,100)
+    assert(not buffs.reflowing and buff.layShown and survivor.layShown,"fixed-slot auras stay in place during simulation")
+    config[buffKeys.keepSlots],config.spellsData=oldKeep,oldSpells
     config[Suite.CDM.KEYS.buf.auraGlow]=false
     module:Refresh();Run()
     S.CooldownManagerReleasePreview(buffStage)
@@ -2696,6 +2840,34 @@ Run()
 assert(not C.state.preview)
 assert(S.CooldownManagerPlaySound("kit:12345")==true,"sound preview plays")
 assert(C.Catalog.EquipTexture(14)==136528,"an empty slot shows its paper-doll art")
+
+do (function()
+    config.animateNewIcons=true
+    module:Refresh()
+    Run()
+    assert(C.state.animateNewIcons,"the shared option reaches the live cooldown manager")
+    local entry=assert(C.plans.ess.entries[1])
+    local icon=assert(entry.icon)
+    local original=entry.hidden
+    entry.hidden=false
+    C.Layout.Apply("ess")
+    assert(icon:IsShown() and icon.layShown,"the example icon was shown")
+    entry.hidden=true
+    C.Layout.Apply("ess")
+    local exit=assert(icon.cdmExit,"a concealed cooldown should fade")
+    assert(icon:IsShown() and icon.layShown==false and exit.playing and not icon.mouse and not icon.ping,
+        "the outgoing icon paints without retaining its hit area")
+    exit.playing=false
+    exit.scripts.OnFinished(exit)
+    assert(not icon:IsShown(),"the outgoing cooldown must hide when the fade ends")
+    entry.hidden=false
+    C.Layout.Apply("ess")
+    assert(icon:IsShown() and icon.cdmAppearance.playing and not exit.playing,"a new appearance reuses the icon")
+    entry.hidden=original
+    config.animateNewIcons=false
+    module:Refresh()
+    Run()
+end)() end
 
 ------------------------------------------------------------------ grow conversion keeps the bar in place
 bars.ess.frame.rect={362,500,300,50}
@@ -3897,6 +4069,42 @@ module:Refresh()
 Run()
 assert(Registered("UNIT_FACTION") and Registered("PLAYER_TARGET_CHANGED"),"target auras watch the target again")
 assert(Registered("ADDON_RESTRICTION_STATE_CHANGED"),"the restriction watch returns with aura containers")
+do (function()
+    assert(not Registered("UNIT_HEALTH"), "plain target auras need no target health events")
+    local lists, spells = config.listsData, config.spellsData
+    local newLists = Codec.DecodeLists(lists)
+    local spec = C.state.specID
+    local specLists = newLists.specs[spec] or {}
+    newLists.specs[spec] = specLists
+    specLists.buf = { "d1943" }
+    local attackable, dead = true, false
+    local nativeAttack, nativeDead, nativeName = UnitCanAttack, UnitIsDeadOrGhost, names[1943]
+    names[1943] = "Rupture"
+    UnitCanAttack = function() return attackable end
+    UnitIsDeadOrGhost = function() return dead end
+    config.listsData = assert(Codec.EncodeLists(newLists))
+    config.spellsData = assert(Codec.EncodeSpells({e={d1943={missingGlow=true}}}))
+    module:Refresh()
+    Run()
+    assert(Registered("UNIT_HEALTH"), "the target DoT stand-in did not demand target health updates")
+    local entry = assert(C.entries.d1943)
+    local glow = assert(C.Diagnostics.MissingGlow(C.Layout.Cell("buf", entry.index)))
+    assert(glow.shown)
+    dead = true
+    assert(Fire("UNIT_HEALTH", "party1") and glow.shown, "another unit's health hid the target glow")
+    assert(Fire("UNIT_HEALTH", "target") and not glow.shown, "target death left a missing glow")
+    dead = false
+    assert(Fire("UNIT_HEALTH", "target") and glow.shown, "target resurrection did not restore the glow")
+    attackable = false
+    assert(Fire("UNIT_FACTION", "target") and not glow.shown, "friendly reaction left a missing glow")
+    attackable = true
+    assert(Fire("PLAYER_TARGET_CHANGED") and glow.shown, "retarget did not restore the glow")
+    config.listsData, config.spellsData = lists, spells
+    module:Refresh()
+    Run()
+    assert(not Registered("UNIT_HEALTH") and not glow.shown, "the cleared stand-in retained its event or glow")
+    UnitCanAttack, UnitIsDeadOrGhost, names[1943] = nativeAttack, nativeDead, nativeName
+end)() end
 -- Turning the Essential bar off and on tells MSUF each time.
 anchorCount=AnchorEvents()
 config.ess_on=false

@@ -525,7 +525,7 @@ local function AddDefault(records, moves, id)
     if list then list[#list + 1] = rec.key end
 end
 local function FillDefaults(records)
-    local guide = C.GuideProfiles[C.state.specID]
+    local guide = C.GuideProfiles[NS.CDM.BaseSpec(C.state.specID)]
     local guideOrder = guide and guide.order
     local guideMoves = guide and guide.moves
     wipe(defaultSeen)
@@ -604,7 +604,7 @@ local function Start()
     -- Keep changes copied before an interrupted pass until its retry commits.
     if reusable then changed, orderChanged = false, false end
     local tag = SpecTag()
-    local guide = C.GuideProfiles[C.state.specID]
+    local guide = C.GuideProfiles[NS.CDM.BaseSpec(C.state.specID)]
     -- Decode first: if the client rejects the string, nothing is half-built.
     local data = Decode(C_CooldownViewer.GetLayoutData())
     wipe(fetched)

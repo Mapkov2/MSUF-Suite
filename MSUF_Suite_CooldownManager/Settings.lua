@@ -85,6 +85,7 @@ Work({ "vis", "hideMounted", "hideVehicle", "alpha", "oocAlpha", "hideResting", 
     "hideDead", "hiddenAlpha", "hoverShow", "fadeTime" }, { visible = true })
 Work({ "tooltips" }, { restyle = true })
 Work({ "iconSkin" }, { style = true })
+Work({ "showIconBorder" }, { style = true, overlay = true })
 -- Masque skins the icons: restyle and sync them (Masque.lua adds or removes the buttons).
 Work({ "masque" }, { style = true, overlay = true })
 -- A shape restyles icons and builds the aura containers again (a mask is part
@@ -135,7 +136,7 @@ end
 ------------------------------------------------------------------ reading settings
 local hit = {}
 local seenHex = {}
-local lastLists, lastSpells, lastVariant
+local lastLists, lastSpells, lastVariant, Upcoming
 
 -- The countdown's warning stage, and its tenths and urgent stage
 -- (K.Countdown; a change of these drops the last duration text options,
@@ -219,6 +220,11 @@ function Settings.ReadGlobals(config, all)
     end
     local stocked = config.potionStockIcon == true
     if all or state.potionStockIcon ~= stocked then state.potionStockIcon, dirty.cooldowns = stocked, true end
+    local animate = config.animateNewIcons == true
+    if state.animateNewIcons ~= animate then
+        state.animateNewIcons = animate
+        for i = 1, #SLOTS do sync[SLOTS[i].key] = true end
+    end
     if all or state.allGlowsCombat ~= allGlows then
         state.allGlowsCombat, dirty.effects = allGlows, true
         for i = 1, #SLOTS do sync[SLOTS[i].key] = true end
@@ -240,7 +246,9 @@ local function ReadSkin(view)
     view.shape = K.ShapeOf(view)
     -- Masque draws the icons it skins instead of MSUF's skin.
     local skin
-    if not (view.masque and C.Masque.Active(view)) then skin = NS.HostBridge.IconSkinLook(view.iconSkin, view.shape) end
+    if view.showIconBorder ~= false and not (view.masque and C.Masque.Active(view)) then
+        skin = NS.HostBridge.IconSkinLook(view.iconSkin, view.shape)
+    end
     local changed = skin ~= view.skin and (skin and skin.signature) ~= (view.skin and view.skin.signature)
     view.skin = skin
     return changed
@@ -376,9 +384,10 @@ end
 -- The data strings are decoded only when they changed. Per-spell choices
 -- reach cooldown entries through the behavior refresh and aura buttons and
 -- overlays through a structural sync. The bars a profile variant fills
--- (variantLists) replace the profile's own lists of those bars only.
+-- (variantLists) replace the profile's own lists of those bars only. Data
+-- still waiting to be written (a talent group's first copy) reads as stored.
 function Settings.DecodeData(config)
-    local lists, spells, variant = config.listsData, config.spellsData, config.variantLists
+    local lists, spells, variant = Upcoming(config, "listsData"), Upcoming(config, "spellsData"), config.variantLists
     if lists ~= lastLists or variant ~= lastVariant then
         lastLists, lastVariant = lists, variant
         C.lists = CDM.VariantLists(CDM.Codec.DecodeLists(lists), variant)
@@ -531,8 +540,9 @@ end
 -- settings hold, so switching it on again claims the layout as it is then.
 local PLACES = CDM.PLACE_KEYS
 local seenPlaces, placesSpec
--- A setting as it will be once the pending capture is written.
-local function Upcoming(config, key)
+-- A setting as it will be once the pending capture is written (declared
+-- with the decode memo above: DecodeData reads it too).
+Upcoming = function(config, key)
     local value = pendingCapture and pendingCapture[key]
     if value == nil then value = config[key] end
     return value
@@ -589,6 +599,25 @@ local function Swap(config, data, from, to, values)
     data.specs[from] = outgoing
     return keep
 end
+-- WoW Forever: the secondary talent group starts as a copy of the primary
+-- one's lists and spell choices the first time it is active; its bar layout
+-- stays the current one until it has its own (Swap). Once per spec key.
+local seededKey
+local function SeedGroup(config)
+    local spec = C.state.specID
+    if seededKey == spec then return end
+    seededKey = spec
+    if CDM.SpecGroup(spec) ~= 2 then return end
+    local lists = CDM.Codec.DecodeLists(Upcoming(config, "listsData"))
+    local spells = CDM.Codec.DecodeSpells(Upcoming(config, "spellsData"))
+    if not CDM.SeedGroup(lists, spells, spec) then return end
+    local listsText, spellsText = CDM.Codec.EncodeLists(lists), CDM.Codec.EncodeSpells(spells)
+    if not (listsText and spellsText) then return end
+    pendingCapture = pendingCapture or {}
+    pendingCapture.listsData, pendingCapture.spellsData = listsText, spellsText
+    Settings.DecodeData(config)
+    C_Timer.After(0, PersistCapture)
+end
 -- Runs on settings changes and catalog passes (a spec change); a no-op
 -- unless the switch or the specialization moved.
 function Settings.SpecPositions()
@@ -596,6 +625,7 @@ function Settings.SpecPositions()
     if type(config) ~= "table" or captureWait then return end
     local text = Upcoming(config, "positionsData")
     if text ~= seenPlaces then seenPlaces, placesSpec = text, CDM.Codec.DecodePositions(text).spec end
+    SeedGroup(config)
     local spec = C.state.specID
     if config.specPositions ~= true then
         spec = nil

@@ -279,8 +279,9 @@ function tests.U04_entries()
 end
 function tests.U10()
     local pop = Fresh()
-    for _, field in ipairs({ "readyAlpha", "cdAlpha", "threshold", "stackGlow", "stackColorAt" }) do
+    for _, field in ipairs({ "readyAlpha", "cdAlpha", "threshold", "tenthsSeconds", "stackGlow", "stackColorAt" }) do
         local row = pop.rows[field]
+        local rounded = row.field.step < 1 and 2.7 or 3
         Fire(row.value, "OnClick")
         local edit = assert(row.edit, "U10: number has no inline edit: " .. field)
         Type(edit, "9999")
@@ -289,11 +290,11 @@ function tests.U10()
         Fire(row.value, "OnClick")
         Type(edit, "2.7")
         edit:ClearFocus()
-        assert(Page.SpellField(key, field) == 3, "U10: step rounding failed")
+        assert(Page.SpellField(key, field) == rounded, "U10: step rounding failed")
         Fire(row.value, "OnClick")
         Type(edit, "9")
         Fire(edit, "OnEscapePressed")
-        assert(Page.SpellField(key, field) == 3 and not edit:IsShown() and row.value:IsShown(), "U10: cancel failed")
+        assert(Page.SpellField(key, field) == rounded and not edit:IsShown() and row.value:IsShown(), "U10: cancel failed")
     end
     Fire(pop.rows.stackGlow.value, "OnClick")
     Type(pop.rows.stackGlow.edit, "0")

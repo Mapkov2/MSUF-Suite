@@ -4,6 +4,7 @@ local _, P = ...
 -- item and aura IDs. A pooled popup (CooldownManagerWidgets.lua) that stays
 -- open for several picks.
 local Page = P.CDMPage
+local Stock = Page.PickerStock
 local Tr = P.Tr
 local CDM = P.Suite.CDM
 local FAMILY = CDM.FAMILY
@@ -78,7 +79,7 @@ local function Item(n, kind, text, key, texture, known, slot, family, spell, ove
     end
     item.kind, item.text, item.key, item.texture = kind, text, key, texture
     item.known, item.slot, item.family = known ~= false, slot, family
-    item.potion, item.tip, item.count, item.keys = nil, nil, nil, nil
+    item.potion, item.tip, item.count, item.keys, item.stock = nil, nil, nil, nil, nil
     item.search = kind == "entry" and Page.SearchText(text, key, spell, override, tooltip) or nil
     return item
 end
@@ -223,6 +224,8 @@ local function PaintPickerRow(row, item)
             status = format(Tr("On %s"), Page.BarName(item.slot))
         elseif item.count then
             status = format(Tr("Adds %d"), item.count)
+        elseif item.stock then
+            status = tostring(item.stock)
         elseif picker.removed[item.key] then
             status = Tr("Removed")
         elseif not item.known then
@@ -309,7 +312,8 @@ local function CollectCatalog(slot, family)
             record.sortName = Public(entry.name) and type(entry.name) == "string" and entry.name:lower() or key
             record.spell, record.override = RowSpell(entry.spell), RowSpell(entry.override)
             record.tooltip = RowSpell(entry.tooltip)
-            sorted[#sorted + 1] = record
+            -- WoW Forever offers what this talent group can use now; a listed entry stays.
+            if record.known or record.slot ~= nil or not P.Suite.Client.isForever then sorted[#sorted + 1] = record end
         end
     end
     table.sort(sorted, SortCatalog)
@@ -443,32 +447,23 @@ local function AddBagPotion(n, itemID)
     return AddPotionSpell(n, spell, itemID, name)
 end
 local function AddPotions(n)
-    local before, seen = n, {}
+    local before = n
     picker.potionRows = {}
     n = n + 1
     Item(n, "header", Tr("Potions"))
     if not P.Suite.Client.isForever then
         for i = 1, #POTION_BUFFS do n = AddPotionSpell(n, POTION_BUFFS[i]) end
     end
-    for bag = 0, NUM_BAG_SLOTS do
-        local slots = C_Container.GetContainerNumSlots(bag)
-        if Public(slots) and type(slots) == "number" then
-            for slot = 1, min(slots, 100) do
-                local itemID = RowSpell(C_Container.GetContainerItemID(bag, slot))
-                if itemID and not seen[itemID] then
-                    seen[itemID] = true
-                    n = AddBagPotion(n, itemID)
-                end
-            end
-        end
-    end
+    Stock.EachBagItem(function(itemID) n = AddBagPotion(n, itemID) end)
     return n == before + 1 and before or n
 end
 local function WatchPotionItems()
     picker:UnregisterAllEvents()
     if picker:IsShown() then
         picker:RegisterEvent("ITEM_DATA_LOAD_RESULT")
-        if picker.family == FAMILY.AURA then picker:RegisterEvent("BAG_UPDATE_DELAYED") end
+        if picker.family == FAMILY.AURA or P.S.CooldownManagerConsumableCatalog then
+            picker:RegisterEvent("BAG_UPDATE_DELAYED")
+        end
     end
 end
 local function PotionItemsChanged(_, event, itemID, success)
@@ -482,6 +477,16 @@ local function PotionItemsChanged(_, event, itemID, success)
         -- A bag potion (buff bars) or an equipped item (cooldown bars) loaded.
         if not picker.potionLoads[itemID] then return end
         picker.potionLoads[itemID] = false
+        if picker.allStock and picker.family == FAMILY.COOLDOWN then
+            if not picker.stockRefresh then
+                picker.stockRefresh = true
+                C_Timer.After(0, function()
+                    picker.stockRefresh = nil
+                    if picker:IsShown() and not P.Combat() then Page.RebuildPicker() end
+                end)
+            end
+            return
+        end
     end
     Page.RebuildPicker()
 end
@@ -610,17 +615,22 @@ function Page.RebuildPicker()
     local slot = Page.selected
     local family = Page.Family(slot)
     SetRaw(picker.title, format(Tr("Add to %s"), Page.BarName(slot)))
-    local n = 1
-    if family == FAMILY.COOLDOWN or Page.ShowsShamanSetup() and not Page.ForeignSpec() then
-        n = AddGroups(0, slot, family) + 1
-    end
-    Item(n, "header", Tr(family == FAMILY.COOLDOWN and "Blizzard cooldowns" or "Blizzard buffs"))
     local sorted, bySpell, equip = CollectCatalog(slot, family)
+    local n, stockRows = 0
+    if family == FAMILY.COOLDOWN then n, stockRows = Stock.Add(n, picker, Item, RequestItemData, sorted) end
+    if family == FAMILY.COOLDOWN or Page.ShowsShamanSetup() and not Page.ForeignSpec() then
+        n = AddGroups(n, slot, family)
+    end
+    n = n + 1
+    Item(n, "header", Tr(family == FAMILY.COOLDOWN and "Blizzard cooldowns" or "Blizzard buffs"))
     for i = 1, #sorted do
         local record = sorted[i]
-        n = n + 1
-        local item = Item(n, "entry", record.entry.name, record.key, record.entry.texture, record.known, record.slot,
-            family, record.spell, record.override, record.tooltip)
+        local item = stockRows and stockRows[record.key]
+        if not item then
+            n = n + 1
+            item = Item(n, "entry", record.entry.name, record.key, record.entry.texture, record.known, record.slot,
+                family, record.spell, record.override, record.tooltip)
+        end
         BySpell(bySpell, record.spell, item)
         BySpell(bySpell, record.override, item)
     end
@@ -628,6 +638,7 @@ function Page.RebuildPicker()
     if family == FAMILY.COOLDOWN then n = AddEquipment(AddTotems(n, slot), equip) end
     picker.count = n
     picker.family = family
+    Stock.PlaceControls(picker, family == FAMILY.COOLDOWN and P.S.CooldownManagerConsumableCatalog ~= nil)
     WatchPotionItems()
     SetRaw(picker.idTitle, Tr(family == FAMILY.COOLDOWN and "Custom spell or item ID" or "Custom aura ID"))
     picker.addA:SetText(family == FAMILY.COOLDOWN and "Add spell" or "Buff on me")
@@ -762,6 +773,7 @@ local function EnsurePicker()
     picker.note:SetWidth(PICK_W - 28)
     picker.hint = Label(picker, "GameFontDisableSmall", "Picks stay open so you can add several.", "muted")
     picker.hint:SetPoint("BOTTOMLEFT", picker, "BOTTOMLEFT", 14, 34)
+    Stock.CreateControls(picker)
     picker.OnClosed = function(self)
         self:UnregisterAllEvents()
         self.pendingItem = nil

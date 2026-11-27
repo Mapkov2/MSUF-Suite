@@ -344,7 +344,7 @@ end
 -- their combat cooldown is held, so those counts refresh with their timing.
 -- Category entries sum the item ranks in Presets.CATEGORY_ITEMS.
 local totals, counts, countsStale = {}, {}, true
-local selectedItems, heldItems = {}, {}
+local selectedItems, selectedCounts, heldItems = {}, {}, {}
 function Time.BagsChanged() countsStale = true end
 local function Fresh()
     if countsStale then
@@ -359,19 +359,20 @@ local function Total(category)
     local total = totals[category]
     if total then return total end
     total = 0
-    local selected, previous = nil, selectedItems[category]
+    local selected, selectedCount, previous = nil, nil, selectedItems[category]
     local items = C.Presets.CATEGORY_ITEMS[category]
+    local includeUses = category ~= COMBAT_POTION and category ~= HEALTH_POTION
     if items then
         for i = 1, #items do
-            local count = GetItemCount(items[i], false, true)
+            local count = GetItemCount(items[i], false, includeUses)
             if not issecret(count) and type(count) == "number" and count > 0 then
                 total = total + count
-                if not selected or items[i] == previous then selected = items[i] end
+                if not selected or items[i] == previous then selected, selectedCount = items[i], count end
             end
         end
     end
     totals[category] = total
-    selectedItems[category] = selected
+    selectedItems[category], selectedCounts[category] = selected, selectedCount
     return total
 end
 -- false when unreadable (never documented as secret, but guarded).
@@ -440,6 +441,7 @@ local function CategoryCount(icon, category, entry)
         entry.categoryTexture = not issecret(texture) and texture or nil
         C.Icons.Texture(entry)
     end
+    if item then total = selectedCounts[category] end
     if total > 0 and icon.stackOn then
         ShowCount(icon, total)
     else

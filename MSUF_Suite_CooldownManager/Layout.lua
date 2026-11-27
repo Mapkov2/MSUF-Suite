@@ -434,6 +434,8 @@ end
 local function PlaceIcons(bar, view, plan)
     local entries = plan.entries
     local showAll = C.state.preview == true
+    local reduced = NS.HostBridge and NS.HostBridge.MenuReducedMotion
+    local animate = not showAll and C.state.animateNewIcons and not (reduced and reduced())
     local n = 0
     for i = 1, #entries do
         local entry = entries[i]
@@ -468,9 +470,16 @@ local function PlaceIcons(bar, view, plan)
                     if icon.w ~= iw or icon.h ~= ih then C.Icons.StyleIcon(icon, view, iw, ih) end
                 end
                 Place(icon, frame, out[2 * index - 1], out[2 * index])
-                if was ~= true then Overlay(entry, true) end
+                if was ~= true then
+                    Overlay(entry, true)
+                    if animate or icon.cdmExit then C.Icons.ShowLayoutIcon(icon, view, bar, animate) end
+                end
             else
-                Shown(icon, false)
+                if animate and was == true then
+                    C.Icons.FadeLayoutIcon(icon)
+                else
+                    Shown(icon, false)
+                end
                 if was ~= false then Overlay(entry, false) end
             end
         end

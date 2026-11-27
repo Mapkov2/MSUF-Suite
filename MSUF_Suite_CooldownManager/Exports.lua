@@ -211,7 +211,7 @@ function S.CooldownManagerGroupKeys(plain, family, currentCharacter)
             for j = 1, #(rec.linked or EMPTY) do Track(rec.linked[j], rec.key) end
         end
     end
-    local out, classID, specID = {}, select(3, UnitClass("player")), C.state.specID
+    local out, classID, specID = {}, select(3, UnitClass("player")), CDM.BaseSpec(C.state.specID)
     for _, name in ipairs(Presets.CATEGORY_ORDER) do
         local keys = {}
         out[name] = keys
@@ -260,6 +260,10 @@ function S.CooldownManagerGeneration() return C.Catalog.generation end
 -- first rank first (Ranks); elsewhere id and nil. The picker files a typed
 -- rank under its family and finds Blizzard's entry by any rank.
 function S.CooldownManagerSpellRanks(id) return C.Ranks.Canon(id), C.Ranks.Family(id) end
+
+function S.CooldownManagerConsumableCatalog()
+    return C.Presets.PICKER_POTIONS, C.Presets.PICKER_RACIALS
+end
 -- The name of a totem slot (t<slot>; WoW Forever's Shaman: its element) or
 -- equipment slot (e<slot>) key for the picker; nil for other keys.
 function S.CooldownManagerSlotLabel(key)
@@ -269,7 +273,7 @@ function S.CooldownManagerSlotLabel(key)
 end
 -- Whether the spec has an MSUF profile row (Presets.RAID_ESSENTIALS): only
 -- then do its built-in bars take the Suite's spec defaults (Resolve.ListOf).
-function S.CooldownManagerProfileRow(spec) return C.Presets.RaidEssentials(spec) ~= nil end
+function S.CooldownManagerProfileRow(spec) return C.Presets.RaidEssentials(NS.CDM.BaseSpec(spec)) ~= nil end
 
 function S.CooldownManagerStatus()
     if not M.active then return nil end

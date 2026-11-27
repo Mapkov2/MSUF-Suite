@@ -399,6 +399,9 @@ end
 local config = Config()
 Settings.ReadViews(config, true, false)
 local ess, uti = C.views.ess, C.views.uti
+Check(standIns == false and ess.skin == nil, "default bars must suppress their icon skin")
+config.ess_showIconBorder, config.uti_showIconBorder = true, true
+Settings.ReadViews(config, false, false)
 Check(standIns == true, "a bar with a skin must switch the stand-ins to their skinned code")
 Check(ess.skin == bridge.IconSkinLook("DEFAULT") and ess.skin ~= nil, "Like default must reach the bar's look")
 local gen = ess.styleGen

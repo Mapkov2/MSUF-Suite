@@ -323,6 +323,61 @@ BH3("missing", function()
     assert(not g.shown and not C.Diagnostics.MissingGlow(cellA), "off: the glow goes with the stand-in")
 end)
 
+BH3("missing-target", function()
+    C.AuraButtons = C.AuraButtons or {}
+    C.Layout.Cell = function(slot, i) return C.bars[slot].cells[i] end
+    local cellA, cellB = CreateFrame("Frame"), CreateFrame("Frame")
+    C.bars.buf = { cells = { cellA, cellB } }
+    assert(loadfile(root .. "/MSUF_Suite_CooldownManager/AuraPlaceholders.lua"))("MSUF_Suite_CooldownManager", P)
+    local B = C.AuraButtons
+    local view = { showMissing = false, glowStyle = 4, maxIcons = 0 }
+    local meta = { fixed = true, role = "icon", look = "L", lk = { l = 0, r = 1, t = 0, b = 1, bw = 0, px = 1, shape = K.SQUARE } }
+    local dot = { key = "d1943", src = "d", unit = "target", ov = { missingGlow = true }, texture = 5, name = "Rupture" }
+    local buff = { key = "a2", src = "a", unit = "player", ov = { missingGlow = true }, texture = 6, name = "Buff" }
+    local attackable, dead, reads = false, false, 0
+    UnitCanAttack = function(player, target)
+        assert(player == "player" and target == "target")
+        reads = reads + 1
+        return attackable
+    end
+    UnitIsDeadOrGhost = function(unit) assert(unit == "target"); return dead end
+    local textures, make = {}, S.CreateTexture
+    S.CreateTexture = function(parent, ...)
+        local tex = make(parent, ...)
+        if parent == cellA then textures[#textures + 1] = tex end
+        return tex
+    end
+    local plan = { entries = { dot, buff } }
+    B.Placeholders("buf", view, plan, meta, false)
+    S.CreateTexture = make
+    local g, player = C.Diagnostics.MissingGlow(cellA), C.Diagnostics.MissingGlow(cellB)
+    local standIn = assert(textures[2])
+    assert(not g.shown and not standIn.shown and player.shown, "no target or a friendly target must suppress the DoT ink only")
+    attackable = true
+    B.TargetMissingChanged()
+    assert(g.shown and standIn.shown and player.shown, "a living enemy enables the native DoT stand-in")
+    local before = writes
+    B.TargetMissingChanged()
+    assert(writes == before, "an unchanged target health update repainted the stand-in")
+    dead = true
+    B.TargetMissingChanged()
+    assert(not g.shown and not standIn.shown and player.shown, "a dead target retained DoT ink")
+    dead = Secret("boolean")
+    B.TargetMissingChanged()
+    assert(not g.shown and not standIn.shown, "an opaque death state was treated as alive")
+    dead, attackable = false, Secret("boolean")
+    B.TargetMissingChanged()
+    assert(not g.shown and not standIn.shown, "opaque reaction was treated as attackable")
+    B.Placeholders("buf", view, plan, meta, true)
+    assert(standIn.shown and not g.shown, "editing did not restore the sample without a live glow")
+    B.Placeholders("buf", view, plan, meta, false)
+    assert(not standIn.shown and not g.shown, "exiting preview bypassed target gating")
+    B.Unholds("buf")
+    before = reads
+    B.TargetMissingChanged()
+    assert(reads == before and not g.shown, "released stand-ins still watched target health")
+end)
+
 -- An item's use buff: the entry looks for that spell's aura on the player.
 BH3("item", function()
     C.Catalog = { Num = function(v) return type(v) == "number" and v or nil end, ItemIcon = function() return 1001 end,

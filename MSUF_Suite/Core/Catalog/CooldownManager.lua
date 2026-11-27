@@ -9,6 +9,7 @@ local Number, Bool, Choice, String, Color, Texture = B.Number, B.Bool, B.Choice,
 -- carry them without extra database types.
 local CDM = {}
 NS.CDM = CDM
+CDM.COUNTDOWN_STEP, CDM.COUNTDOWN_MAX = .1, 10
 
 -- Blizzard's Cooldown Manager API exists on Retail and Forever. The data
 -- strings need MSUF's codec, which older MSUF builds do not export.
@@ -133,6 +134,7 @@ B.Section(id, "general", "General", {
     B.Tooltip(Bool("raidEssentials", "Use MSUF cooldown profiles by specialization", true),
         "Uses MSUF's default spell lists for each specialization. Your own list changes are kept. This does not switch Suite profiles."),
     Bool("showGCD", "Show the global cooldown on icons", false),
+    Bool("animateNewIcons", "Animate icons", false),
     Bool("readyGlowCombat", "Ready glows only in combat", true),
     Bool("pulseCombat", "Pulse only in combat", true),
     Number("pulseSize", "Ready pulse size", 96, 32, 256),
@@ -164,9 +166,9 @@ B.TextSection(id, {
     Color("cdColor", "Countdown color", "ffffff"),
     Color("stackColor", "Charges and stacks color", "ffffff"),
     Color("keybindColor", "Keybind color", "ffffff"),
-    Number("thresholdSeconds", "Warn when fewer seconds remain (0 = off)", 0, 0, 10),
+    Number("thresholdSeconds", "Warn when fewer seconds remain (0 = off)", 0, 0, CDM.COUNTDOWN_MAX, CDM.COUNTDOWN_STEP),
     Color("thresholdColor", "Warning countdown color", "ff5a3c"),
-    Number("tenthsSeconds", "Show tenths below (seconds, 0 = off)", 0, 0, 10),
+    Number("tenthsSeconds", "Show tenths below (seconds, 0 = off)", 0, 0, CDM.COUNTDOWN_MAX, CDM.COUNTDOWN_STEP),
     Number("urgentSeconds", "Urgent warning below (seconds, 0 = off)", 0, 0, 10),
     Color("urgentColor", "Urgent warning color", "ff2020"),
 })
@@ -288,6 +290,7 @@ local function CommonRules(Add, p, d, slot)
     -- MSUF's Icon Skins page: DEFAULT follows its default skin, CUSTOM keeps
     -- the bar's own border, anything else names a skin.
     Add(String(p .. "iconSkin", "Icon skin", "DEFAULT", 64), "iconSkin")
+    Add(Bool(p .. "showIconBorder", "Show icon border", false), "showIconBorder")
     -- MSUF's aura icon shapes (MSUF 7.0; older hosts draw every icon square).
     Add(Choice(p .. "iconShape", "Icon shape", 1, NS.IconShapeLabels), "iconShape")
 end
@@ -475,6 +478,9 @@ for _, slot in ipairs(CDM.SLOTS) do
     Set("keybindSize", "enableKey", k.keybind)
     Set("keybindPos", "enableKey", k.keybind)
     Set("glowColor", "enableKey", k.glowTint)
+    for _, suffix in ipairs({ "border", "borderColor", "borderClass", "masque" }) do
+        Set(suffix, "enableKey", k.showIconBorder)
+    end
     Set("borderColor", "disabledBy", k.borderClass)
     Set("barColor", "disabledBy", k.barClass)
     Set("swipeColor", "disabledBy", k.swipeClass)

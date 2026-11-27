@@ -143,6 +143,7 @@ Pages\CooldownManagerBars.lua
 Pages\CooldownManagerFrames.lua
 Pages\CooldownManagerSections.lua
 Pages\CooldownManagerWidgets.lua
+Pages\CooldownManagerPickerStock.lua
 Pages\CooldownManagerPicker.lua
 Pages\CooldownManagerSounds.lua
 Pages\CooldownManagerPopoverFields.lua

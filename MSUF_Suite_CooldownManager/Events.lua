@@ -91,9 +91,9 @@ local function UpdateSpec()
         end
     end
     specName, specIcon = name, icon
-    local state, tag = C.state, C.Catalog.SpecTag()
-    if state.specID == id and state.specTag == tag then return false end
-    state.specID, state.specTag = id, tag
+    local state, tag, key = C.state, C.Catalog.SpecTag(), NS.CDM.PlayerSpecKey(id, C.state.specID)
+    if state.specID == key and state.specTag == tag then return false end
+    state.specID, state.specTag = key, tag
     return true
 end
 Events.UpdateSpec = UpdateSpec
@@ -371,13 +371,16 @@ local function OnTarget()
     if C.state.assistIcon and C.state.assistIconVis == K.VIS.COMBAT_OR_TARGET then C.Effects.RecommendationVisibility() end
     for i = 1, #rangedEntries do ReadRange(rangedEntries[i]) end
     C.Auras.TargetChanged()
+    C.AuraButtons.TargetMissingChanged()
     if C.ActionGlows.targetWanted then C.ActionGlows.TargetChanged() end
 end
 -- The target's disposition can flip without a retarget (a duel, a charm):
--- target aura containers pause while it is friendly. Other units: one compare.
-local function OnFaction(_, _, unit)
+-- target aura containers pause while it is friendly. Death only affects
+-- a missing-DoT stand-in. Other units: one compare.
+local function OnTargetUnitChanged(_, event, unit)
     if not issecret(unit) and unit == "target" then
-        C.Auras.TargetReaction()
+        if event == "UNIT_FACTION" then C.Auras.TargetReaction() end
+        C.AuraButtons.TargetMissingChanged()
     end
 end
 -- A restriction ended (M+ key, PvP match, encounter): aura restyles that
@@ -714,7 +717,15 @@ local function UpdateEvents()
     local target = TargetWatch() or C.ActionGlows.targetWanted
         or C.state.assistIcon and C.state.assistIconVis == K.VIS.COMBAT_OR_TARGET
     Want("PLAYER_TARGET_CHANGED", #Index.ranged > 0 or target, OnTarget)
-    Want("UNIT_FACTION", target, OnFaction)
+    Want("UNIT_FACTION", target, OnTargetUnitChanged)
+    local watchTargetHealth, auraEntries = false, Index.aura
+    for i = 1, #auraEntries do
+        if C.AuraButtons.WantsTargetMissing(auraEntries[i]) then
+            watchTargetHealth = true
+            break
+        end
+    end
+    Want("UNIT_HEALTH", watchTargetHealth, OnTargetUnitChanged, "target")
     local slots = #Index.totems > 0
     Want("ADDON_RESTRICTION_STATE_CHANGED", slots or #Index.aura > 0 or #Index.overlay > 0 or C.ActionGlows.wanted,
         slots and OnTotemRestriction or OnRestriction)

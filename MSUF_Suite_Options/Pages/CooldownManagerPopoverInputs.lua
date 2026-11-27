@@ -9,6 +9,11 @@ local Page = P.CDMPage
 if not Page then return end
 local floor, max, min = math.floor, math.max, math.min
 
+function Page.BoundPopoverNumber(field, value)
+    local units = 1 / field.step
+    return floor(max(0, min(field.max, value)) * units + .5) / units
+end
+
 local function StoredText(edit)
     local value = Page.SpellField(Page.popover.key, edit.row.field.key)
     if value == nil then return "" end
@@ -25,9 +30,10 @@ end
 local function InputValue(edit, text)
     local field, kind = edit.row.field, edit.inputKind
     if kind == "number" then
+        if field.step < 1 then text = text:gsub(",", ".") end
         local value = tonumber(text)
         if not value or value ~= value then return false, "Invalid value." end
-        value = max(0, min(field.max, floor(value / field.step + 0.5) * field.step))
+        value = Page.BoundPopoverNumber(field, value)
         -- 0 turns an "Off" field off: cleared, or stored by a specialization.
         if field.off and value == 0 and not Page.spellSpecScope then return true, nil end
         return true, value

@@ -2391,7 +2391,7 @@ do
     local SHAPE_OF = { SHADOW1 = "RECTANGLE", DARK2 = "RECTANGLE", ROUND1 = "CIRCLE" }
     local defaultShape, defaultSkin -- MSUF's default skin and its shape (nil: no skin)
     HB.IconSkins = function()
-        return { ShapeOf = function(choice)
+        return { Compile = function() end, ShapeOf = function(choice)
             if choice == "DEFAULT" then return defaultShape, defaultSkin end
             return SHAPE_OF[choice], SHAPE_OF[choice] and choice or nil
         end }
@@ -2408,6 +2408,7 @@ do
         return M.Tr(text)
     end
     Suite.Menu.attached = false
+    local confirmSkin
     local registerNS = {
         Suite = Suite, M = M, T = T, HM = optionsNS.HM, pages = optionsNS.pages, Tr = Tr, host = MSUF_NS,
         Refresh = function() end,
@@ -2416,6 +2417,11 @@ do
         S = optionsNS.S, catalog = optionsNS.catalog, Text = optionsNS.Text, SkinningEnabled = optionsNS.SkinningEnabled,
         Get = optionsNS.Get, Set = Counted(optionsNS.Set), SetMany = Counted(optionsNS.SetMany),
         StatusText = optionsNS.StatusText,
+        CDMPage = { ConfirmIconBorder = function(key, enabling, callback)
+            assert(enabling == true)
+            confirmSkin = callback
+            return false
+        end },
     }
     assert(loadfile(root .. "/MSUF_Suite_Options/Menu/Register.lua"))("MSUF_Suite_Options", registerNS)
     loading = false
@@ -2532,8 +2538,28 @@ do
     assert(byKey.suite_minimap.write("CUSTOM") and byKey.suite_buffreminders.write("CUSTOM")
         and byKey.suite_damageMeter.write("CUSTOM"), "each new area restores its previous appearance")
     local cdm, bars = S.Config("cooldownManager"), S.Config("actionbars")
-    assert(byKey.suite_cdm_ess.write("SHADOW1") and cdm.ess_iconSkin == "SHADOW1" and cdm.uti_iconSkin == "DEFAULT",
-        "a bar's row writes only that bar's skin")
+    local borderBefore = {}
+    for _, slot in ipairs(Suite.CDM.SLOTS) do
+        local setting = Suite.CDM.KEYS[slot.key].showIconBorder
+        borderBefore[setting] = cdm[setting]
+    end
+    assert(optionsNS.SetMany("cooldownManager", { ess_showIconBorder = false, uti_showIconBorder = false, def_showIconBorder = true }))
+    local essential = byKey.suite_cdm_ess
+    sets = 0
+    assert(not essential.write("ROUND1") and confirmSkin and sets == 0 and cdm.ess_iconSkin == "DEFAULT"
+        and not essential.setShape("CIRCLE"), "a skin must wait for the border confirmation, including its shape")
+    confirmSkin = nil -- Cancel.
+    essential.refresh()
+    assert(not cdm.ess_showIconBorder and cdm.ess_iconShape == 1 and cdm.ess_iconSkin == "DEFAULT")
+    assert(essential.write("CUSTOM") and not confirmSkin and not cdm.ess_showIconBorder,
+        "a bar can choose No skin while its border is off")
+    sets = 0
+    assert(not essential.write("SHADOW1") and confirmSkin and sets == 0)
+    essential.refresh()
+    confirmSkin()
+    confirmSkin = nil
+    assert(sets == 1 and cdm.ess_showIconBorder and cdm.ess_iconSkin == "SHADOW1" and cdm.uti_iconSkin == "DEFAULT",
+        "a bar's border and chosen skin are applied in one write")
     -- A new default skin (Page.SelectDefault) marks the areas whose shape it
     -- does not fit; the mark is settled in that page action: by MSUF's report
     -- (the hook, one write per module, recorded in `refreshed`) or by the
@@ -2545,6 +2571,7 @@ do
     defaultShape, defaultSkin = "HEXAGON", "HEX1"
     sets = 0
     assert(byKey.suite_cdm_ess.setShape("HEXAGON") and byKey.suite_cdm_def.setShape("HEXAGON")
+        and byKey.suite_cdm_uti.setShape("HEXAGON")
         and byKey.suite_actionbars.setShape("HEXAGON") and sets == 0 and cdm.ess_iconShape == 1,
         "setShape only marks the area")
     local refreshed = {}
@@ -2576,14 +2603,24 @@ do
     -- of different shapes brings its shape to all of them in that write.
     assert(optionsNS.Set("cooldownManager", "c2_iconShape", 2) and byKey.suite_cdm_custom.shape() == "MIXED",
         "custom bars with different shapes must not answer the first bar's shape")
-    assert(byKey.suite_cdm_custom.write("DARK2"), "the custom bars' row")
-    for i = 1, 6 do assert(cdm["c" .. i .. "_iconSkin"] == "DARK2", "custom bar " .. i .. " did not follow its row") end
+    assert(optionsNS.Set("cooldownManager", "c2_showIconBorder", false))
+    sets = 0
+    assert(not byKey.suite_cdm_custom.write("DARK2") and confirmSkin and sets == 0)
+    byKey.suite_cdm_custom.refresh()
+    confirmSkin()
+    confirmSkin = nil
+    assert(sets == 1)
+    for i = 1, 6 do
+        local bar = "c" .. i
+        assert(cdm[bar .. "_iconSkin"] == "DARK2" and cdm[bar .. "_showIconBorder"], "custom bars need the border to follow their row")
+    end
     assert(cdm.c2_iconShape == 1 and byKey.suite_cdm_custom.shape() == "RECTANGLE",
         "a skin picked for the custom bars sets every bar's shape")
     assert(byKey.suite_cdm_custom.write("SHADOW1"), "the custom bars' row, shapes matching")
     for i = 1, 6 do assert(cdm["c" .. i .. "_iconSkin"] == "SHADOW1", "custom bar " .. i .. " did not follow its row's skin") end
     -- A skin made for another shape comes with its shape in one write (the
     -- page's MatchShape then finds it matching): one module apply.
+    assert(optionsNS.Set("cooldownManager", "uti_showIconBorder", true))
     sets = 0
     assert(byKey.suite_cdm_uti.write("ROUND1") and sets == 1 and cdm.uti_iconSkin == "ROUND1"
         and byKey.suite_cdm_uti.shape() == "CIRCLE", "a round skin and its shape in one write")
@@ -2611,6 +2648,7 @@ do
     defaultShape, defaultSkin = nil, nil
     local reset = { ess_iconSkin = "DEFAULT", ess_iconShape = 1, uti_iconSkin = "DEFAULT", uti_iconShape = 1, def_iconShape = 1 }
     for i = 1, 6 do reset["c" .. i .. "_iconSkin"], reset["c" .. i .. "_iconShape"] = "DEFAULT", 1 end
+    for key, value in pairs(borderBefore) do reset[key] = value end
     assert(optionsNS.SetMany("cooldownManager", reset) and optionsNS.Set("actionbars", "buttonShape", 1))
     HB.IconSkins = iconSkins
 end

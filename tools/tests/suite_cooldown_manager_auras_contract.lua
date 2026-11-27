@@ -992,7 +992,7 @@ assert(#ts.points==1 and ts.points[1][1]=="TOPLEFT" and ts.points[1][2]==host an
 ------------------------------------------------------------------ restyle in place
 local icon1=b1.bind.icon
 local coordCalls=Calls(icon1,"SetTexCoord")
-buf.zoom=20;buf.styleGen=2
+buf.zoom,buf.styleGen,buf.showIconBorder=20,2,true
 A.Restyle("buf")
 assert(#containers==2,"restyle keeps containers")
 assert(Calls(icon1,"SetTexCoord")==coordCalls+1,"sealed button restyled while accessible")
@@ -1048,6 +1048,18 @@ do
     buf.styleGen=buf.styleGen+1
     A.Restyle("buf")
     assert(#painted==before,"a hidden skin is not asked again")
+    buf.showIconBorder, buf.zoom = false, 6
+    A.Restyle("buf")
+    local borderless = R[icon1].points[#R[icon1].points]
+    assert(borderless[4] == 0 and borderless[5] == 0 and #containers == count,
+        "the buff should fill its button without rebuilding its native container")
+    local crop = Args(icon1,"SetTexCoord")
+    assert(math.abs(crop[1] - .07) < 1e-9 and math.abs(crop[2] - .93) < 1e-9,
+        "borderless buffs should crop off the artwork rim")
+    buf.showIconBorder, buf.zoom = true, 20
+    A.Restyle("buf")
+    local bordered = R[icon1].points[#R[icon1].points]
+    assert(bordered[4] ~= 0 and bordered[5] ~= 0, "restoring borders did not restore the buff's inset")
     HB.PaintIconSkin=paint
     -- MSUF's icon shape: a mask is part of a button's regions, so a shape
     -- builds its own containers and their buttons take it at creation, over
@@ -1514,10 +1526,10 @@ do
     assert(#containers==count and Widgets()==widgets and Live("bar","player")==primary,"marker edits create nothing")
     barView.barStackMax,barView.barStackMarks=4,"2, 3, 3, 12"
     A.Sync("bar")
-    assert(Marks(first)=="100,149","listed markers below the maximum, each once ("..Marks(first)..")")
+    assert(Marks(first)=="100,150","listed markers below the maximum, each once ("..Marks(first)..")")
     barView.barStackEach=true
     A.Sync("bar")
-    assert(Marks(first)=="50,100,149","every stack marked at maximum 4 ("..Marks(first)..")")
+    assert(Marks(first)=="50,100,150","every stack marked at maximum 4 ("..Marks(first)..")")
     assert(R[first].bind.appOpts.maxApplications==4 and #containers==count,"back to 4: rebound, same containers")
     barView.barStackColorAt,barView.barStackMax,barView.barStackMarks=0,10,""
     k1.ov=C.EMPTY

@@ -83,6 +83,8 @@ function methods:GetHeight() return self.height end
 function methods:SetSize(a, b) self.width, self.height = a, b end
 function methods:GetLeft() return self.left end
 function methods:GetRight() return self.right end
+function methods:GetTop() return self.top end
+function methods:GetBottom() return self.bottom end
 function methods:GetFrameStrata() return self.strata or "MEDIUM" end
 function methods:SetFrameStrata(value) self.strata = value end
 function methods:GetStringHeight() return 14 end
@@ -614,6 +616,7 @@ InstallRuntime = function()
         frame.items = kind == 3 and frame.rows or frame.icons
         for i = 1, count do frame.items[i] = frame.items[i] or Widget(kind == 3 and "Row" or "Icon", frame) end
         frame.count, frame.kind = count, kind
+        frame.reflowing = runtime.reflowCanvas and runtime.simulate and kind == CDM.KIND.AURA_ICON
         return frame
     end
     S.CooldownManagerReleasePreview = function() runtime.released = runtime.released + 1 end
@@ -624,16 +627,16 @@ InstallRuntime = function()
         return runtime.simulate
     end
     runtime.hud = {}
-    for _, slot in ipairs({ "ess", "buf", "c6" }) do
+    for _, slot in ipairs({ "ess", "buf", "c6", "uti" }) do
         local anchor = Widget("Frame", UIParent)
         local icon = Widget("Icon", anchor)
-        local key = slot == "ess" and "b1" or slot == "buf" and "b10" or false
+        local key = slot == "ess" and "b1" or slot == "buf" and "b10" or slot == "uti" and "b4" or false
         runtime.hud[slot] = { anchor = anchor, icon = icon, key = key }
     end
     S.CooldownManagerEditorBar = function(slot, out)
         local hud = runtime.hud[slot]
         if not (hud and runtime.previewOn and Config()[slot .. "_on"]) then return false end
-        out.anchor, out.count, out.kind = hud.anchor, hud.count or 1, slot == "ess" and 1 or 2
+        out.anchor, out.count, out.kind = hud.anchor, hud.count or 1, (slot == "ess" or slot == "uti") and 1 or 2
         local spell = hud.key and CATALOG[hud.key]
         out.items[1], out.keys[1] = hud.icon, hud.key
         out.tiles[1] = spell and { key = hud.key, name = spell.name, family = spell.family, texture = spell.texture } or nil
@@ -666,9 +669,11 @@ for key in pairs(_G) do globalsBefore[key] = true end
 local P = {}
 local strict = setmetatable({}, { __index = _G, __newindex = function(_, key) error("options page wrote global " .. tostring(key), 2) end })
 for _, file in ipairs({ "Menu/Bridge.lua", "Menu/MediaValues.lua", "Menu/Controls.lua", "Menu/PreviewClasses.lua", "Menu/PreviewInteraction.lua", "Menu/SectionActions.lua",
+    "Menu/Workspace.lua",
     "Pages/DataTextsWorkspace.lua",
     "Pages/CooldownManagerData.lua", "Pages/CooldownManagerLists.lua", "Pages/CooldownManagerTarget.lua",
-    "Pages/CooldownManagerBars.lua", "Pages/CooldownManagerFrames.lua", "Pages/CooldownManagerSections.lua", "Pages/CooldownManagerWidgets.lua", "Pages/CooldownManagerPicker.lua",
+    "Pages/CooldownManagerBars.lua", "Pages/CooldownManagerFrames.lua", "Pages/CooldownManagerSections.lua", "Pages/CooldownManagerWidgets.lua",
+    "Pages/CooldownManagerPickerStock.lua", "Pages/CooldownManagerPicker.lua",
     "Pages/CooldownManagerSounds.lua", "Pages/CooldownManagerPopoverFields.lua",
     "Pages/CooldownManagerPopoverInputs.lua", "Pages/CooldownManagerPopover.lua",
     "Pages/CooldownManagerPreviewIcons.lua", "Pages/CooldownManagerScreen.lua", "Pages/CooldownManagerPreview.lua", "Pages/CooldownManagerOverrides.lua", "Pages/CooldownManagerInspection.lua", "Pages/CooldownManager.lua",
@@ -965,7 +970,7 @@ picker.set("c2")
 M.RequestRefresh()
 assert(Control("name").enabled and Control("kind").enabled and size.enabled and Control("desat").enabled
     and not Control("barWidth").enabled, "custom cooldown bar gates are wrong")
-Config().c2_kind = 3
+Config().c2_kind, Config().c2_showIconBorder = 3, true
 M.RequestRefresh()
 assert(not size.enabled and Control("barWidth").enabled, "custom bar type change did not re-gate controls")
 -- A custom Buff bar bar keeps what the runtime reads for it.
@@ -986,7 +991,7 @@ for _, kind in ipairs({ 3, 2 }) do
     assert(Control("glowStyle").enabled and Control("glowTint").enabled and not Control("readyGlow").enabled,
         "custom buff bar glow look gates are wrong (type " .. kind .. ")")
 end
-Config().c2_kind = 1
+Config().c2_kind, Config().c2_showIconBorder = 1, false
 -- The bar name commits to the bar it was typed for, even when the bar
 -- changes before the input loses focus.
 local nameInput = Control("name")
@@ -1106,6 +1111,12 @@ do
         "the pandemic window's style, color and thickness follow its switch in Buffs: " .. tostring(listed))
     local look, buffs = ui.sections.look, ui.sections.buffs
     assert(look.title == "Look" and buffs.title == "Buffs", "unexpected section order for the reset check")
+    assert(catalog.rules.ess_showIconBorder.label == "Show icon border")
+    Control("showIconBorder").set(true)
+    assert(Config().ess_showIconBorder == true and Config().c1_showIconBorder == false,
+        "the icon-border switch must affect only the selected bar")
+    assert(look._msufSuiteSectionReset() and Config().ess_showIconBorder == false,
+        "the selected bar's Look reset must turn its border off")
     Config().c1_zoom, Config().c1_border, Config().c1_pandemic = 20, 3, false
     Config().bar_strata, Config().ess_pandemic, Config().ess_pandemicStyle, Config().ess_pandemicSize = 1, false, 1, 6
     picker.set("bar")
@@ -1619,9 +1630,37 @@ for _, field in ipairs(Page.FIELDS) do
 end
 for field in pairs(CDM.SPELL_FIELDS) do assert(fieldRows[field], "no popover row for spell field " .. field) end
 local tile = grid.tiles[1]
-Click(tile, "LeftButton")
+-- The host owns the popover's scrolling and its easing: the skin adopts the
+-- authored content only (no second scroll-motion layer), and every control
+-- that covers the viewport hands the wheel to the scroll frame's current
+-- handler instead of swallowing it.
+do
+    local registerMenu, adoptions = Suite.Skin.RegisterMenu, {}
+    Suite.Skin.RegisterMenu = function(frame, moduleID, contentOnly)
+        if moduleID == "cdmMenuMotion" then adoptions[#adoptions + 1] = contentOnly == true end
+        return registerMenu(frame, moduleID, contentOnly)
+    end
+    Click(tile, "LeftButton")
+    Suite.Skin.RegisterMenu = registerMenu
+    assert(#adoptions == 1 and adoptions[1], "the popover must not adopt the host scroll frame into a second scroll-motion layer")
+end
 local pop = assert(Page.popover)
 assert(pop.shown and pop.key == "b2" and pop.anchor == tile, "popover did not open on the tile")
+do
+    local fallback, received = pop.scroll:GetScript("OnMouseWheel"), {}
+    pop.scroll:SetScript("OnMouseWheel", function(frame, delta) received[#received + 1] = frame == pop.scroll and delta end)
+    local rows = pop.rows
+    local controls = { rows.readyGlow.tip, rows.readyGlow.on, rows.readyGlow.off, rows.readyGlow.reset, rows.glowStyle.choice,
+        rows.readyAlpha.minus, rows.readyAlpha.value, rows.readyAlpha.plus, rows.glowColor.swatches[1], rows.icon.edit,
+        rows.sound.choice, rows.sound.play }
+    for i, control in ipairs(controls) do
+        assert(control.mouseWheelEnabled, "popover control " .. i .. " swallows the wheel")
+        Fire(control, "OnMouseWheel", -1)
+    end
+    assert(#received == #controls and received[1] == -1 and received[#controls] == -1,
+        "popover controls must hand the wheel to the scroll frame's current handler")
+    pop.scroll:SetScript("OnMouseWheel", fallback)
+end
 assert(pop.rows.readyGlow.shown and not pop.rows.auraGlow and not pop.rows.lossSound, "popover rows must follow the entry family")
 assert(not pop.hasAura and not pop.rows.stackGlow and not pop.rows.stackColorAt and not pop.rows.auraUnit,
     "a cooldown without a buff has no stack options and no Track on")
@@ -1685,6 +1724,17 @@ local function FilterSounds(text)
     return SoundRows()
 end
 local listed, listText = SoundRows()
+do
+    local fallback, received = sounds.scroll:GetScript("OnMouseWheel"), 0
+    sounds.scroll:SetScript("OnMouseWheel", function(frame, delta)
+        if frame == sounds.scroll and delta == 2 then received = received + 1 end
+    end)
+    Fire(listed[4], "OnMouseWheel", 2)
+    Fire(listed[4].play, "OnMouseWheel", 2)
+    assert(listed[4].mouseWheelEnabled and listed[4].play.mouseWheelEnabled and received == 2,
+        "sound rows and their Play buttons must hand the wheel to the scroll frame's current handler")
+    sounds.scroll:SetScript("OnMouseWheel", fallback)
+end
 assert(listText == "None|Blizzard Cooldown Manager|Animal sounds|Cat|Chicken|War 2|Abstract Whoosh|Category 9|"
     .. "Sound kit 353392|Shared media|Boom|Bell|Chime", "sound list order: " .. listText)
 assert(listed[2].item.header == 1 and listed[3].item.header == 2 and not listed[2].play.shown and not listed[3].play.shown
@@ -1784,6 +1834,55 @@ do
     for _, field in ipairs(Page.FIELDS) do assert(type(field.help) == "string" and field.help ~= "", "no help for " .. field.key) end
     assert(pop.rows.threshold.hint.text == "All bars" and pop.rows.readyAlpha.hint.text == "Bar",
         "Warn below follows the module-wide setting, not the bar")
+    do
+        local warning, decimals = pop.rows.threshold, pop.rows.tenthsSeconds
+        local config = Config()
+        config.thresholdSeconds, config.thresholdColor, config.tenthsSeconds = 5.5, "00ffff", 2.5
+        M.RequestRefresh()
+        assert(warning.value.text == "5.5" and warning.swatch.fill.color[1] == 0 and warning.swatch.fill.color[2] == 1
+            and warning.swatch.fill.color[3] == 1, "the warning threshold and swatch show the shared settings")
+        assert(decimals.points[1][5] == warning.points[1][5] - 26 and decimals.value.text == "2.5"
+            and decimals.hint.text == "All bars", "the decimal threshold is discoverable and shows its shared value")
+        Fire(warning.value, "OnClick")
+        warning.edit:SetText("3,5")
+        Fire(warning.edit, "OnEnterPressed")
+        assert(Page.SpellField("b2", "threshold") == 3.5 and warning.value.text == "3.5", "the warning field accepts decimal commas")
+        Fire(decimals.plus, "OnClick")
+        assert(Page.SpellField("b2", "tenthsSeconds") == 2.6, "the decimal threshold steps by tenths")
+        Fire(decimals.value, "OnClick")
+        decimals.edit:SetText("0")
+        Fire(decimals.edit, "OnEnterPressed")
+        assert(Page.SpellField("b2", "tenthsSeconds") == 0 and decimals.reset.shown, "zero explicitly disables inherited tenths")
+        Fire(decimals.reset, "OnClick")
+        assert(Page.SpellField("b2", "tenthsSeconds") == nil and decimals.value.text == "2.5", "reset resumes inherited tenths")
+
+        local target, finish
+        local openColors = W.OpenContextColors
+        W.OpenContextColors = function(_, _, targets, onFinish)
+            target, finish = targets[1], onFinish
+            return true
+        end
+        writes = historyWrites
+        Fire(warning.swatch, "OnClick")
+        local r, g, b = target.get()
+        assert(r == 0 and g == 1 and b == 1, "the picker opens on the shared warning color")
+        target.set(1, 0, 0)
+        finish(true)
+        assert(not Page.SpellField("b2", "thresholdColor") and historyWrites == writes, "cancel leaves the shared color inherited")
+        Fire(warning.swatch, "OnClick")
+        target.set(1, 0, 0)
+        target.set(.2, .4, .6)
+        assert(historyWrites == writes, "picker drag does not save intermediate colors")
+        finish(false)
+        assert(Page.SpellField("b2", "thresholdColor") == "336699" and historyWrites == writes + 1
+            and warning.swatch.fill.color[1] == .2, "accept saves and paints one warning color override")
+        W.OpenContextColors = openColors
+        Fire(warning.reset, "OnClick")
+        assert(not Page.SpellOverrides().e.b2 and warning.value.text == "5.5" and warning.swatch.fill.color[2] == 1,
+            "the linked reset restores the shared warning threshold and color")
+        config.thresholdSeconds, config.thresholdColor, config.tenthsSeconds = 0, "ff5a3c", 0
+        M.RequestRefresh()
+    end
     -- Say the name: On, or nothing (there is no bar setting to follow).
     local tts = pop.rows.tts
     assert(tts.hint.text == "" and tts.off.active and not tts.on.active, "Say the name starts off, without a bar hint")
@@ -2381,11 +2480,101 @@ do
     potionBags[0], potionBags[4] = nil, nil
     for id in pairs(potionItems) do potionItems[id] = nil end
     SPELLS[700001], SPELLS[700002] = nil, nil
+
+    -- The cooldown picker uses real item keys and counts, and exposes both
+    -- clients' presets without needing them in the current character's bags.
+    local previousCatalog, previousCount, previousBook = S.CooldownManagerConsumableCatalog,
+        C_Item.GetItemCount, C_SpellBook
+    local stock = { [9011] = 3, [9013] = 6 }
+    potionBags[0] = { 9011, 9013, 9011 }
+    potionItems[9011] = { name = "Retail Tonic", cached = true }
+    potionItems[9012] = { name = "Forever Tonic", cached = true }
+    potionItems[9013] = { name = "Other Tonic", cached = true }
+    SPELLS[7744], SPELLS[20600] = { "Will of the Forsaken", 1 }, { "Perception", 2 }
+    local oldNativeRace = CATALOG.b30.spell
+    CATALOG.b30.spell = 7744
+    S.CooldownManagerConsumableCatalog = function() return {{9011}, {9012, 9011}}, {{7744}, {20600}} end
+    C_Item.GetItemCount = function(id, bank, uses)
+        assert(bank == false and uses == false, "picker must count individual bag items")
+        return stock[id] or 0
+    end
+    C_SpellBook = { IsSpellKnownOrInSpellBook = function(id) return id == 7744 end }
+    picker.set("ext")
+    M.RequestRefresh()
+    assert(Page.TogglePicker(grid.plus) and PotionListener(), "opened cooldown picker must watch bag stock")
+    assert(pick.inBags.shown and not pick.inBags.enabled and pick.allItems.enabled)
+    PotionQuery("tonic")
+    assert(PotionRow("i9011").item.stock == 3 and PotionRow("i9013").item.stock == 6 and not PotionRow("i9012"))
+    assert(#PotionQuery("20600") == 0 and #PotionQuery("will of the forsaken") == 2 and PotionRow("b30")
+        and not PotionRow("s7744"), "known racials must reuse the existing native entry")
+    Fire(pick.allItems, "OnClick")
+    assert(pick.inBags.enabled and not pick.allItems.enabled)
+    assert(#PotionQuery("tonic") == 4 and PotionRow("i9012").item.stock == 0,
+        "the catalog must include out-of-stock choices without duplicating listed or bag entries")
+    assert(#PotionQuery("perception") == 2 and PotionRow("s20600"))
+    Fire(pick.inBags, "OnClick")
+    assert(not PotionRow("s20600"))
+    PotionQuery("tonic")
+    stock[9011], potionBags[0] = nil, { 9013 }
+    PotionEvent("BAG_UPDATE_DELAYED")
+    assert(not PotionRow("i9011") and PotionRow("i9013").item.stock == 6)
+    Fire(pick.close, "OnClick")
+    assert(not PotionListener(), "closing the cooldown picker must release inventory listeners")
+    S.CooldownManagerConsumableCatalog, C_Item.GetItemCount, C_SpellBook =
+        previousCatalog, previousCount, previousBook
+    CATALOG.b30.spell = oldNativeRace
+    potionBags[0] = nil
+    potionItems[9011], potionItems[9012], potionItems[9013], SPELLS[7744], SPELLS[20600] = nil, nil, nil, nil, nil
     M.RequestRefresh()
 end
 picker.set("ess")
 assert(not pop.shown, "changing the bar closes the popover")
 M.RequestRefresh()
+
+do
+    local confirm, skinShape = P.Confirm, Suite.HostBridge.IconSkinShape
+    local asked, accept
+    P.Confirm = function(key, text, callback) asked, accept = text, callback end
+    local border, masque = Control("showIconBorder"), Control("masque")
+    local cdm = Config()
+    local previous = { ess_iconShape = cdm.ess_iconShape, ess_showIconBorder = cdm.ess_showIconBorder,
+        ess_masque = cdm.ess_masque, uti_showIconBorder = cdm.uti_showIconBorder }
+    Suite.HostBridge.IconSkinShape = function() return "CIRCLE" end
+    border.set(true)
+    assert(cdm.ess_showIconBorder and cdm.ess_iconShape == 2 and not accept,
+        "turning the border back on restores the skin's shape")
+    cdm.uti_showIconBorder = true
+    border.set(false)
+    assert(cdm.ess_showIconBorder and accept and asked:find("Icon skins and Masque", 1, true),
+        "disabling borders must wait for an explicit confirmation")
+    accept = nil -- Cancel/escape does not invoke the dialog's accept callback.
+    assert(cdm.ess_showIconBorder)
+    border.set(false)
+    picker.set("uti")
+    accept()
+    assert(not cdm.ess_showIconBorder and cdm.uti_showIconBorder, "confirmation must stay bound to the original bar")
+    picker.set("ess")
+    cdm.ess_masque, accept = false, nil
+    masque.set(true)
+    assert(not cdm.ess_masque and not cdm.ess_showIconBorder and accept and asked:find("require", 1, true),
+        "Masque must check the border before applying")
+    local getConfig = S.Config
+    S.Config = function(id) return id == "cooldownManager" and {} or getConfig(id) end
+    accept()
+    S.Config = getConfig
+    assert(not cdm.ess_masque and not cdm.ess_showIconBorder, "a confirmation must not apply to another profile")
+    masque.set(true)
+    combat = true
+    accept()
+    combat = false
+    assert(not cdm.ess_masque and not cdm.ess_showIconBorder, "a confirmation must not apply in combat")
+    masque.set(true)
+    accept()
+    assert(cdm.ess_masque and cdm.ess_showIconBorder, "accept applies Masque and the border together")
+    P.SetMany("cooldownManager", previous)
+    P.Confirm, Suite.HostBridge.IconSkinShape = confirm, skinShape
+    M.RequestRefresh()
+end
 
 ------------------------------------------------------------------ preview editor
 -- The drawn icons are the spell editor: hover, click, middle-click, drag and
@@ -3098,6 +3287,14 @@ assert(not Page.SetSimulate(true) and not Page.simulating and not simulate.activ
 runtime.refuse = nil
 Fire(ctx.fixedPreview.toolbar, "OnShow")
 assert(Page.SetSimulate(true) and runtime.simulate == true and simulate.active, "simulate did not start")
+runtime.reflowCanvas = true
+assert(Page.Select("buf"))
+assert(ui.hitCount == 0 and not ui.plus.shown and not ui.hits[1].shown and ui.hits[1].key == nil,
+    "a moving aura preview has no stale button over an icon or vacant slot")
+assert(not Page.SetSimulate(false) and ui.hitCount > 0 and ui.plus.shown and ui.hits[1].shown,
+    "stopping the motion restores icon editing")
+runtime.reflowCanvas = nil
+assert(Page.Select("ess") and Page.SetSimulate(true))
 runtime.refuse = true
 M.RequestRefresh()
 assert(not Page.simulating and not simulate.active, "the toggle must follow a simulation the runtime ended")
@@ -3197,9 +3394,26 @@ do
     ctx.fixedPreview.record.onActivate()
     assert(runtime.Surface("buf") == buff and buff.hits[1]:IsVisible(), "cached activation must reuse hit frames")
 
+    -- A low bar on a 768 high screen, its spell 30 right of the bar's edge.
+    UIParent.top, buff.canvas.left, buff.canvas.top, buff.canvas.bottom, buff.hits[1].left = 768, 500, 160, 120, 530
     Click(buff.hits[1], "LeftButton")
     assert(Page.selected == "buf" and Page.popover:IsShown() and Page.popover.anchor == buff.hits[1]
         and Page.popover.key == "b10", "a HUD click must select the right bar and open the exact spell")
+    -- The popover opens beside its live bar, on the side with more room, so
+    -- the bar it edits stays in sight; it follows the bar and writes nothing
+    -- while the bar keeps its place.
+    local point = Page.popover.points
+    assert(#point == 1 and point[1][1] == "BOTTOMLEFT" and point[1][2] == buff.canvas and point[1][3] == "TOPLEFT"
+        and point[1][4] == 30 and point[1][5] > 0, "a live popover must open above a low bar, at its spell")
+    runtime.editor(true)
+    assert(Page.popover.points == point, "an unchanged live bar placed its popover again")
+    buff.canvas.top, buff.canvas.bottom = 700, 660
+    runtime.editor(true)
+    point = Page.popover.points
+    assert(Page.popover:IsShown() and #point == 1 and point[1][1] == "TOPLEFT" and point[1][2] == buff.canvas
+        and point[1][3] == "BOTTOMLEFT" and point[1][5] < 0, "a popover must follow its live bar to the side with room")
+    buff.canvas.top, buff.canvas.bottom = 160, 120
+    runtime.editor(true)
     local entries = Page.Entries
     Page.Entries = function() return {} end
     ui.grid.valid = false
@@ -3222,15 +3436,59 @@ do
     runtime.hud.buf.count = nil
     runtime.editor(true)
 
+    -- A live spell dragged onto another live bar of its family moves there:
+    -- before the spell it is dropped on, or last on the bar's + tile. A bar
+    -- of the other family takes nothing, and no hover tip opens mid-drag.
+    local utiOn, move, moves = Config().uti_on, Page.MoveEntry, {}
+    Config().uti_on = true
+    runtime.editor(true)
+    local essential, utility = assert(runtime.Surface("ess")), assert(runtime.Surface("uti"))
+    Page.MoveEntry = function(...) moves[#moves + 1] = { ... }; return true end
+    local function LiveDrag(over)
+        cursorX, cursorY = 100, 100
+        Fire(essential.hits[1], "OnMouseDown", "LeftButton")
+        cursorX = 150
+        over.mouseOver = true
+        Fire(essential.drag.host, "OnUpdate", 0.01)
+        return essential.drag
+    end
+    buff.hits[1].mouseOver = true
+    local drag = LiveDrag(buff.canvas)
+    assert(drag.active and drag.dropSlot == nil and drag.dropHit == nil and not drag.marker:IsShown(),
+        "a cooldown must not target a live buff bar")
+    Fire(essential.hits[1], "OnMouseUp", "LeftButton")
+    assert(#moves == 0 and not drag.active, "a drop off every matching bar moved a spell")
+    buff.canvas.mouseOver, buff.hits[1].mouseOver = false, false
+    local dropOn = utility.hits[1]
+    dropOn.cx, dropOn.cy, dropOn.mouseOver = 200, 100, true
+    drag = LiveDrag(utility.canvas)
+    Fire(dropOn, "OnEnter")
+    assert(drag.dropSlot == "uti" and drag.dropUi == utility and drag.dropHit == dropOn and drag.marker:IsShown()
+        and not dropOn.hover:IsShown(), "another live bar must take the drag at its spell")
+    Fire(essential.hits[1], "OnMouseUp", "LeftButton")
+    assert(#moves == 1 and moves[1][1] == "b1" and moves[1][2] == "uti" and moves[1][3] == "b4"
+        and Page.previewDragging == nil, "a drop on a live spell must move the spell before it")
+    dropOn.mouseOver = false
+    drag = LiveDrag(utility.plus)
+    assert(drag.dropSlot == "uti" and drag.dropHit == utility.plus, "the live + tile must take the drag")
+    Fire(essential.hits[1], "OnMouseUp", "LeftButton")
+    assert(#moves == 2 and moves[2][2] == "uti" and moves[2][3] == nil, "a drop on the live + tile must append")
+    utility.plus.mouseOver, utility.canvas.mouseOver = false, false
+    Page.MoveEntry, Config().uti_on = move, utiOn
+    runtime.editor(true)
+
     Config().c6_on = true
     runtime.hud.c6.anchor.right = UIParent:GetWidth() - 2
     runtime.editor(true)
     local empty = assert(runtime.Surface("c6"))
     assert(empty.plus:IsVisible() and empty.plus.points[1][1] == "RIGHT", "the add button must stay on screen")
+    empty.canvas.left, empty.canvas.top, empty.canvas.bottom, empty.plus.left = 900, 200, 170, 1200
     Click(empty.plus, "LeftButton")
     local picker = assert(Page.picker)
     assert(Page.selected == "c6" and picker:IsShown() and picker.anchor == empty.plus,
         "an empty live bar must open its own spell picker")
+    assert(picker.points[1][1] == "BOTTOMLEFT" and picker.points[1][2] == empty.canvas and picker.points[1][4] == 300,
+        "the live spell picker must leave its bar in sight")
     Config().c6_on = false
     runtime.editor(true)
     assert(not picker:IsShown() and not empty.plus:IsVisible(), "a hidden bar must release the live picker")
@@ -3241,15 +3499,112 @@ do
     S.editMode = nil
     runtime.editor(true)
     assert(buff.canvas:GetFrameStrata() == "MEDIUM", "leaving Edit Mode must restore the HUD layer")
+    -- Combat costs the live editor nothing: no placement and no drop lookup
+    -- run; a drag in flight ends on its next frame and drops its OnUpdate;
+    -- the popover closes with the released bars.
+    local place, drop, liveCalls = Page.PlaceLivePopup, Page.ScreenDropTarget, 0
+    local live = assert(runtime.Surface("ess"))
+    cursorX, cursorY = 100, 100
+    Fire(live.hits[1], "OnMouseDown", "LeftButton")
+    cursorX = 150
+    Fire(live.drag.host, "OnUpdate", 0.01)
+    assert(live.drag.active and Page.previewDragging, "live drag did not start")
+    Page.PlaceLivePopup = function(...) liveCalls = liveCalls + 1; return place(...) end
+    Page.ScreenDropTarget = function(...) liveCalls = liveCalls + 1; return drop(...) end
+    combat = true
+    Fire(live.drag.host, "OnUpdate", 0.01)
+    assert(liveCalls == 0 and not live.drag.active and live.drag.host.scripts.OnUpdate == nil
+        and Page.previewDragging == nil, "combat must end a live drag without work")
+    combat = false
+    Click(buff.hits[1], "LeftButton")
+    assert(Page.popover:IsShown() and Page.popover.liveCanvas == buff.canvas, "live popover did not open")
+    liveCalls = 0
     combat = true
     runtime.editor(false)
+    Fire(buff.hits[1], "OnEnter")
+    runtime.editor(true)
     assert(not buff.hits[1]:IsVisible() and not buff.plus:IsVisible(), "combat must hide the live editor")
+    assert(liveCalls == 0 and not Page.popover:IsShown() and not buff.hits[1].hover:IsShown(),
+        "combat ran live editor work")
+    Page.PlaceLivePopup, Page.ScreenDropTarget = place, drop
     combat = false
     runtime.editor(true)
     assert(runtime.Surface("buf") == buff and buff.hits[1]:IsVisible(), "regen must restore the active HUD editor")
     Config().buf_on, Config().c6_on = buffOn, emptyOn
     Page.selected, Page.targetSpec, Page.spellSpecScope = slot, target, scope
+    UIParent.top = nil
     ui.previewBody:Hide()
+end
+
+------------------------------------------------------------------ WoW Forever talent groups
+-- One specialization per class in two talent groups: two large choices in
+-- place of the specialization list, only what the character can use (the
+-- secondary group once dual specialization is learned), a dot on the group
+-- active in the game, the secondary group opened the first time as a copy of
+-- the primary one, and a spell picker that offers only usable spells.
+do
+    local slot, target, scope = Page.selected, Page.targetSpec, Page.spellSpecScope
+    local lists, specGroups, wasForever = Config().listsData, 1, Suite.Client.isForever
+    GetNumSpecGroups = function() return specGroups end
+    Suite.Client.isForever = true
+    Page.targetSpec = nil
+    Config().listsData = assert(CDM.Codec.EncodeLists({ v = 1, specs = { [62] = { c1 = { "s133" } } } }))
+    local body = CreateFrame("Frame", nil, UIParent)
+    local forever = { width = 720, ctx = ctx, previewBody = body, strip = CreateFrame("Frame", nil, body) }
+    Page.BuildTargetPicker(forever, body)
+    local primary, secondary = assert(forever.groups and forever.groups[1]), forever.groups[2]
+    assert(not forever.specPicker and primary.text == "Primary" and secondary.text == "Secondary",
+        "Forever must offer the talent groups as two large choices")
+    Page.PaintTargetPicker(forever)
+    local own = Page.ClassSpecs({})
+    assert(primary:IsShown() and primary.active and primary.live:IsShown() and not secondary:IsShown()
+        and #own == 3 and own[1] == 62 and not Page.SelectSpec(50062),
+        "a secondary group without dual specialization is not offered")
+    specGroups = 2
+    Page.PaintTargetPicker(forever)
+    assert(secondary:IsShown() and not secondary.active and not secondary.live:IsShown(), "dual specialization offers the secondary group")
+    Click(secondary, "LeftButton")
+    Page.PaintTargetPicker(forever)
+    local id, name = Page.Spec()
+    local seeded = CDM.Codec.DecodeLists(Config().listsData)
+    assert(id == 50062 and name == "Spec 62 - Secondary" and Page.ForeignSpec() and secondary.active and not primary.active
+        and primary.live:IsShown() and seeded.specs[50062].c1[1] == "s133" and seeded.specs[62].c1[1] == "s133",
+        "the secondary group opens as a copy of the primary one, offline")
+    seeded.specs[50062].c1 = { "i5512" }
+    Config().listsData = assert(CDM.Codec.EncodeLists(seeded))
+    Click(primary, "LeftButton")
+    Click(secondary, "LeftButton")
+    assert(CDM.Codec.DecodeLists(Config().listsData).specs[50062].c1[1] == "i5512", "a group with its own lists is never copied over")
+    Click(primary, "LeftButton")
+    assert(Page.targetSpec == nil and Page.Spec() == 62 and not Page.ForeignSpec(), "the active group follows the game")
+    runtime.specID = 50062
+    Page.PaintTargetPicker(forever)
+    assert(select(2, Page.Spec()) == "Spec 62 - Secondary" and secondary.active and secondary.live:IsShown()
+        and not primary.live:IsShown(), "the dot follows the group active in the game")
+    runtime.specID = 62
+    -- Usable spells only: a known spell, a listed unknown one, never an unlisted unknown one.
+    Page.Select("ess")
+    Page.RebuildPicker()
+    local offered = {}
+    for i = 1, pick.count do
+        local item = pick.items[i]
+        if item and item.kind == "entry" then offered[item.key] = item.known end
+    end
+    assert(offered.b2 == true and offered.b3 == false and offered.b40 == nil,
+        "the Forever picker must offer only usable spells and keep listed ones")
+    Suite.Client.isForever = false
+    Page.RebuildPicker()
+    local retail = false
+    for i = 1, pick.count do
+        local item = pick.items[i]
+        if item and item.kind == "entry" and item.key == "b40" then retail = true end
+    end
+    assert(retail, "Retail keeps offering unlearned spells")
+    Suite.Client.isForever = wasForever
+    Config().listsData = lists
+    GetNumSpecGroups = nil
+    Page.selected, Page.targetSpec, Page.spellSpecScope = slot, target, scope
+    P.Refresh()
 end
 
 ------------------------------------------------------------------ runtime canvas
