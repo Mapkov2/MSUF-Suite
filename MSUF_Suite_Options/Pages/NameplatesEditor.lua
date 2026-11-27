@@ -1,5 +1,5 @@
 local _, P = ...
-local M, W, T, Tr, HM = P.M, P.W, P.T, P.Tr, P.HM
+local M, W, T, Tr = P.M, P.W, P.T, P.Tr
 local ID = "nameplates"
 local SB, H = M.PreviewSelectionBar, M.PreviewHelpers or {}
 local Layers = P.NameplatesEditorLayers
@@ -7,14 +7,17 @@ local AURA_KIND = Layers.AURA_KIND
 local AURA_ELEMENT = Layers.AuraElement
 local Register, OpenSetting = Layers.Register, Layers.OpenSetting
 local Kit = P.Suite.PreviewKit
+local Snap = P.PreviewSnap
+local Tools = P.NameplatesEditorTools
+local Elements = P.NameplatesElements
+local Ghosts = P.NameplatesEditorGhosts
+local Public = P.Suite.Public
 local Layout = P.NameplatesPreviewLayout
 local Editor = {}
 P.NameplatesEditor = Editor
 Editor.Layout = Layout.Apply
 -- The layer rules of NameplatesEditorLayers.lua, as methods of the preview.
 Editor.LayerOn, Editor.LayerAvailable, Editor.LayerActive = Layers.On, Layers.Available, Layers.Active
-local RAID_MARK_NAMES = { [0] = "Off", [1] = "Star", [2] = "Circle", [3] = "Diamond",
-    [4] = "Triangle", [5] = "Moon", [6] = "Blue square", [7] = "Cross", [8] = "Skull" }
 local ENEMY_ELEMENT_SETTINGS = { Name = true, Level = true, HealthText = true, Classification = true,
     RaidIcon = true, Cast = true, CastText = true, CastTime = true,
     CastIcon = true, CastShield = true, CastTarget = true }
@@ -62,15 +65,46 @@ local function Focus(ui, handle)
     end
     if section and W.FocusCollapsibleSection then W.FocusCollapsibleSection(section, { persist = true, flash = true }) end
 end
-local function Write(ui, handle, x, y)
+local function CenteredNameKey(handle)
+    local key = handle.previewCenterNameKey
+    return key and P.Get(ID, key) and key or nil
+end
+
+local function Read(handle)
+    local x = CenteredNameKey(handle) and 0 or P.Get(ID, handle.keyX)
+    return x, P.Get(ID, handle.keyY)
+end
+
+local function Write(ui, handle, x, y, dragged)
     if P.Combat() or Layers.NPCWorldNames(ui) or ui.groupPreviewEnabled then return false end
     local rules = P.catalog[ID].rules
     local xr, yr = rules[handle.keyX], rules[handle.keyY]
     if not xr or not yr then return false end
-    return P.SetMany(ID, { [handle.keyX] = Clamp(Round(x), xr.min, xr.max),
-        [handle.keyY] = Clamp(Round(y), yr.min, yr.max) }) ~= false
+    local center = CenteredNameKey(handle)
+    local oldX, oldY = P.Get(ID, handle.keyX), P.Get(ID, handle.keyY)
+    local leaveCenter = center and Round(x) ~= 0
+    if leaveCenter then
+        x, y = Layout.ManualNameOffsets(handle, x, y)
+        if not x then return false end
+    elseif center then
+        x = oldX
+    end
+    x, y = Clamp(Round(x), xr.min, xr.max), Clamp(Round(y), yr.min, yr.max)
+    if not leaveCenter and oldX == x and oldY == y then
+        -- The followed handle can cross the clamp even when the final
+        -- coordinates equal the profile. Place it back after this drag.
+        if dragged then ui.host:Request("offset") end
+        return true
+    end
+    local values = { [handle.keyX] = x, [handle.keyY] = y }
+    if leaveCenter then values[center] = false end
+    local ok = P.SetMany(ID, values) ~= false
+    if ok then Layout.KeepViewport(ui) end
+    -- P.SetMany already requests Menu2's refresh. The editor only schedules
+    -- a separate paint when the host doesn't provide that refresh path.
+    if not M.RequestRefresh then ui.host:Request("offset") end
+    return ok
 end
-local function Read(handle) return P.Get(ID, handle.keyX), P.Get(ID, handle.keyY) end
 local function CanEdit(handle)
     local ui = handle.previewUI
     if Layers.NPCWorldNames(ui) or ui.groupPreviewEnabled then return false end
@@ -78,22 +112,39 @@ local function CanEdit(handle)
     return P.Suite.Public(visible) and visible
 end
 
-function Editor:Select(handle) self.kit:Select(handle and CanEdit(handle) and handle or nil) end
+local function RememberHiddenSelection(ui, handle)
+    local def = Elements.ForHandle(handle)
+    ui.inspectedKey, ui.suspendedSelection = def and def.key, def and handle
+end
 
-function Editor:RefreshSelection()
+function Editor:Select(handle)
+    self.inspectedKey, self.suspendedSelection = nil, nil
+    self.kit:Select(handle and CanEdit(handle) and handle or nil)
+end
+
+function Editor:RefreshSelection(inPaint)
     local selected = self.body._selectedHandle
+    local def = Elements.Current(self)
     for _, handle in ipairs(self.handles) do
         handle.outline(0, "4ebaff")
         P.PreviewInteraction.Outline(handle, handle == selected)
     end
     if SB then SB.Refresh(self.body) end
-    if self.elementPicker and selected ~= self.pickerSelection then
-        self.pickerSelection = selected
-        P.SetButtonText(self.elementPicker, selected and selected._label or Tr("Select"))
-        if not self.compact and not self.groupPreviewEnabled then Layout.Tools(self) end
+    if self.selectionDef ~= def then
+        self.selectionDef = def
+        if not inPaint and not self.compact and not self.groupPreviewEnabled then self:LayoutElements() end
     end
     if self.RefreshSizeSelection then self:RefreshSizeSelection() end
+    P.NameplatesInspector.Refresh(self)
+    Tools.RefreshSelection(self)
+    if not inPaint and self.selectedTools and not self.compact and not self.groupPreviewEnabled then
+        Layout.Samples(self)
+        if self.fitMode then Layout.UpdateViewport(self) end
+    end
+    if self.workspace then P.NameplatesWorkspace.Highlight(self.workspace, def and def.group) end
 end
+
+function Editor:CanMoveHandle(handle) return CanEdit(handle) and not Layers.NPCWorldNames(self) end
 
 function Editor:CancelDrag()
     self.kit:Cancel()
@@ -135,7 +186,8 @@ end
 
 local function FollowHandle(handle, dx, dy)
     local points = handle.previewDragPoints
-    if not points then return end
+    if not points or (handle.previewDragX == dx and handle.previewDragY == dy) then return end
+    handle.previewDragX, handle.previewDragY = dx, dy
     handle:ClearAllPoints()
     for _, point in ipairs(points) do
         handle:SetPoint(point[1], point[2], point[3], (point[4] or 0) + dx, (point[5] or 0) + dy)
@@ -147,11 +199,37 @@ local function TrackHandleDrag(ui, handle, phase)
         local points = {}
         for i = 1, handle:GetNumPoints() do points[i] = { handle:GetPoint(i) } end
         handle.previewDragPoints = points
+        handle.previewDragX, handle.previewDragY = 0, 0
         ui.dragging = handle
+        ui.snapper:Begin(handle)
     else
-        if phase == "cancel" or phase == "done" then handle.previewDragPoints = nil end
+        if phase == "cancel" or phase == "done" then
+            handle.previewDragPoints, handle.previewDragX, handle.previewDragY = nil, nil, nil
+        end
         ui.dragging = nil
+        ui.snapper:End()
     end
+end
+
+-- A drag snaps to the other elements of its own sample plate and to the
+-- plate's center, as Edit Mode snaps a frame to other frames and the screen.
+local function SampleCell(ui, region)
+    local frame = region
+    while frame and frame:GetParent() ~= ui.stage do frame = frame:GetParent() end
+    -- A region placed on the stage itself has no plate to snap within.
+    if frame ~= region then return frame end
+end
+
+local function NewSnapper(ui)
+    return Snap.New({ layer = ui.canvas,
+        targets = function(region) return Snap.Targets(region, ui.handles, SampleCell(ui, region)) end,
+        lines = function(region, add)
+            local cell = SampleCell(ui, region)
+            if not cell then return end
+            local x, y = cell:GetCenter()
+            local scale = cell:GetEffectiveScale()
+            if Public(x) and Public(y) and Public(scale) and x and y then add(x * scale, y * scale) end
+        end })
 end
 
 function Editor:Bind(handle, id, label, keyX, keyY, section)
@@ -160,7 +238,7 @@ function Editor:Bind(handle, id, label, keyX, keyY, section)
     BindSetting(handle, id)
     local border = P.Suite.NameplateStyle.CreateBorder(handle)
     handle.outline = function(size, color) P.Suite.NameplateStyle.PaintBorder(border, handle, size, color) end
-    self.kit:Add(id, handle, function() return Read(handle) end, function(x, y) return Write(self, handle, x, y) end,
+    self.kit:Add(id, handle, function() return Read(handle) end, function(x, y, dragged) return Write(self, handle, x, y, dragged) end,
         { can = CanEdit, follow = FollowHandle })
     Layout.BindHandleInput(self, handle)
     Register(handle, id, label)
@@ -184,170 +262,54 @@ function Editor:Paint()
     for _, button in ipairs(self.layerButtons or {}) do
         P.PreviewInteraction.RefreshLayerButton(button, self:LayerActive(button.layerKey))
     end
-    if self.roleButton then self.roleButton:SetShown(self.sampleKind == "enemy" and self.scope ~= "neutral" and not self.enemyPlayer) end
-    if self.enemyTypeButton then self.enemyTypeButton:SetShown(self.sampleKind == "enemy" and self.scope ~= "neutral") end
-    if self.softTypeButton then self.softTypeButton:SetShown(self.sampleKind == "enemy") end
-    if self.questButton then self.questButton:SetShown(self.sampleKind == "enemy" and self.scope ~= "neutral") end
+    if self.snapButton then P.PreviewInteraction.RefreshLayerButton(self.snapButton, Snap.Enabled()) end
+    Tools.RefreshSamples(self)
     for _, choice in ipairs(self.raidChoices or {}) do
         choice.outline(self.raidMarked and self.raidIndex == choice.index and 1 or 0, "4ebaff")
     end
-    for _, button in ipairs(self.friendlyButtons or {}) do
-        button:SetShown(self.sampleKind == "friendly" and self.scope ~= "friendlyNpc")
-    end
     local selected = self.body._selectedHandle
-    if selected and not CanEdit(selected) then self:Select(nil) end
-    self:RefreshSelection()
+    if selected and not CanEdit(selected) then
+        RememberHiddenSelection(self, selected)
+        self.kit:Select(nil)
+    elseif not selected and self.suspendedSelection and not P.Combat() then
+        local handle = self.suspendedSelection
+        local def = Elements.ForHandle(handle)
+        if def and def.key == self.inspectedKey and CanEdit(handle) then self:Select(handle) end
+    end
+    self:RefreshSelection(true)
     if not self.compact and not self.groupPreviewEnabled then
-        self:LayoutLayerRail()
+        self:LayoutElements()
         Layout.Samples(self)
     end
+    Ghosts.Refresh(self)
     Layout.UpdateViewport(self)
 end
 
-local function Button(parent, key, label, width, action)
-    local button = T.Button(parent, label, width, 20)
-    Layout.StyleButton(button)
-    button:SetScript("OnClick", action)
-    Register(button, key, label)
-    return button
+-- Position and size back to their defaults (the selection bar's Reset and
+-- the inspector share it).
+function Editor:ResetHandle(handle)
+    if Layers.NPCWorldNames(self) or P.Combat() then return false end
+    local rules = P.catalog[ID].rules
+    local values = {
+        [handle.keyX] = rules[handle.keyX].default,
+        [handle.keyY] = rules[handle.keyY].default,
+    }
+    P.NameplatesSize.ResetValues(handle, values, rules)
+    local ok = P.SetMany(ID, values)
+    self:Paint()
+    return ok ~= false
 end
 
-local function BuildZoomTools(ui)
-    local body, canvas = ui.body, ui.canvas
-    local tools = CreateFrame("Frame", nil, body)
-    tools:SetPoint("TOPLEFT", canvas, "BOTTOMLEFT", 0, -4)
-    tools:SetPoint("TOPRIGHT", canvas, "BOTTOMRIGHT", 0, -4)
-    ui.tools = tools
-    tools:SetHeight(46)
-    local fit = Button(tools, "fit", "Fit", 36, function() Layout.Fit(ui) end)
-    local actual = Button(tools, "actual", "1:1", 36, function() Layout.SetZoom(ui, 1) end)
-    local zoomOut = Button(tools, "zoomOut", "-", 24, function() Layout.StepZoom(ui, -1) end)
-    ui.zoomLabel = T.Font(tools, "GameFontDisableSmall", "100%", T.colors.text)
-    ui.zoomLabel:SetJustifyH("CENTER")
-    ui.zoomLabel:SetWordWrap(false)
-    local zoomIn = Button(tools, "zoomIn", "+", 24, function() Layout.StepZoom(ui, 1) end)
-    for _, button in ipairs({ fit, actual, zoomOut, zoomIn }) do P.PreviewCanvas.FitToolbarButton(button) end
-    ui.zoomControls = { { fit, fit:GetWidth() }, { actual, actual:GetWidth() }, { zoomOut, zoomOut:GetWidth() },
-        { ui.zoomLabel, 40 }, { zoomIn, zoomIn:GetWidth() } }
-end
-
--- The row of sample switches in the preview canvas: plate kind, enemy type, quest and friendly options.
-local function BuildSampleButtons(ui)
-    local body, canvas = ui.body, ui.canvas
-    local samples = CreateFrame("Frame", nil, body)
-    ui.samples = samples
-    samples:SetPoint("TOPLEFT", canvas, "TOPLEFT", 8, -8)
-    samples:SetSize(540, 20)
-    ui.roleButton = Button(samples, "role", "Enemy type", 88, function()
-        ui.previewRole = nil
-        P.Set(ID, "enemyPreviewRole", P.Get(ID, "enemyPreviewRole") % #P.Suite.NameplateStyle.Roles + 1)
-        ui:Paint()
-    end)
-    ui.enemyTypeButton = Button(samples, "enemyType", "NPC / player", 112, function()
-        ui.enemyPlayer = not ui.enemyPlayer
-        ui:Select(nil)
-        ui:Paint()
-    end)
-    ui.softTypeButton = Button(samples, "softType", "Soft: enemy / interact", 126, function()
-        ui.softInteract = not ui.softInteract
-        ui:Select(nil)
-        ui:Paint()
-    end)
-    ui.questButton = Button(samples, "questSample", "Quest", 58, function()
-        if P.Get(ID, "look") == 2 then
-            OpenSetting("look")
-            return
-        end
-        ui.enemyPlayer = false
-        ui.previewRole, ui.previewRoleSource = 5, P.Get(ID, "enemyPreviewRole")
-        ui.raidMarked, ui.layers.questMarker = false, true
-        if not P.Get(ID, "enemyQuestMarker") then P.Set(ID, "enemyQuestMarker", true) end
-        ui:Paint()
-        if ui.questMarkerHandle and ui.questMarkerHandle:IsShown() then ui:Select(ui.questMarkerHandle) end
-    end)
-    ui.friendlyButtons = {}
-    ui.friendlyButtons[1] = Button(samples, "friendlyMode", "Friendly player display", 146, function()
-        OpenSetting("friendlyNamesOnly")
-    end)
-    ui.friendlyButtons[2] = Button(samples, "friendlyGroup", "Group / outsider", 114, function()
-        ui.friendlyOutsider = not ui.friendlyOutsider
-        ui:Paint()
-    end)
-    if H.EnsurePreviewBackgroundButton then
-        local background = H.EnsurePreviewBackgroundButton(body, samples)
-        if background then
-            background:ClearAllPoints()
-            background:SetPoint("RIGHT", canvas, "TOPRIGHT", -8, -18)
-            ui.backgroundButton = background
-        end
-    end
-    ui.sampleButtons = { ui.roleButton, ui.enemyTypeButton, ui.softTypeButton,
-        ui.questButton, ui.friendlyButtons[1], ui.friendlyButtons[2] }
-end
-
-local function BuildTools(ui)
-    BuildZoomTools(ui)
-    local tools = ui.tools
-    ui.targetStateButton = Button(tools, "targetSample", "Target / non-target", 126, function()
-        ui.targetSample = ui.targetSample == false
-        ui:Paint()
-    end)
-    ui.focusStateButton = Button(tools, "focusSample", "Focus sample", 96, function()
-        ui.focusSample = not ui.focusSample
-        ui:Paint()
-    end)
-    BuildSampleButtons(ui)
-end
-
-local function BuildRaidPalette(ui)
-    local strip = CreateFrame("Frame", nil, ui.canvas)
-    ui.raidPalette = strip
-    strip:SetPoint("TOPRIGHT", ui.canvas, "TOPRIGHT", -8, -39)
-    strip:SetSize(165, 22)
-    local title = T.Font(strip, "GameFontDisableSmall", "RAID MARKS", T.colors.muted)
-    title:SetPoint("BOTTOMRIGHT", strip, "TOPRIGHT", 0, 1)
-    ui.raidChoices = {}
-    for index = 1, 8 do
-        local button = CreateFrame("Button", nil, strip)
-        button:SetSize(18, 18)
-        button:SetPoint("LEFT", strip, "LEFT", (index - 1) * 21, 0)
-        button:RegisterForClicks("LeftButtonUp", "RightButtonUp")
-        button.index = index
-        local icon = button:CreateTexture(nil, "ARTWORK")
-        icon:SetAllPoints(button)
-        icon:SetTexture("Interface\\TargetingFrame\\UI-RaidTargetingIcon_" .. index)
-        local border = P.Suite.NameplateStyle.CreateBorder(button)
-        button.outline = function(size, color)
-            P.Suite.NameplateStyle.PaintBorder(border, button, size, color)
-        end
-        button:SetScript("OnClick", function(_, mouseButton)
-            if mouseButton == "RightButton" or not ui:LayerAvailable("raidIcon") then
-                Layers.Focus(ui, "elements", "raidIcon")
-                return
-            end
-            ui.raidMarked = not (ui.raidMarked and ui.raidIndex == index)
-            ui.raidIndex = ui.raidMarked and index or 0
-            ui.layers.raidIcon, ui.layers.status = true, true
-            ui:Paint()
-        end)
-        button:SetScript("OnEnter", function()
-            P.SetTranslatedText(ui.hint, Tr("Raid mark: %s"):format(Tr(RAID_MARK_NAMES[index])) .. " - "
-                .. Tr("Click to preview; right-click for settings"))
-        end)
-        button:SetScript("OnLeave", function() P.SetTranslatedText(ui.hint, ui.help) end)
-        Register(button, "raidMark." .. index, Tr("Raid mark: %s"):format(Tr(RAID_MARK_NAMES[index])))
-        ui.raidChoices[index] = button
-    end
-end
+function Editor:OpenHandleSettings(handle) Focus(self, handle) end
 
 local function BuildElementPicker(ui, tools)
-    local picker = T.Button(tools, "Select", 182, 20)
+    local picker = T.Button(tools, "Elements", 110, 20)
     Layout.StyleButton(picker)
     picker:SetScript("OnClick", function()
         if P.Combat() or not ui:CanPickElement() then return end
         P.AnchoredContextMenu(picker, function(_, menu) ui:BuildElementMenu(menu) end)
     end)
-    Register(picker, "selectElement", "Select")
+    Register(picker, "selectElement", "Elements")
     ui.elementPicker = picker
 end
 
@@ -359,27 +321,12 @@ local function BuildSelection(ui)
             HandleLabel = function(handle) return handle._label end,
             IsPlaced = CanEdit,
             ReadOffsets = function(_, handle) return Read(handle) end,
-            WriteOffsets = function(_, handle, x, y)
-                local ok = Write(ui, handle, x, y)
-                ui:Paint()
-                return ok
-            end,
+            WriteOffsets = function(_, handle, x, y) return Write(ui, handle, x, y) end,
             SelectHandle = function(_, handle)
                 ui:Select(handle)
                 return true
             end,
-            ResetOffsets = function(_, handle)
-                if Layers.NPCWorldNames(ui) then return false end
-                local rules = P.catalog[ID].rules
-                local values = {
-                    [handle.keyX] = rules[handle.keyX].default,
-                    [handle.keyY] = rules[handle.keyY].default,
-                }
-                P.NameplatesSize.ResetValues(handle, values, rules)
-                local ok = P.SetMany(ID, values)
-                ui:Paint()
-                return ok ~= false
-            end,
+            ResetOffsets = function(_, handle) return ui:ResetHandle(handle) end,
             NudgeDelta = function(_, dx, dy) return ui.kit:Nudge(dx, dy) end,
         })
         bar:SetPoint("TOPLEFT", tools, "BOTTOMLEFT", 0, -5)
@@ -433,7 +380,7 @@ function Editor:ShowSample(kind, scope)
     self.statusOffsetSample = nil
     if self.highlightSample == "aggro" and scope ~= "enemy" then self.highlightSample = nil end
     self.auraSample, self.sharedAuraText, self.textSample = nil, nil, nil
-    self.castSample, self.interruptedSample = nil, nil
+    self.castSample, self.interruptedSample, self.sampleScenario, self.questSample = nil, nil, nil, nil
     self.editFullPlate = nil
     self.enemyPlayer = false
     self.previewRole = scope == "neutral" and 8 or nil
@@ -557,10 +504,12 @@ local CAST_PICKER = {
     { "CastTime", "Cast time" }, { "CastTarget", "Spell target" }, { "CastShield", "Blizzard interrupt shield" },
 }
 
-local function AuraPicker(ui, menu, add)
+local function AuraPicker(ui, menu, add, includeNative)
     local model = P.Suite.NameplateAuraDisplay
-    for _, row in ipairs(model.NativeRows) do
-        if ui.scope ~= "friendlyNpc" or row.key == "debuff" then add(menu, row.label, "auras", row.element) end
+    if includeNative then
+        for _, row in ipairs(model.NativeRows) do
+            if ui.scope ~= "friendlyNpc" or row.key == "debuff" then add(menu, row.label, "auras", row.element) end
+        end
     end
     for _, row in ipairs(model.Containers) do
         local group = menu:CreateButton(Tr(row.label))
@@ -572,10 +521,29 @@ local function AuraPicker(ui, menu, add)
     add(menu, "Aura stack position", "auras", "CustomOneStack", true)
 end
 
-function Editor:BuildElementMenu(menu)
-    local function Add(parent, label, context, element, shared)
-        parent:CreateButton(Tr(label), function() self:Edit(context, element, false, shared) end)
+local function MenuSelection(ui)
+    return function(parent, label, context, element, shared)
+        parent:CreateButton(Tr(label), function() ui:Edit(context, element, false, shared) end)
     end
+end
+
+local function StatusPicker(ui, menu)
+    P.NameplatesStatus.PreviewItems(menu, ui.scope or ui.sampleKind, function(element, sample)
+        if not P.Combat() then ui:FocusStatusOffset(nil, element, sample) end
+    end)
+end
+
+function Editor:OpenElementPositions(button, group)
+    if P.Combat() or not self:CanPickElement() then return end
+    if group == "power" then return self:Edit("text", "PowerText") end
+    P.AnchoredContextMenu(button, function(_, menu)
+        if group == "auras" then AuraPicker(self, menu, MenuSelection(self))
+        else StatusPicker(self, menu) end
+    end)
+end
+
+function Editor:BuildElementMenu(menu)
+    local Add = MenuSelection(self)
     Add(menu, "Health bar", "anchor", "Health")
     local text = menu:CreateButton(Tr("Text"))
     Add(text, "Name", "text", "Name")
@@ -586,11 +554,8 @@ function Editor:BuildElementMenu(menu)
     end
     local cast = menu:CreateButton(Tr("Castbar"))
     for _, entry in ipairs(CAST_PICKER) do Add(cast, entry[2], "cast", entry[1]) end
-    AuraPicker(self, menu:CreateButton(Tr("Auras")), Add)
-    local status = menu:CreateButton(Tr("Status icons"))
-    P.NameplatesStatus.PreviewItems(status, self.scope or self.sampleKind, function(element, sample)
-        if not P.Combat() then self:FocusStatusOffset(nil, element, sample) end
-    end)
+    AuraPicker(self, menu:CreateButton(Tr("Auras")), Add, true)
+    StatusPicker(self, menu:CreateButton(Tr("Status icons")))
 end
 
 function Editor:CanPickElement()
@@ -605,15 +570,24 @@ local function BuildKit(ui)
     ui.bindings = { ownerName = "MSUF_SuiteNameplatesPreview_NudgeOwner", activeName = "MSUF_SuiteNameplatesPreview_ActiveNudgeBox",
         buttonPrefix = "MSUF_SuiteNameplatesPreview_Nudge" }
     ui.kit = P.PreviewInteraction.Handles(ui.host, {
-        owner = body, bindings = ui.bindings, pixels = true, manualDrag = true,
+        owner = body, bindings = ui.bindings, pixels = true, manualDrag = true, ownsCommitPaint = true,
         pointerHeld = function() return IsMouseButtonDown("LeftButton") end,
         escape = function()
+            ui.inspectedKey = nil
             ui:CancelDrag()
             ui:Select(nil)
         end,
         tab = SB and SB.CycleHandle and function(shift) return SB.CycleHandle(body, shift) end or nil,
-        select = function() ui:RefreshSelection() end,
+        select = function(selected, previous)
+            if selected then
+                ui.inspectedKey, ui.suspendedSelection = nil, nil
+            elseif previous and not previous:IsVisible() and body:IsVisible() and not P.Combat() then
+                RememberHiddenSelection(ui, previous)
+            end
+            ui:RefreshSelection()
+        end,
         drag = function(handle, phase) TrackHandleDrag(ui, handle, phase) end,
+        snap = function(_, dx, dy, scale) return ui.snapper:Apply(dx, dy, scale) end,
         tip = function(handle, entering)
             -- A sample health bar shows the mouseover highlight.
             P.NameplatesPreviewDecor.Hover(handle, entering)
@@ -624,7 +598,7 @@ local function BuildKit(ui)
                 P.SetTranslatedText(ui.hint, Tr(handle._label) .. " - " .. Tr(opensSettings
                     and "Drag to move; click for settings" or "Drag to move; right-click for settings"))
             else
-                ui:RefreshSelection()
+                handle.outline(0, "4ebaff")
                 P.SetTranslatedText(ui.hint, ui.help)
             end
         end,
@@ -715,6 +689,7 @@ function Editor.Create(ctx, builder, sections)
     stage:SetSize(1, 1)
     stage:SetPoint("CENTER", canvas, "CENTER")
     ui.stage = stage
+    ui.snapper = NewSnapper(ui)
     ui.hint = T.Font(toolbar, "GameFontDisableSmall", "", T.colors.muted)
     P.SetTranslatedText(ui.hint, ui.help)
     ui.hint:SetPoint("LEFT", section.title or toolbar, section.title and "RIGHT" or "LEFT", section.title and 12 or 160, 0)
@@ -722,16 +697,23 @@ function Editor.Create(ctx, builder, sections)
     ui.hint:SetJustifyH("LEFT")
     ui.hint:SetWordWrap(false)
     ui.hint:SetMaxLines(1)
-    BuildTools(ui)
-    BuildRaidPalette(ui)
+    Tools.Build(ui)
+    Tools.BuildRaidPalette(ui)
+    Tools.BuildSelection(ui)
     BuildSelection(ui)
-    Layers.Build(ui)
+    P.NameplatesElementPanel.Build(ui)
+    P.NameplatesInspector.Build(ui)
+    ui.guidesButton.layerKey = "guides"
+    ui.layerButtons[#ui.layerButtons + 1] = ui.guidesButton
     ui.toolbar = toolbar
     P.NameplatesMultiPreview.Attach(ui)
     BuildInput(ui)
     P.NameplatesPreviewLayout.Attach(ui, section, toolbar, record)
     TrackCombat(ui)
     ui:Layout()
-    M.TrackRefresh(ctx, function() ui:Paint() end)
+    M.TrackRefresh(ctx, function()
+        if body:IsVisible() and not ui.host.active then ui.host:Activate() end
+        ui.host:Request("settings")
+    end)
     return ui
 end

@@ -31,7 +31,7 @@ local function Build(ui)
             isGroupSample = true, sampleKind = info.side, scope = info.scope, Bind = BindStatic, LayerOn = LayerOn,
             enemyPlayer = false, friendlyElite = info.scope == "friendlyNpc", friendlyOutsider = false,
             statusSample = false, allStatusSamples = false, statusOffsetSample = false,
-            castSample = false, interruptedSample = false,
+            castSample = false, interruptedSample = false, castingSample = info.cast == true, questSample = false,
             textSample = false, auraSample = false,
             targetSample = index == 1, focusSample = false, aggroSample = false, highlightSample = false,
             raidMarked = false, raidIndex = 8, softTargetSample = false, uninterruptible = false,
@@ -87,10 +87,6 @@ function Multi.Paint(ui)
     P.SetButtonText(ui.groupPreviewButton, P.Tr(active and "Single preview" or "Compare all"))
     ui.samples:SetShown(not ui.compact and not active)
     ui.raidPalette:SetShown(not ui.compact and not active)
-    if ui.targetStateButton then
-        ui.targetStateButton:SetShown(not active)
-        ui.focusStateButton:SetShown(not active)
-    end
     if not active then
         if ui.groupPreview then ui.groupPreview.frame:Hide() end
         return false

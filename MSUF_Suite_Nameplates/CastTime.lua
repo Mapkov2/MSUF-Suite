@@ -8,8 +8,7 @@ local Key, Text = private.Key, private.Text
 local CastTime = {}
 private.CastTime = CastTime
 local M
-local formatter
-local elapsedComponents
+local secondsFormatter, remainingComponents, elapsedComponents
 local IN_COMBAT = { inCombat = true }
 local CAST_EVENTS = { "UNIT_SPELLCAST_START", "UNIT_SPELLCAST_CHANNEL_START", "UNIT_SPELLCAST_EMPOWER_START",
     "UNIT_SPELLCAST_STOP", "UNIT_SPELLCAST_FAILED", "UNIT_SPELLCAST_INTERRUPTED",
@@ -25,35 +24,49 @@ local function Safe(frame)
     return frame and not NS.Safety.IsForbidden(frame)
 end
 
--- One seconds formatter (C_StringUtil, Retail and Forever) for every plate.
-local function Formatter()
-    if formatter then return formatter end
-    formatter = C_StringUtil.CreateSecondsFormatter()
-    formatter:SetMaxInterval(Enum.SecondsFormatterInterval.Seconds)
-    formatter:SetDefaultAbbreviation(Enum.SecondsFormatterAbbreviation.OneLetter)
-    formatter:SetMillisecondsThreshold(60)
-    return formatter
+-- The previous seconds format is the fallback if the optional rule format
+-- cannot be configured on this client.
+local function ApplySeconds(state)
+    if not secondsFormatter then
+        secondsFormatter = C_StringUtil.CreateSecondsFormatter()
+        secondsFormatter:SetMaxInterval(Enum.SecondsFormatterInterval.Seconds)
+        secondsFormatter:SetDefaultAbbreviation(Enum.SecondsFormatterAbbreviation.OneLetter)
+        secondsFormatter:SetMillisecondsThreshold(60)
+    end
+    state.binding:SetFormatter(secondsFormatter)
+    return true
 end
 
--- DurationTextBinding and NumericRuleFormatter (upstream/ptr and forever)
--- format elapsed/total entirely in the engine, including secret contents.
 local function ApplyFormat(state, choice)
-    local elapsed = choice == 2
-    if state.elapsed == elapsed then return end
-    state.elapsed = elapsed
-    if elapsed then
+    local binding = state.binding
+    if not binding.SetTextFormat or not C_StringUtil.CreateNumericRuleFormatter then
+        return ApplySeconds(state)
+    end
+    local properties = Enum.DurationTextBindingProperty
+    if choice == 2 then
         if not elapsedComponents then
             local seconds = C_StringUtil.CreateNumericRuleFormatter()
             seconds:AddBreakpoint({ threshold = 0, format = "%.1fs" })
             elapsedComponents = {
-                { property = Enum.DurationTextBindingProperty.ElapsedDuration, formatter = seconds },
-                { property = Enum.DurationTextBindingProperty.TotalDuration, formatter = seconds },
+                { property = properties.ElapsedDuration, formatter = seconds },
+                { property = properties.TotalDuration, formatter = seconds },
             }
         end
-        state.binding:SetTextFormat("{}/{}", elapsedComponents)
+        binding:SetTextFormat("{}/{}", elapsedComponents)
     else
-        state.binding:SetFormatter(Formatter())
+        if not remainingComponents then
+            local remaining = C_StringUtil.CreateNumericRuleFormatter()
+            remaining:SetBreakpoints({
+                { threshold = 0, step = 0.1, format = "%.1fs" },
+                -- Breakpoints are inclusive. Keep 30.0 in the countdown.
+                { threshold = 30.000001, format = ">30" },
+            })
+            remainingComponents = { { property = properties.RemainingDuration, formatter = remaining } }
+        end
+        -- The unitframe cast timer uses this same duration-property binding.
+        binding:SetTextFormat("{}", remainingComponents)
     end
+    return true
 end
 
 function CastTime.Restore(cast)
@@ -152,7 +165,6 @@ local function Create(cast)
     label:SetTextColor(1, 1, 1)
     label:Hide()
     binding:SetFontString(label)
-    binding:SetFormatter(Formatter())
     binding:SetUpdateInterval(0.1)
     binding:SetZeroDurationText("")
     binding:SetExpiredText("")
@@ -183,8 +195,16 @@ function CastTime.Paint(cast, prefix, unit, uf)
         state = Create(cast)
         M.castTimes[cast] = state
     end
-    local format = M.config[Key[prefix].CastTimeFormat] or 1
-    if format == 2 or state.elapsed then ApplyFormat(state, format) end
+    local format = M.config[Key[prefix].CastTimeFormat] == 2 and 2 or 1
+    if state.format ~= format then
+        state.format = format
+        -- A rejected optional text format must let the castbar layout finish.
+        state.formatReady = NS.Dispatch(ApplyFormat, state, format) or NS.Dispatch(ApplySeconds, state)
+    end
+    if not state.formatReady then
+        CastTime.Restore(cast)
+        return
+    end
     local styles = Text and Text.styles
     state.timeStyle = styles and styles[Key[prefix].Cast].time
     if state.unit ~= unit then

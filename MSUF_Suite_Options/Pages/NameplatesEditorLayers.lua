@@ -1,16 +1,16 @@
 local _, P = ...
-local M, W, T, Tr, HM = P.M, P.W, P.T, P.Tr, P.HM
+local M, W = P.M, P.W
 local Style, Auras = P.Suite.NameplateStyle, P.Suite.NameplateAuraDisplay
 local ID, PAGE = "nameplates", "suite_nameplates"
-local H = M.PreviewHelpers or {}
 local Markers = P.NameplatesEditorMarkers
 local NativeBit = Style.NativeBit
 
 -- The nameplate preview's layers: which layer a sample shows, the live
--- settings behind it, the click and right-click actions of the layer rail and
--- the rail itself. NameplatesEditor.lua installs On, Available and Active as
--- the editor's LayerOn, LayerAvailable and LayerActive methods. Register and
--- OpenSetting link every preview control to search and to its setting.
+-- settings behind it and the click and right-click actions on a layer
+-- (NameplatesElementPanel.lua shows them as the element list).
+-- NameplatesEditor.lua installs On, Available and Active as the editor's
+-- LayerOn, LayerAvailable and LayerActive methods. Register and OpenSetting
+-- link every preview control to search and to its setting.
 local Layers = {}
 P.NameplatesEditorLayers = Layers
 local DECOR_LAYERS = {
@@ -18,10 +18,14 @@ local DECOR_LAYERS = {
     focusMarker = "enemyFocusMarker", threshold = "enemyThresholdEnabled",
     targetScale = "targetScaleEnabled",
 }
-local function DecorSetting(ui, key)
+function Layers.DecorSetting(ui, key)
     local suffix = DECOR_LAYERS[key]
-    return suffix and (suffix:match("^[A-Z]") and ui.sampleKind .. suffix or suffix)
+    if not suffix or not suffix:match("^[A-Z]") then return suffix end
+    local scope = ui.scope or ui.sampleKind
+    if P.Get(ID, Style.AppearanceSwitch(scope, "outline")) then return scope .. "Style" .. suffix end
+    return ui.sampleKind .. suffix
 end
+local DecorSetting = Layers.DecorSetting
 
 local HIGHLIGHT_SAMPLES = {
     targetBorder = "target", focusBorder = "focus", aggroBorder = "aggro", mouseoverBorder = "mouseover",
@@ -226,7 +230,10 @@ function Layers.Active(ui, key)
             or ui.sampleKind == "enemy" and Style.AggroHighlightEnabled(c)
     end
     if key == "roleFill" then return P.Get(ID, "enemyRoleColors") end
-    if key == "target" then return Markers.TargetActive(ui) end
+    if key == "target" then
+        return Markers.TargetActive(ui) and (ui.statusSample == "target" or ui.allStatusSamples
+            or ui.highlightSample == "target" or ui.targetSample == true or ui.targetSample == nil and ui.sampleKind == "enemy")
+    end
     if AURA_KIND[key] then return AuraOn(ui, key) end
     if key == "threatFlash" or key == "threatHighlight" then
         return ui.aggroSample and ThreatOn(key)
@@ -240,17 +247,22 @@ function Layers.Active(ui, key)
         return P.NameplatesPreviewDecor.LevelMode(ui, ui.sampleKind, classic, FriendlyNamesOnly(ui)) ~= nil
     end
     if key == "raidIcon" then return ui.raidMarked == true or ui.statusSample == "RaidIcon" or ui.allStatusSamples == true end
+    if (key == "cast" or key == "castText" or key == "castTime" or key == "castIcon" or key == "castTarget" or key == "castShield")
+        and (not ui:LayerOn("cast") or not ui.castSample and ui.castingSample == false) then return false end
     if key == "castShield" then return ui.uninterruptible == true or ui.castSample == "CastShield" end
+    if key == "focusMarker" then
+        return ui.statusSample == "focusMarker" or ui.allStatusSamples or ui.highlightSample == "focus" or ui.focusSample == true
+    end
+    local role = not ui.enemyPlayer and (ui.questSample and 5 or ui.previewRole or P.Get(ID, "enemyPreviewRole"))
     if key == "classification" then
-        local role = ui.previewRole or P.Get(ID, "enemyPreviewRole")
-        return not ui.raidMarked and (ui.sampleKind == "friendly" and ui.friendlyElite
+        return ui.statusSample == "Classification" or ui.allStatusSamples or not ui.raidMarked and (ui.sampleKind == "friendly" and ui.friendlyElite
             or ui.sampleKind == "enemy" and (role == 3 or role == 4))
     end
     if key == "eliteMarker" or key == "questMarker" then
         local kind = key == "eliteMarker" and "Elite" or "Quest"
         if not P.Get(ID, ui.sampleKind .. kind .. "Marker") then return false end
         if ui.sampleKind == "friendly" then return ui.friendlyElite == true end
-        local role = ui.previewRole or P.Get(ID, "enemyPreviewRole")
+        if ui.statusSample == (key == "eliteMarker" and "elite" or "quest") or ui.allStatusSamples then return true end
         return key == "eliteMarker" and (role == 3 or role == 4) or key == "questMarker" and role == 5
     end
     return true
@@ -379,195 +391,26 @@ local function BlockedLayer(ui, key)
     return DisabledHighlight(ui, key, c) or DisabledFeature(ui, key, c)
 end
 
+function Layers.SetShown(ui, key, show)
+    ui.layers[key] = show
+    if show and STATUS_LAYERS[key] then ui.layers.status = true end
+end
+
 local function ToggleLayer(ui, key)
-    local sample = HIGHLIGHT_SAMPLES[key]
-    if sample then
-        return ui:SampleHighlight(sample, ui:LayerActive(key), true)
-    end
-    if key == "castShield" and ui.castSample ~= "CastShield" then
-        ui.uninterruptible, ui.layers[key] = not ui:LayerActive(key), true
-    else
-        local show = not ui:LayerOn(key)
-        ui.layers[key] = show
-        if show and STATUS_LAYERS[key] then ui.layers.status = true end
-    end
+    Layers.SetShown(ui, key, not ui:LayerOn(key))
     ui:Paint()
 end
 
-local function LayerHelp(key)
-    return key == "guides" and "Click: show or hide preview guides"
-        or "Click: show or hide preview; right-click: settings"
-end
-
-local function ShowInRail(ui, key)
-    -- Individual status actions keep their settings routes and command registrations.
-    if STATUS_LAYERS[key] then return false end
-    if key == "aggroBorder" then return ui.sampleKind == "enemy" and ui.scope ~= "neutral" end
-    if key == "roleFill" or key == "enemyPower" then return ui.sampleKind == "enemy" end
-    if key == "buffs" or key == "controlAura" then return ui.scope ~= "friendlyNpc" end
-    return true
-end
-
-local CHIP_HEIGHT, LAYER_ROW, VISIBLE_ROWS = 20, 24, 5
-local LAYER_LEFT, LAYER_RIGHT, CHIP_GAP, LABEL_PADDING = 8, 24, 5, 30
-
-local function PlaceRows(rail, visible, firstRow, top)
-    for _, button in ipairs(visible) do
-        local row = button.layerRow - firstRow
-        local shown = row >= 0 and row < VISIBLE_ROWS
-        button:SetShown(shown)
-        if shown then
-            button:ClearAllPoints()
-            button:SetPoint("TOPLEFT", rail, "TOPLEFT", button.layerX, -top - row * LAYER_ROW)
+-- The panel's view of a layer: its label, color and settings section.
+local DEFS
+function Layers.Def(key)
+    if not DEFS then
+        DEFS = {}
+        for _, def in ipairs(PrepareLayers()) do
+            DEFS[def[1]] = { key = def[1], label = def[2], section = def[3], color = LAYER_COLORS[def[1]] }
         end
     end
+    return DEFS[key]
 end
-
-local function BuildLayerScrollbar(rail, scroll)
-    local slider = CreateFrame("Slider", nil, rail)
-    slider:EnableMouse(true)
-    slider:SetOrientation("VERTICAL")
-    slider:SetWidth(14)
-    slider:SetPoint("BOTTOMRIGHT", rail, "BOTTOMRIGHT", -5, 6)
-    slider:SetMinMaxValues(0, 1)
-    slider:SetValueStep(1)
-    slider:SetObeyStepOnDrag(true)
-    slider:SetValue(0)
-    local track = slider:CreateTexture(nil, "BACKGROUND")
-    track:SetPoint("TOP", slider, "TOP")
-    track:SetPoint("BOTTOM", slider, "BOTTOM")
-    track:SetWidth(2)
-    track:SetColorTexture(1, 1, 1, .18)
-    local thumb = slider:CreateTexture(nil, "ARTWORK")
-    thumb:SetSize(5, 16)
-    thumb:SetColorTexture(1, .86, .57, .72)
-    slider:SetThumbTexture(thumb)
-    slider:SetScript("OnValueChanged", function(_, value) scroll(math.floor(value + .5)) end)
-    local function Wheel(_, delta) slider:SetValue(slider:GetValue() - delta) end
-    slider:EnableMouseWheel(true)
-    slider:SetScript("OnMouseWheel", Wheel)
-    rail:SetScript("OnMouseWheel", Wheel)
-    slider:Hide()
-    return slider
-end
-
-local function BuildRailLayout(ui, rail, title)
-    local visible = {}
-    local top = 5
-    local function Scroll(firstRow) PlaceRows(rail, visible, firstRow, top) end
-    local slider = BuildLayerScrollbar(rail, Scroll)
-    function ui:LayoutLayerRail()
-        local railWidth = self.body:GetWidth()
-        local titleEnd = LAYER_LEFT + math.ceil(title:GetStringWidth()) + 12
-        local dockTitle = railWidth - titleEnd - LAYER_RIGHT >= 165
-        local left = dockTitle and titleEnd or LAYER_LEFT
-        local width = railWidth - left - LAYER_RIGHT
-        if width < 1 then return end
-        top = dockTitle and 5 or 29
-        local titleAnchor = dockTitle and "LEFT" or "TOPLEFT"
-        title:ClearAllPoints()
-        title:SetPoint(titleAnchor, rail, titleAnchor, LAYER_LEFT, dockTitle and 0 or -8)
-        slider:SetPoint("TOPRIGHT", rail, "TOPRIGHT", -5, -top)
-        local x, row, count = 0, 0, 0
-        for _, button in ipairs(self.layerButtons) do
-            if ShowInRail(self, button.layerKey) then
-                local label = button.fs or HM.GetControlLabel(button)
-                local measureWidth = label and (label.GetUnboundedStringWidth or label.GetStringWidth)
-                local naturalWidth = measureWidth and math.ceil(measureWidth(label)) + LABEL_PADDING or button.layerWidth
-                local size = math.min(width, naturalWidth)
-                if x > 0 and x + size > width then x, row = 0, row + 1 end
-                button:SetWidth(size)
-                button.layerX, button.layerRow = left + x, row
-                x, count = x + size + CHIP_GAP, count + 1
-                visible[count] = button
-            else
-                button:Hide()
-            end
-        end
-        for i = #visible, count + 1, -1 do visible[i] = nil end
-        local lastRow = math.max(0, row + 1 - VISIBLE_ROWS)
-        local firstRow = math.min(slider:GetValue(), lastRow)
-        slider:SetMinMaxValues(0, math.max(1, lastRow))
-        slider:SetValue(firstRow)
-        slider:SetShown(lastRow > 0)
-        rail:EnableMouseWheel(lastRow > 0)
-        rail:SetHeight(top + (math.min(row, VISIBLE_ROWS - 1) * LAYER_ROW) + CHIP_HEIGHT + 6)
-        Scroll(firstRow)
-    end
-end
-
-local function BuildButtons(ui, rail)
-    local measure = T.Font(rail, "GameFontDisableSmall", "", T.colors.muted)
-    measure:Hide()
-    local opts = {
-        Tr = Tr, layout = "chip", height = CHIP_HEIGHT, showOffText = false, quiet = true,
-        IsAvailable = function(owner, key) return BlockedLayer(owner, key) == nil end,
-        IsOn = function(owner, key) return owner:LayerActive(key) end,
-    }
-    if H.LayerChipButtonOpts and H.PreviewChromePalette then
-        opts = H.LayerChipButtonOpts(Tr, T.colors, H.PreviewChromePalette(T), opts)
-    end
-    ui.layerButtons = {}
-    for i, def in ipairs(PrepareLayers()) do
-        local key, label, section = def[1], def[2], def[3]
-        local button
-        local adjustable = key ~= "guides"
-        if H.CreateLayerButton then
-            button = H.CreateLayerButton(rail, ui,
-                { key = key, label = label, color = LAYER_COLORS[key] }, i, 95, opts)
-        else
-            button = T.Button(rail, label, 95, CHIP_HEIGHT)
-        end
-        P.SetTranslatedText(measure, Tr(label))
-        button.layerWidth = math.ceil(measure:GetStringWidth()) + LABEL_PADDING
-        local text = button.fs or HM.GetControlLabel(button)
-        if text then
-            text:SetPoint("RIGHT", button, "RIGHT", -6, 0)
-            text:SetJustifyH("LEFT")
-            text:SetWordWrap(false)
-        end
-        button.layerKey = key
-        local function Blocked() return BlockedLayer(ui, key) end
-        P.PreviewInteraction.BindLayerClick(button, function() return ToggleLayer(ui, key) end, function(setting)
-            if not adjustable or P.Combat() then return end
-            if key == "castShield" and ui:CanPickElement() then return FocusLayer(ui, section, key) end
-            if type(setting) == "string" and OpenSetting(setting) then return end
-            return FocusLayer(ui, section, key)
-        end, Blocked)
-        HM.SetCommandAction(button, { kind = "toggle", historyMode = "none",
-            get = function() return Blocked() == nil and ui:LayerActive(key) end,
-            set = function(desired)
-                if Blocked() or P.Combat() then return false end
-                desired = desired == true
-                if ui:LayerActive(key) ~= desired then ToggleLayer(ui, key) end
-                return ui:LayerActive(key) == desired
-            end })
-        if M.AddTooltip then
-            M.AddTooltip(button, label, LayerHelp(key), { hook = true, enabled = function() return Blocked() == nil end })
-        end
-        Register(button, "layer." .. key, Tr("%s preview layer"):format(Tr(label)))
-        ui.layerButtons[#ui.layerButtons + 1] = button
-    end
-end
-
-function Layers.Build(ui)
-    local rail = CreateFrame("Frame", nil, ui.body, "BackdropTemplate")
-    rail:SetPoint("BOTTOMLEFT", ui.body, "BOTTOMLEFT", 0, 4)
-    rail:SetPoint("BOTTOMRIGHT", ui.body, "BOTTOMRIGHT", 0, 4)
-    rail:SetHeight(80)
-    local title = P.PreviewInteraction.LayerRailTitle and P.PreviewInteraction.LayerRailTitle(rail)
-    if not title then
-        local background = rail:CreateTexture(nil, "BACKGROUND")
-        background:SetAllPoints(rail)
-        background:SetColorTexture(.04, .06, .09, .96)
-        local border = Style.CreateBorder(rail)
-        Style.PaintBorder(border, rail, 1, "9e997f")
-        title = T.Font(rail, "GameFontDisableSmall", "Preview Layers", T.colors.muted)
-    end
-    -- Dock the chips directly on the preview rail, like Unit Frames. At
-    -- narrow widths the slider swaps whole rows within the same hit area.
-    rail:SetFrameLevel(ui.canvas:GetFrameLevel() + 1)
-    BuildButtons(ui, rail)
-    BuildRailLayout(ui, rail, title)
-    ui.layerRail = rail
-end
+Layers.Toggle, Layers.Blocked = ToggleLayer, BlockedLayer
+Layers.STATUS_LAYERS = STATUS_LAYERS

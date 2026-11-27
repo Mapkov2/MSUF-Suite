@@ -641,9 +641,10 @@ local nameTextRules = {
     B.Bool("nameTextUseCustomSettings", "Use custom nameplate text settings", false),
 }
 for _, prefix in ipairs({ "enemy", "friendly" }) do
+    -- Indices 3 and 4 are saved aliases. The menu shows the first two choices.
     nameTextRules[#nameTextRules + 1] = B.Choice(prefix .. "NameFormat", "Name format", 2,
-        { "Full name", "Shorten to length", "Abbreviate words", "Abbreviate and shorten" })
-    nameTextRules[#nameTextRules + 1] = B.Number(prefix .. "NameMaxChars", "Maximum name length", 12, 1, 40)
+        { "Full name", "Shorten protected names", "Full name", "Shorten protected names" })
+    nameTextRules[#nameTextRules + 1] = B.Number(prefix .. "NameMaxChars", "Approx. name length", 12, 1, 40)
     nameTextRules[#nameTextRules + 1] = B.Choice(prefix .. "NameClipSide", "Keep characters from", 1,
         { "Beginning of name", "End of name" })
     nameTextRules[#nameTextRules + 1] = B.Bool(prefix .. "NameNoEllipsis", "Hide ellipsis", false)
@@ -785,6 +786,7 @@ for _, prefix in ipairs({ "enemy", "friendly" }) do
         local rule = rules[prefix .. suffix]
         rule.enableKey = prefix .. "NameFormat"
         rule.requiresChoice = { key = prefix .. "NameFormat", values = { [2] = true, [4] = true } }
+        if suffix ~= "NameMaxChars" then rule.hidden = true end
     end
 end
 for _, scope in ipairs({ "enemy", "neutral", "friendly" }) do

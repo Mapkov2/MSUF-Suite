@@ -115,7 +115,13 @@ Pages\NameplatesAuraColors.lua
 Pages\NameplatesSize.lua
 Pages\NameplatesEditorMarkers.lua
 Pages\NameplatesEditorLayers.lua
+Pages\NameplatesElements.lua
+Pages\NameplatesElementPanel.lua
+Pages\NameplatesLayoutTemplates.lua
+Pages\NameplatesInspector.lua
 Pages\NameplatesPreviewLayout.lua
+Pages\NameplatesEditorGhosts.lua
+Pages\NameplatesEditorTools.lua
 Pages\NameplatesEditor.lua
 Pages\NameplatesPreviewDecor.lua
 Pages\NameplatesPreview.lua

@@ -4,7 +4,6 @@ P.NameplatesExtensions = UI
 local X = P.Suite.NameplateExtensions
 
 local DISPLAY_SECTIONS = {
-    plateNameDisplay = { enemy = 41, neutral = 41, friendly = 41, friendlyNpc = 41 },
     plateHealthDisplay = { enemy = 21, neutral = 21, friendly = 21, friendlyNpc = 21 },
     platePvpMarkers = { enemy = 71, friendly = 71 },
     plateNpcMarkers = { enemy = 72, neutral = 72, friendlyNpc = 72 },

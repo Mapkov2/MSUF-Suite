@@ -12,6 +12,16 @@ local LABELS = { enemy = "Enemy", neutral = "Neutral", friendly = "Friendly",
 local SIDES = { enemy = "enemy", neutral = "enemy", friendly = "friendly", friendlyNpc = "friendly" }
 local X = P.Suite.NameplateExtensions
 local PRIMARY_KINDS = { enemy = "enemyNpc", neutral = "neutralNpc", friendly = "friendlyPlayer", friendlyNpc = "friendlyNpc" }
+local EDITOR_GROUP_ORDER = { health = 1, cast = 2, power = 3, auras = 4, icons = 5, frame = 6 }
+local EDITOR_GROUPS = {
+    enemyBasics = "health", neutralBasics = "health", friendlyBasics = "health", friendlyNpcBasics = "health",
+    enemyText = "health", friendlyText = "health", plateHealthDisplay = "health", plateNameDisplay = "health",
+    platePersonalDisplay = "health", castbar = "cast", friendlyCast = "cast",
+    enemyPower = "power", classResources = "power", auraWorkspace = "auras", auraSpellEmphasis = "auras",
+    enemyMarkers = "icons", neutralMarkers = "icons", friendlyMarkers = "icons", friendlyNpcMarkers = "icons",
+    platePvpMarkers = "icons", plateNpcMarkers = "icons",
+    enemyStyle = "frame", neutralStyle = "frame", friendlyStyle = "frame", friendlyNpcStyle = "frame",
+}
 local COPY_CATEGORIES = {
     { key = "dimensions", label = "Health bar dimensions" }, { key = "style", label = "Style" },
     { key = "text", label = "Text" }, { key = "cast", label = "Castbar" },
@@ -312,6 +322,7 @@ function Workspace.Select(ui, kind, fromFocus)
         if rank then visible[#visible + 1] = record end
     end
     table.sort(visible, function(a, b)
+        if a.groupOrder ~= b.groupOrder then return a.groupOrder < b.groupOrder end
         local ar, br = a.scopes[kind], b.scopes[kind]
         if ar == br then return a.index < b.index end
         return ar < br
@@ -338,13 +349,38 @@ function Workspace.Select(ui, kind, fromFocus)
     return true
 end
 
+local function CreateAccent(header)
+    if not header or not header.CreateTexture then return end
+    local accent = header:CreateTexture(nil, "OVERLAY")
+    local color = P.T.colors.accent or P.T.colors.text
+    accent:SetColorTexture(color[1], color[2], color[3], 0.8)
+    accent:SetPoint("TOPLEFT", header, "TOPLEFT", 0, -2)
+    accent:SetPoint("BOTTOMLEFT", header, "BOTTOMLEFT", 0, 2)
+    accent:SetWidth(2)
+    accent:Hide()
+    return accent
+end
+
+function Workspace.Highlight(ui, group)
+    if not ui or ui.highlightedGroup == group then return end
+    ui.highlightedGroup = group
+    for _, record in ipairs(ui.sections) do
+        if record.accent then record.accent:SetShown(record.group == group) end
+    end
+end
+
 -- Each section belongs to one area; focusing it from search or the preview
 -- shows that area first.
-function Workspace.Track(ui, body, scopes)
-    local entry = body and HM.GetSectionEntry(body)
-    if not ui or not entry then return end
+function Workspace.Track(ui, body, scopes, key)
+    if not ui or not body then return end
+    local entry = HM.GetSectionEntry(body)
+    if not entry then return end
     local index = #ui.sections + 1
-    ui.sections[index] = { entry = entry, scopes = scopes, index = index }
+    local group = EDITOR_GROUPS[key]
+    local accent = group and CreateAccent(entry.header)
+    if accent then accent:SetShown(ui.highlightedGroup == group) end
+    ui.sections[index] = { entry = entry, scopes = scopes, index = index, group = group, accent = accent,
+        groupOrder = EDITOR_GROUP_ORDER[group] or 7 }
     HM.SetSectionEnsureVisible(entry, function()
         if scopes[current] then return end
         for _, kind in ipairs(ORDER) do
@@ -410,8 +446,9 @@ function Workspace.Header(ctx, builder)
 end
 
 -- After every section exists: show the area chosen last.
-function Workspace.Finish(ui)
+function Workspace.Finish(ui, preview)
     if not ui then return end
+    if preview then preview.workspace = ui end
     Workspace.Select(ui, current)
     ui.building = nil
 end

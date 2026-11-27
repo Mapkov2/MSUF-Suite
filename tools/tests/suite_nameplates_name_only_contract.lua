@@ -276,12 +276,12 @@ Names.ConfigureNameOnly()
 before = attackReads
 assert(Paint(uf, "nameplate3") and attackReads == before, "legacy name-only behavior started reading attackability")
 
--- A profile can enable the shared formatter after Name only registered its
+-- A profile can enable the host's name-part resolver after Name only registered its
 -- native hook. Both normal entry points must leave NPC color to Name only.
 local paintCalls, formats, sharedEnabled = 0, 0, true
 NS.IsCombatLocked = function() return combat end
 NS.NameplateText = {
-    Compile = function() return { enabled = sharedEnabled, shared = sharedEnabled and {} or nil } end,
+    Compile = function() return { displayName = sharedEnabled, shared = sharedEnabled and {} or nil } end,
     Format = function(_, raw) formats = formats + 1 return raw:sub(1, 8) end,
     PaintColor = function(label)
         paintCalls = paintCalls + 1
@@ -302,8 +302,8 @@ for _, rgb in ipairs({ { 1, 1, 1 }, { 1, 0, 0 } }) do
     uf.name:SetTextColor(rgb[1], rgb[2], rgb[3], .9)
     nativeUpdate(uf)
     assert(uf.name.r == .9 and uf.name.g == .86 and uf.name.b == 0 and uf.name.a == .9,
-        "a later shared-formatting hook replaced the neutral name-only palette")
-    assert(uf.name.text == "Neutral " and formats > 0, "color ownership disabled normal name formatting")
+        "a later host name hook replaced the neutral name-only palette")
+    assert(uf.name.text == "Neutral " and formats > 0, "color ownership disabled the host name resolver")
 end
 assert(paintCalls == 0, "shared name color wrote over an active NPC tint")
 config.neutralPlateNameOnly = false

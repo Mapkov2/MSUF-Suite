@@ -107,7 +107,7 @@ Enum = {
     TooltipDataLineType = { QuestTitle = 1, QuestPlayer = 2, QuestObjective = 3 },
     SecondsFormatterInterval = { Seconds = 1 },
     SecondsFormatterAbbreviation = { OneLetter = 2 },
-    DurationTextBindingProperty = { ElapsedDuration = 2, TotalDuration = 4 },
+    DurationTextBindingProperty = { RemainingDuration = 0, ElapsedDuration = 2, TotalDuration = 4 },
 }
 PixelUtil = { SetPoint = function(region, ...) region:SetPoint(...) end }
 NamePlateConstants = { DEBUFF_PADDING_CVAR = "nameplateDebuffPadding", NAMEPLATE_WIDTH = 230,
@@ -290,18 +290,23 @@ C_StringUtil = { CreateNumericRuleFormatter = function()
     return { AddBreakpoint = function(self, rule)
         assert(rule.threshold == 0 and rule.format == "%.1fs")
         self.rule = rule
-    end }
+    end, SetBreakpoints = function(self, points) self.points = points end }
 end, CreateSecondsFormatter = function()
     return { SetMillisecondsThreshold = function(self, threshold) self.threshold = threshold end,
         SetMaxInterval = function(self, interval) self.interval = interval end,
         SetDefaultAbbreviation = function(self, abbreviation) self.abbreviation = abbreviation end }
 end }
+local rejectCastTextFormat
 C_DurationUtil = { CreateDurationTextBinding = function()
     local binding = {}
     function binding:SetFontString(label) self.label = label end
-    function binding:SetFormatter(formatter) self.formatter = formatter; self.format, self.components = nil, nil end
+    function binding:SetFormatter(formatter)
+        assert(formatter.threshold == 60, "numeric rules must use the duration-property binding")
+        self.formatter, self.format, self.components = formatter, nil, nil
+    end
     function binding:SetTextFormat(format, components)
-        self.format, self.components = format, components
+        if rejectCastTextFormat then error("client refused cast text format") end
+        self.formatter, self.format, self.components = nil, format, components
     end
     function binding:SetUpdateInterval(interval) self.interval = interval end
     function binding:SetZeroDurationText(text) self.zero = text end
@@ -310,6 +315,16 @@ C_DurationUtil = { CreateDurationTextBinding = function()
         assert(duration ~= nil, "no active cast duration")
         assert(duration ~= "secret", "addon code passed a secret duration to the binding")
         self.duration = duration
+    end
+    function binding:FormatRemaining(value)
+        local format = "%.1fs"
+        local component = self.components and self.components[1]
+        local formatter = component and component.formatter or self.formatter
+        for _, breakpoint in ipairs(formatter.points or {}) do
+            if value < breakpoint.threshold then break end
+            format = breakpoint.format
+        end
+        return format:format(value)
     end
     function binding:Disable() self.enabled = false end
     function binding:Enable()
@@ -2488,6 +2503,15 @@ do
     assert(state.binding.duration == castDuration and state.binding.enabled and label:IsShown()
         and label.text == "2.3s" and cast.CastTimeText == nil,
         "cast duration did not reach the engine text binding")
+    local remainingComponents = state.binding.components
+    assert(state.binding.format == "{}" and #remainingComponents == 1
+        and remainingComponents[1].property == Enum.DurationTextBindingProperty.RemainingDuration,
+        "remaining time did not use the bound duration property")
+    for _, sample in ipairs({ { 60, ">30" }, { 30.001, ">30" }, { 30, "30.0s" },
+        { 29.9, "29.9s" }, { 2.3, "2.3s" } }) do
+        assert(state.binding:FormatRemaining(sample[1]) == sample[2],
+            ("wrong remaining cast time for %.3f seconds"):format(sample[1]))
+    end
     module.config.enemyCastTimeSize = originalTimeSize
     module.config.enemyCastTimeFormat = 2
     module:Refresh()
@@ -2502,8 +2526,37 @@ do
     assert(state.binding.components == components, "unchanged cast time format allocated new components")
     module.config.enemyCastTimeFormat = 1
     module:Refresh()
-    assert(state.binding.format == nil and state.binding.formatter.threshold == 60,
-        "remaining time did not restore its native seconds formatter")
+    assert(state.binding.format == "{}" and state.binding.components == remainingComponents
+        and state.binding:FormatRemaining(31) == ">30",
+        "remaining time did not restore its shared capped formatter")
+
+    -- Blizzard reports a rejected optional text format at the dispatch boundary.
+    -- Painting the native bar and its layout must continue with the classic timer.
+    local dispatch, layout = NS.Dispatch, private.Layout.Apply
+    local errors, layoutCalls = 0, 0
+    NS.Dispatch = function(callback, ...)
+        local ok, value = pcall(callback, ...)
+        if ok then return value end
+        assert(tostring(value):find("client refused cast text format", 1, true), value)
+        errors = errors + 1
+    end
+    private.Layout.Apply = function(...)
+        layoutCalls = layoutCalls + 1
+        return layout(...)
+    end
+    rejectCastTextFormat, module.config.enemyCastTimeFormat = true, 2
+    module:Refresh()
+    assert(errors > 0 and layoutCalls > 0 and cast:IsShown()
+        and state.binding.format == nil and state.binding.formatter.threshold == 60,
+        "rejecting text format prevented the native castbar layout or the seconds fallback")
+    local errorsBefore = errors
+    module:Refresh()
+    assert(errors == errorsBefore, "ordinary refresh retried a rejected cast format")
+    NS.Dispatch, private.Layout.Apply, rejectCastTextFormat = dispatch, layout, nil
+    module.config.enemyCastTimeFormat = 1
+    module:Refresh()
+    assert(state.binding.components == remainingComponents)
+
     castDuration = "secret"
     events.UNIT_SPELLCAST_NOT_INTERRUPTIBLE(module, "UNIT_SPELLCAST_NOT_INTERRUPTIBLE", "nameplate1")
     assert(state.binding.duration == opaqueCast and state.binding.enabled and label:IsShown(),

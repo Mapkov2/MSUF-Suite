@@ -7,26 +7,22 @@ local IsCombatLocked = NS.IsCombatLocked
 local states = setmetatable({}, { __mode = "k" })
 local Names = { states = states, inUse = false }
 private.NameText = Names
-local M, looks, hooked, threatHooked, nameClipObserver, clippedNames
+local M, looks, hooked, threatHooked
 local customNameColors = {}
 
 function Names.Bind(module) M = module end
 
-function Names.ObserveNameClip(observer, observed)
-    nameClipObserver, clippedNames = observer, observed
-end
-
-local function SecretNameWidth(config, look, prefix)
-    if not look.enabled or not config[prefix] then return end
+local function NameLimit(config, look, prefix)
+    if not look.enabled or not config[prefix] or config.look == private.Mode.LOOK_BLIZZARD then return end
     local shared = look.shared
-    local mode = shared and shared.nameDisplayFormat or look.formatID
-    if mode ~= "CUT" and mode ~= "ABBREV_CUT" then return end
-    local max = shared and shared.nameDisplayMax or look.max
+    local max = look.max
     if not NS.Finite(max) or max <= 0 then return end
     local size = Text.FontStyle(config, prefix, shared).size
+    local healthSize = Text.ResolveSize(config, prefix .. "HealthTextSize", shared)
     -- A proportional font has no fixed character width. Use an average
     -- glyph advance and the configured size, with the native size as fallback.
-    return max * (NS.Finite(size) and size > 0 and size or 10) * 0.6
+    return { pixels = max * (NS.Finite(size) and size > 0 and size or 10) * 0.6,
+        healthSize = NS.Finite(healthSize) and healthSize > 0 and healthSize or 10 }
 end
 
 -- The plate Button and its FontString can lose access while still tracked.
@@ -183,8 +179,9 @@ local function PaintTint(state, label, look, freshNativeColor)
 end
 
 local function Paint(uf, state, label, look, freshNativeColor)
-    if look.enabled or look.npcLastWord or look.firstNameOnly then
+    if look.displayName then
         local output = Text.Format(state, state.raw, look)
+        if IsSecret(output) then output = state.raw end
         local changed = output ~= state.raw
         if changed or state.formatted then
             label:SetText(output)
@@ -257,16 +254,23 @@ local function OnNativeName(uf)
         if IsSecret(flag) or flag then return Defer(uf, state, label) end
     end
     if uf.UpdateNameOverride then return end
+    -- A matching look without a captured name has already seen a secret
+    -- FontString. A still-secret name needs no visibility read or state
+    -- update. A public name keeps the shown guard.
+    local settled = state.look == look and not state.captured and not state.nativeDirty
+    local raw
+    if settled then
+        raw = label:GetText()
+        if IsSecret(raw) then return end
+    end
     flag = label:IsShown()
     if IsSecret(flag) or not flag then return end
-    local raw = label:GetText()
+    if not settled then raw = label:GetText() end
     if IsSecret(raw) then
         if state.captured then ForgetPlain(state) end
         state.look, state.nativeDirty = look, nil
-        if clippedNames and not clippedNames[uf] then nameClipObserver(uf, true) end
         return
     end
-    if clippedNames and clippedNames[uf] then nameClipObserver(uf, false) end
     Capture(state, label, raw, look)
     Paint(uf, state, label, look, true)
 end
@@ -288,12 +292,10 @@ function Names.FlushRestores()
     if Names.pendingRestore then RestoreInactive() end
 end
 
--- A side owns the native name only when its look formats or colors it.
 local function Owning(look, side)
-    if look.enabled or look.npcLastWord or look.firstNameOnly or look.customColor or look.shared ~= nil then
-        look.visualSide = side
-        return look
-    end
+    if not (look.displayName or look.customColor or look.shared ~= nil) then return end
+    look.visualSide = side
+    return look
 end
 
 -- A side that stopped owning gives back what it wrote and loses its unit
@@ -317,27 +319,12 @@ function Names.CustomNameColor(scope)
     return color, color and color.customColor == true
 end
 
-local function NameLimit(config, prefix, fallback, font)
-    if config.look == private.Mode.LOOK_BLIZZARD or not config[prefix] then return end
-    local value = config[prefix .. "NameMaxWidth"]
-    local fixed = NS.Finite(value) and value > 0
-    local pixels = fixed and value or fallback
-    if not pixels then return end
-    return { pixels = pixels, fixed = fixed, healthSize = NS.Finite(font) and font > 0 and font or 10 }
-end
-
 function Names.Configure(config)
     Names.threatNames = private.EasyFeatures and config.look ~= 2 and config.threatNameColor == true
     local enemy, friendly = Text.Compile(config, "enemy"), Text.Compile(config, "friendly")
-    Names.secretNameWidth = SecretNameWidth(config, enemy, "enemy")
-    Names.friendlySecretNameWidth = SecretNameWidth(config, friendly, "friendly")
-    Names.secretNameHealthSize = (Names.secretNameWidth or config.enemyNameMaxWidth and config.enemyNameMaxWidth > 0)
-        and Text.ResolveSize(config, "enemyHealthTextSize", enemy.shared)
-    Names.friendlySecretNameHealthSize = (Names.friendlySecretNameWidth or config.friendlyNameMaxWidth and config.friendlyNameMaxWidth > 0)
-        and Text.ResolveSize(config, "friendlyHealthTextSize", friendly.shared)
     Names.limits = {
-        enemy = NameLimit(config, "enemy", Names.secretNameWidth, Names.secretNameHealthSize),
-        friendly = NameLimit(config, "friendly", Names.friendlySecretNameWidth, Names.friendlySecretNameHealthSize),
+        enemy = NameLimit(config, enemy, "enemy"),
+        friendly = NameLimit(config, friendly, "friendly"),
     }
     if private.Layout then private.Layout.NameLimits() end
     local neutral = Text.Compile(config, "enemy", "neutral")
@@ -355,7 +342,7 @@ function Names.Configure(config)
     elseif not looks.enemy or not looks.neutral or not looks.friendly or not looks.friendlyNeutral then
         ReleaseDormant()
     end
-    if (Names.inUse or Names.threatNames) and not hooked then
+    if Names.inUse and not hooked then
         hooked = true
         hooksecurefunc("CompactUnitFrame_UpdateName", OnNativeName)
     end
@@ -398,10 +385,8 @@ function Names.Apply(uf, prefix, unit, kind)
     if IsSecret(current) then
         ForgetPlain(state)
         state.look = look
-        if clippedNames and not clippedNames[uf] then nameClipObserver(uf, true) end
         return
     end
-    if clippedNames and clippedNames[uf] then nameClipObserver(uf, false) end
     if state.nativeDirty or state.raw == nil or current ~= state.output and current ~= state.raw then
         Capture(state, label, current, look)
     end

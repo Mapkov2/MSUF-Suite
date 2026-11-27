@@ -73,6 +73,11 @@ function P.RuleRow(page, id, rule, ...)
             end
             return stored()
         end
+        if rule.key == "enemyNameFormat" or rule.key == "friendlyNameFormat" then
+            local get = row.get
+            row.values[3], row.values[4] = nil, nil
+            row.get = function() return Text.Limited(get()) and 2 or 1 end
+        end
         if override then
             local set = row.set
             row.set = function(value)

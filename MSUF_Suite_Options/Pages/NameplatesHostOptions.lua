@@ -98,14 +98,9 @@ local function Slider(state, section, key, label, default, minimum, maximum, ste
     return row
 end
 
-local function Choice(state, section, key, label, options)
-    local row = Row(state, section, key, label, "dropdown")
-    row.values = {}
-    for _, option in ipairs(options) do
-        row.values[#row.values + 1] = { value = option[1], text = Tr(option[2]) }
-    end
-    row.get = function() return Get(state, section, key) or options[1][1] end
-    return row
+local function ShorteningEnabled(state)
+    local mode = Get(state, SECTION, "nameFormat")
+    return mode == "CUT" or mode == "ABBREV_CUT" or mode == nil and Get(state, SECTION, "shortenNames") == true
 end
 
 local function DeferredRow(row)
@@ -155,6 +150,9 @@ local function DeferredRows(rows)
 end
 
 local function FontRows(state)
+    local shortening = Row(state, SECTION, "nameFormat", "Shorten protected names", "toggle")
+    shortening.get = function() return ShorteningEnabled(state) end
+    shortening.set = function(value) Set(state, SECTION, "nameFormat", value and "CUT" or "FULL") end
     local rows = {
         Toggle(state, "nameplates", "fontOverride", "Customize nameplate typography"),
         Toggle(state, "nameplates", "noOutline", "Hide text outline"),
@@ -166,11 +164,8 @@ local function FontRows(state)
         Slider(state, "nameplates", "fontShadowDistance", "Text shadow distance", 1, 1, 2),
         Slider(state, "nameplates", "fontTextAlpha", "Text opacity", 1, .7, 1, .01),
         Slider(state, "nameplates", "fontBaselineOffset", "Text baseline offset", 0, -4, 4),
-        Choice(state, "nameplates", "nameFormat", "Name format", {
-            { "FULL", "Full name" }, { "CUT", "Truncate" }, { "ABBREV", "Abbreviate" }, { "ABBREV_CUT", "Abbreviate and truncate" } }),
-        Slider(state, "nameplates", "shortenNameMaxChars", "Maximum name characters", 12, 4, 40),
-        Choice(state, "nameplates", "shortenNameClipSide", "Clip name on", { { "LEFT", "Left" }, { "RIGHT", "Right" } }),
-        Toggle(state, "nameplates", "shortenNameShowDots", "Show ellipsis", true),
+        shortening,
+        Slider(state, "nameplates", "shortenNameMaxChars", "Approx. name length", 12, 4, 40),
         Toggle(state, "nameplates", "nameClassColor", "Class-colored player names"),
         Toggle(state, "nameplates", "npcNameRed", "Red NPC names"),
     }
@@ -203,7 +198,11 @@ local function Content(ctx, builder, body, state)
     end, nil, P.Meta(PAGE, ID, "host.reset." .. SECTION, "action", PAGE .. "_host_" .. SECTION))
     P.M.TrackRefresh(ctx, function()
         local enabled, typography = not P.Combat(), Get(state, SECTION, "fontOverride")
-        for _, row in ipairs(rows) do grid.controls[row.id]:SetEnabled(enabled and (typography or row.id == "fontOverride")) end
+        for _, row in ipairs(rows) do
+            local active = typography or row.id == "fontOverride"
+            if row.id == "shortenNameMaxChars" then active = active and ShorteningEnabled(state) end
+            grid.controls[row.id]:SetEnabled(enabled and active)
+        end
     end)
     P.FinishBody(builder, body, y - 44)
 end

@@ -797,6 +797,7 @@ do
     local function Order(scope, ids)
         assert(P.NameplatesWorkspace.Open(scope))
         mw:RunTimers(1000)
+        assert(#ui.builder.layoutEntries == #ids, "wrong accordion count for " .. scope)
         for i, id in ipairs(ids) do
             assert(ui.builder.layoutEntries[i] == Header(id), "wrong accordion order for " .. scope .. " at " .. id)
         end
@@ -806,7 +807,7 @@ do
         if button.layerKey == "status" then chip = button break end
     end
     assert(chip and not preview.statusButton, "Status icons must be a preview layer")
-    Order("enemy", { "enemyBasics", "enemyVisibility", "enemyStyle" })
+    assert(P.NameplatesWorkspace.Open("enemy"))
     local priorCondition, priorWidth = P.Get("nameplates", "enemyHideInCombat"), P.Get("nameplates", "enemyHealthWidthDelta")
     local look = P.Get("nameplates", "look")
     assert(P.SetMany("nameplates", { enemyHideInCombat = true, enemyHealthWidthDelta = 22, look = look }))
@@ -863,20 +864,22 @@ do
             side .. " health position is no longer editable in the shared preview")
     end
     P.Set("nameplates", "friendlyNamesOnly", friendlyDisplay)
-    Order("friendly", { "friendlyBasics", "friendlyStyle", "plateHealthDisplay", "auraWorkspace", "auraSpellEmphasis",
-        "friendlyText", "plateNameDisplay", "platePersonalDisplay", "friendlyCast", "friendlyMarkers", "platePvpMarkers",
+    Order("friendly", { "friendlyBasics", "plateHealthDisplay", "friendlyText", "platePersonalDisplay",
+        "friendlyCast", "auraWorkspace", "auraSpellEmphasis", "friendlyMarkers", "platePvpMarkers", "friendlyStyle",
         "friendlyRange", "friendlyOpacity" })
-    Order("friendlyNpc", { "friendlyNpcBasics", "friendlyNpcStyle", "plateHealthDisplay", "auraWorkspace", "auraSpellEmphasis",
-        "friendlyText", "plateNameDisplay", "friendlyCast", "friendlyNpcMarkers", "plateNpcMarkers", "friendlyNpcRange",
-        "friendlyNpcOpacity" })
-    Order("neutral", { "neutralBasics", "neutralStyle", "plateHealthDisplay", "auraWorkspace", "auraSpellEmphasis",
-        "enemyText", "plateNameDisplay", "enemyPower", "castbar", "neutralMarkers", "plateNpcMarkers", "neutralRange", "neutralOpacity" })
-    Order("enemy", { "enemyBasics", "enemyVisibility", "enemyStyle", "plateHealthDisplay", "auraWorkspace", "auraSpellEmphasis",
-        "enemyText", "plateNameDisplay", "enemyPower", "classResources", "castbar", "enemyMarkers", "platePvpMarkers",
-        "plateNpcMarkers", "enemyRange", "enemyOpacity" })
+    Order("friendlyNpc", { "friendlyNpcBasics", "plateHealthDisplay", "friendlyText", "friendlyCast",
+        "auraWorkspace", "auraSpellEmphasis", "friendlyNpcMarkers", "plateNpcMarkers", "friendlyNpcStyle",
+        "friendlyNpcRange", "friendlyNpcOpacity" })
+    Order("neutral", { "neutralBasics", "plateHealthDisplay", "enemyText", "castbar", "enemyPower",
+        "auraWorkspace", "auraSpellEmphasis", "neutralMarkers", "plateNpcMarkers", "neutralStyle", "neutralRange", "neutralOpacity" })
+    Order("enemy", { "enemyBasics", "plateHealthDisplay", "enemyText", "castbar", "enemyPower",
+        "classResources", "auraWorkspace", "auraSpellEmphasis", "enemyMarkers", "platePvpMarkers", "plateNpcMarkers",
+        "enemyStyle", "enemyVisibility", "enemyRange", "enemyOpacity" })
     Open({ "nameplatePersonalStyle" })
     assert(P.NameplatesWorkspace.Kind() == "friendly", "personal display search missed the Friendly Players workspace")
-    Open({ "enemyNameMaxWidth" })
+    for _, key in ipairs({ "enemyNameMaxWidth", "friendlyNameMaxWidth", "nameplateNpcLastWord", "nameplateFirstNameOnly" }) do
+        assert(not records["msufsuite.nameplates." .. key], "retired name setting appeared in search: " .. key)
+    end
     assert(not page.sections.suite_nameplates_enemy and not page.sections.suite_nameplates_friendly,
         "Nameplates still registers a Texture Layer accordion")
     assert(not records["msufsuite.nameplates.enemyFillTexture"], "retired fill texture appeared in search")
@@ -1253,7 +1256,7 @@ do
     basics.SetOpenImmediate(true)
 end
 
--- Text handles open sizing, while the layer rail still opens visibility settings.
+-- Text handles open sizing, while the element eye opens visibility settings.
 do
     preview:ShowSample("friendly")
     preview:Edit("cast")
@@ -1466,6 +1469,12 @@ do
     assert(preview.layerContext == "highlight" and preview.highlightSample == "aggro" and preview:LayerOn("highlightBorders")
         and P.Get("nameplates", "highlightFocus") == configured, "highlight preview changed live settings")
     preview:Edit("anchor")
+    -- This host fixture stores anchors but has no layout solver. Give the
+    -- panel a viewport to exercise its real scroll and element callbacks.
+    preview.body:SetWidth(880)
+    preview.elementPanel.clip:SetSize(210, 320)
+    preview:Layout()
+    preview:Paint()
     local function PreviewLayer(key)
         for _, button in ipairs(preview.layerButtons) do
             if button.layerKey == key then return button end
@@ -1474,18 +1483,15 @@ do
     end
     local function VisiblePreviewLayer(key)
         local button = PreviewLayer(key)
-        if button:IsVisible() then return button end
-        for _, slider in ipairs({ preview.layerRail:GetChildren() }) do
-            if slider:GetObjectType() == "Slider" and slider:IsVisible() then
-                local first, last = slider:GetMinMaxValues()
-                for row = first, last do
-                    slider:SetValue(row)
-                    preview:LayoutLayerRail()
-                    if button:IsVisible() then return button end
-                end
-            end
-        end
-        error("preview layer is unreachable: " .. key)
+        local panel, row = preview.elementPanel, button:GetParent()
+        assert(button:IsVisible() and row:GetParent() == panel.content,
+            ("preview layer %s is unreachable in %s at width %.0f; panel shown %s"):format(key, preview.scope,
+                preview.body:GetWidth(), tostring(panel:IsShown())))
+        local _, _, _, _, y = row:GetPoint()
+        P.NameplatesElementPanel.Scroll(preview, -y)
+        assert(-y >= panel.offset and -y + row:GetHeight() <= panel.offset + panel.clip:GetHeight(),
+            "element list did not allow scrolling to " .. key)
+        return button
     end
     local showCast = P.Get("nameplates", "enemyCastEnabled")
     assert(P.Set("nameplates", "enemyCastEnabled", 3))
@@ -1524,13 +1530,13 @@ do
     for key, sample in pairs({ aggroBorder = "aggro", targetBorder = "target", focusBorder = "focus", mouseoverBorder = "mouseover" }) do
         local button = VisiblePreviewLayer(key)
         shown = nil
-        button:Click()
-        assert(preview.highlightSample == sample and preview:LayerActive(key) and preview.layerContext == "anchor",
-            "preview layer selected the wrong highlight or changed the visible layer group")
+        button:GetParent():Click()
+        assert(preview.highlightSample == sample and preview:LayerActive(key) and preview.layerContext == "highlight",
+            "element row did not select its highlight sample")
         assert(shown == style.CompileHighlights(preview.barSettings, sample)[sample],
-            "preview layer did not draw the selected highlight")
+            "element row did not draw the selected highlight")
         button:Click()
-        assert(not preview.highlightSample and not preview:LayerActive(key), "preview layer could not clear its highlight")
+        assert(preview.highlightSample == sample and not preview:LayerOn(key), "element eye did not hide only the highlight layer")
     end
     style.PaintBorder = paintBorder
     assert(P.SetMany("nameplates", savedHighlights))
@@ -1541,7 +1547,7 @@ do
     assert(P.Get("nameplates", "highlightFocus") == configured, "preview layer wrote to the profile")
     P.NameplatesWorkspace.Open("friendly")
     preview:Edit("anchor")
-    assert(not PreviewLayer("aggroBorder"):IsShown() and VisiblePreviewLayer("focusBorder"):IsVisible(),
+    assert(not PreviewLayer("aggroBorder"):IsVisible() and VisiblePreviewLayer("focusBorder"):IsVisible(),
         "friendly preview offered the Enemy-only Aggro border")
     P.NameplatesWorkspace.Open("enemy")
 end
@@ -2052,7 +2058,7 @@ do
         config.nameFormattingEnabled, config.nameTextUseCustomSettings = false, true
         config.enemyNameColorEnabled, config.enemyNameColor = true, "00ff00"
         local look = P.Suite.NameplateText.Compile(config, "enemy")
-        assert(look.enabled and look.max == 5 and look.formatID == "CUT" and look.customColor and look.g == 1,
+        assert(look.enabled and look.max == 5 and look.customColor and look.g == 1,
             "reaction color must override only the color of the ordinary Fonts scope")
         assert(not P.Suite.NameplateText.Compile(config, "enemy", "neutral").customColor,
             "the enemy choice leaked into neutral names")

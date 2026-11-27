@@ -229,7 +229,6 @@ local function BuildMarkers(editor, s, cell)
         prefix .. "EliteOffsetX", prefix .. "EliteOffsetY")
     local questMarker, questBack, questIcon = Marker(editor, s, cell, "quest", "ff7e00",
         prefix .. "QuestOffsetX", prefix .. "QuestOffsetY")
-    if prefix == "enemy" then editor.questMarkerHandle = questMarker end
     s.markers = {
         { handle = eliteMarker, back = eliteBack, icon = eliteIcon, kind = "elite",
           enabledKey = prefix .. "EliteMarker", size = prefix .. "EliteMarkerSize", color = "enemyMinibossColor",
@@ -409,9 +408,9 @@ local function RenderFrames(editor, s, m)
     P.NameplatesPreviewDecor.ApplySampleOpacity(editor, s, m)
     local savedRole = prefix == "enemy" and Get(ID, "enemyPreviewRole") or nil
     if prefix == "enemy" and editor.scope ~= "neutral" and editor.previewRole and editor.previewRoleSource ~= savedRole then
-        editor.previewRole = nil
+        editor.previewRole, editor.sampleScenario = nil, nil
     end
-    m.role = prefix == "enemy" and not editor.enemyPlayer and (editor.previewRole or savedRole) or nil
+    m.role = prefix == "enemy" and not editor.enemyPlayer and (editor.questSample and 5 or editor.previewRole or savedRole) or nil
     m.descriptor = m.role and Style.Roles[m.role]
 end
 
@@ -442,9 +441,9 @@ local function RenderVisibility(editor, s, m)
     s.bar:SetShown(not namesOnly and editor:LayerOn("health"))
     local castMode = Get(ID, "look") == 2 and 1 or Get(ID, "enemyCastEnabled")
     local nativeCast = C_CVar.GetCVar("nameplateShowCastBars")
+    s.cell.previewCastAllowed = not namesOnly and castMode ~= 3 and (castMode ~= 1 or not P.Suite.Public(nativeCast) or nativeCast ~= "0")
     m.showCast = editor:LayerOn("cast") and ((editor.castSample and not m.npcWorldName and not m.nameOnlyScope)
-        or not namesOnly and s.state.cast and castMode ~= 3
-        and (castMode ~= 1 or not P.Suite.Public(nativeCast) or nativeCast ~= "0"))
+        or s.cell.previewCastAllowed and s.state.cast and editor.castingSample ~= false)
     s.cast:SetShown(m.showCast)
     local group = P.NameplatesEditorLayers.AuraGroup(editor, prefix)
     local model, config = P.Suite.NameplateAuraDisplay, P.S.Config(ID)
@@ -550,7 +549,8 @@ local function RenderTarget(editor, s, m)
     local status = editor.statusSample
     local targeted = not (m.npcWorldName or m.nameOnlyScope) and editor:LayerOn("target") and (not status or status == "target")
         and (s.state.target or status == "target" or editor.allStatusSamples)
-    Markers.PaintTarget(s, not m.skinDisabled and targeted, rightGap, leftGap, editor.statusOffsetSample, m.barSettings)
+    local ghosts = not s.static and not editor.compact and editor.showInactive ~= false and not m.skinDisabled and not m.namesOnly
+    Markers.PaintTarget(s, not m.skinDisabled and targeted, rightGap, leftGap, editor.statusOffsetSample, m.barSettings, ghosts)
 end
 
 local function RenderMarkers(editor, s, m)
@@ -646,6 +646,7 @@ local function RenderRaid(editor, s, m)
         and (not styled or Get(ID, prefix .. "RaidIcon") or editor.statusOffsetSample == "RaidIcon"))
     local size = styled and Get(ID, prefix .. "RaidIconSize") or 22
     raid:SetSize(marked and size or 0, size)
+    raid.previewGhostWidth = size
     s.classificationBase:ClearAllPoints()
     s.classificationBase:SetPoint("RIGHT", raid, "LEFT", 0, 0)
     Place(s, s.classification, "CENTER", s.classificationBase, "CENTER",

@@ -177,14 +177,10 @@ end
 UnitReaction = function() return nil end
 UnitClassification = function() return "normal" end
 Enum = { SecondsFormatterInterval = { Seconds = 1 }, SecondsFormatterAbbreviation = { OneLetter = 2 },
-    DurationTextBindingProperty = { ElapsedDuration = 2, TotalDuration = 4 } }
-C_StringUtil = {
-    CreateSecondsFormatter = function()
-        return { SetMaxInterval = function() end, SetDefaultAbbreviation = function() end,
-            SetMillisecondsThreshold = function() end }
-    end,
-    CreateNumericRuleFormatter = function() return { AddBreakpoint = function() end } end,
-}
+    DurationTextBindingProperty = { RemainingDuration = 0, ElapsedDuration = 2, TotalDuration = 4 } }
+C_StringUtil = { CreateNumericRuleFormatter = function()
+    return { AddBreakpoint = function() end, SetBreakpoints = function() end }
+end }
 C_DurationUtil = { CreateDurationTextBinding = function()
     local binding = {}
     function binding:SetFontString(label) self.label = label end
@@ -581,7 +577,7 @@ local times = module.castTimes[castF]
 assert(times and times.binding.format == "{}/{}", "the friendly cast time format was ignored")
 c.friendlyCastTimeFormat = 1
 module:Refresh()
-assert(times.binding.format == nil and times.binding.formatter, "the friendly cast time did not return to remaining time")
+assert(times.binding.format == "{}", "the friendly cast time did not return to remaining time")
 do
     local _, uf, _, cast = Plate("nameplate9", true)
     local config = Defaults()

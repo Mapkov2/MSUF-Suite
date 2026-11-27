@@ -55,24 +55,21 @@ function Text.Compile(config, prefix, scope)
     if portable then provider = NS.NameplatePortableText end
     local nativeScope = config.look ~= 1 and provider and (provider.Nameplates ~= nil or portable ~= nil)
     local formatting = nativeScope or config.nameFormattingEnabled == true
-    local formatter = formatting and provider or nil
     local colorScope = scope == "neutral" and scope or prefix
     local color = config[colorScope .. "NameColorEnabled"] == true
     local r, g, b
     if color then r, g, b = NS.RGB(config[colorScope .. "NameColor"] or "ffffff") end
     local shared = Text.Shared(config)
-    local side, dots, maxChars = config[prefix .. "NameClipSide"] == 2 and "LEFT" or "RIGHT",
-        config[prefix .. "NameNoEllipsis"] ~= true, config[prefix .. "NameMaxChars"] or 12
+    local maxChars = config[prefix .. "NameMaxChars"] or 12
     if shared then
-        mode = shared.nameFormat or (shared.nameShorten and "CUT" or MODE_FULL)
-        side, dots, maxChars = shared.nameShortenSide, shared.nameShortenDots, shared.nameShortenMax
+        mode = shared.nameDisplayFormat or shared.nameFormat or (shared.nameShorten and MODE_CUT or MODE_FULL)
+        maxChars = shared.nameShortenMax or maxChars
+        if shared.nameDisplayMax and shared.nameDisplayMax > 0 then maxChars = shared.nameDisplayMax end
     end
-    local styled = config.look ~= 2
-    return { enabled = formatting and formatter ~= nil,
-        npcLastWord = styled and config.nameplateNpcLastWord == true,
-        firstNameOnly = styled and NS.Client.isForever and config.nameplateFirstNameOnly == true,
+    -- Length-limited modes use the native nameplate width.
+    return { enabled = formatting and (mode == MODE_CUT or mode == "ABBREV_CUT"),
         displayName = nativeScope and shared and shared.characterNameParts and provider.DisplayName,
-        formatter = formatter, formatID = mode, max = maxChars, side = side, dots = dots,
+        max = maxChars,
         customColor = color, r = r, g = g, b = b, shared = shared, colorPainter = shared and provider }
 end
 
@@ -87,42 +84,11 @@ function Text.CustomNameColor(look)
     if color and NS.Finite(color.r) and NS.Finite(color.g) and NS.Finite(color.b) then return color end
 end
 
-local function SelectNamePart(unit, value, look)
-    if not unit or type(value) ~= "string" then return value end
-    local player = UnitIsPlayer(unit)
-    if not NS.Public(player) then return value end
-    if player and look.firstNameOnly then
-        local first = UnitFullName(unit)
-        if NS.Public(first) and type(first) == "string" and first ~= "" then return first, true end
-    elseif player == false and look.npcLastWord then
-        local creature = UnitCreatureType(unit)
-        local totem = NS.Public(creature) and creature == NS.Text("Totem")
-        return (totem and value:match("^%S+") or value:match("%S+$")) or value
+function Text.Format(state, value, look)
+    if look.displayName and state.unit and not NS.IsSecret(value) then
+        return look.displayName(value, state.unit)
     end
     return value
-end
-
-function Text.Format(state, value, look)
-    local firstName
-    if (look.npcLastWord or look.firstNameOnly) and not NS.IsSecret(value) then
-        value, firstName = SelectNamePart(state.unit, value, look)
-    end
-    if not firstName and look.displayName and state.unit then value = look.displayName(value, state.unit) end
-    if not look.enabled then return value end
-    if NS.IsSecret(value) then
-        state.formatLook = nil
-        return value
-    end
-    -- Native name repaints can follow unrelated mouseover and soft-target changes.
-    -- Compose first: the host can resolve a formerly unknown first name or surname.
-    if state.formatLook == look and state.formatInput == value then return state.formatOutput end
-    local output = look.formatter.Format(state, value, look.formatID, look.max, look.dots, look.side)
-    if NS.IsSecret(output) then
-        state.formatLook = nil
-    else
-        state.formatLook, state.formatInput, state.formatOutput = look, value, output
-    end
-    return output
 end
 
 function Text.PaintColor(label, state, look, unit)

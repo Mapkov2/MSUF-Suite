@@ -30,6 +30,7 @@ local function Frame(kind)
     local f = { kind = kind, shown = true, scripts = {}, points = {}, text = "", width = 100, height = 20, enabled = true }
     return setmetatable(f, { __index = function(_, key)
         if key == "mirror" or key == "label" or key == "fs" or key == "measured" or key == "powerGradient" or key == "meta"
+            or key == "previewGhost" or key == "previewGhostWidth"
             or type(key) == "string" and (key:sub(1, 1) == "_" or key:find("^enemyPower")) then
             return nil
         end
@@ -60,6 +61,7 @@ local function Widget(kind)
     function w:SetSize(a, b) self.width, self.height = a, b end
     function w:ClearAllPoints() self.points = {} end
     function w:SetPoint(...) self.points[#self.points + 1] = { ... } end
+    function w:GetNumPoints() return #self.points end
     function w:StartMoving() self.moving = true end
     function w:StopMovingOrSizing() self.moving = false end
     function w:EnableKeyboard(v) self.keyboardEnabled = v and true or false end
@@ -2202,7 +2204,10 @@ do
     assert(handle:IsShown() and Control("enemy.Power") == handle, "the enemy power sample did not reuse its handle")
     assert(optionsNS.Set("nameplates", "enemyPowerSmooth", true))
     layer.scripts.OnClick(layer, "LeftButton")
-    assert(not plates.enemyPowerEnabled and not handle:IsShown(), "the preview toggle did not disable the saved bar")
+    assert(plates.enemyPowerEnabled and not handle:IsShown(), "the preview eye changed the saved bar")
+    local presence = layer:GetParent().action
+    presence.scripts.OnClick(presence)
+    assert(not plates.enemyPowerEnabled and not handle:IsShown(), "the Remove action did not disable the saved bar")
     plates.look, plates.enemy = oldLook, oldEnemy
     -- Include the opt-in control exercised above in the catalog coverage check.
     oldControls[key] = handle
@@ -3707,8 +3712,9 @@ do
     PickIndicator("target")
     local eliteLayer = assert(registeredControls["menu2.suite_nameplates.nameplates.preview.layer.classification"])
     local raidLayer = assert(registeredControls["menu2.suite_nameplates.nameplates.preview.layer.raidIcon"])
-    assert(elite.previewUI.layerRail:IsShown() and elite.previewUI.layerRail.parent == elite.previewUI.body,
-        "UF/GF layer rail must stay visible below the nameplate canvas")
+    local elements = assert(elite.previewUI.elementPanel)
+    assert(elements:IsShown() and elements.parent == elite.previewUI.body and elements.clip.clipsChildren,
+        "Nameplate element list must stay visible beside the canvas and clip its scrolling rows")
     eliteLayer.scripts.OnClick(eliteLayer, "RightButton")
     assert(indicators.currentStatus().key == "classification", "elite layer did not open Blizzard elements")
     PickIndicator("target")
@@ -3763,7 +3769,8 @@ do
     raritySetting.set(true)
     assert(elite:IsShown(), "preview elite icon did not return after re-enabling it")
     elite.previewUI.raidMarked = false
-    raidLayer.scripts.OnClick(raidLayer)
+    local raidSample = elite.previewUI.raidButton
+    raidSample.scripts.OnClick(raidSample)
     assert(raid:IsShown() and not elite:IsShown(),
         "Blizzard hides the classification icon on raid-marked nameplates")
     PickIndicator("target")
@@ -3773,7 +3780,7 @@ do
     assert(not raid:IsShown(), "preview raid icon did not follow its runtime switch")
     raidSetting.set(true)
     assert(raid:IsShown(), "preview raid icon did not return after re-enabling it")
-    raidLayer.scripts.OnClick(raidLayer)
+    raidSample.scripts.OnClick(raidSample)
     assert(not raid:IsShown() and elite:IsShown(), "removing the raid mark did not restore the elite icon")
     local skullChoice = assert(registeredControls["menu2.suite_nameplates.nameplates.preview.raidMark.8"])
     local squareChoice = assert(registeredControls["menu2.suite_nameplates.nameplates.preview.raidMark.6"])
@@ -3908,11 +3915,12 @@ do
     S.Set("nameplates", "enemyPreviewRole", 1)
     elite.previewUI:Paint()
     assert(not elite:IsShown() and not raid:IsShown(), "normal enemy preview showed special icons")
-    eliteLayer.scripts.OnClick(eliteLayer)
-    assert(elite:IsShown() and elite.previewUI.previewRole == 4 and not elite.previewUI.raidMarked,
+    local eliteRow = eliteLayer:GetParent()
+    eliteRow.scripts.OnClick(eliteRow, "LeftButton")
+    assert(elite:IsShown() and elite.previewUI.statusSample == "Classification" and S.Config("nameplates").enemyPreviewRole == 1,
         "elite preview layer did not summon the native elite scenario: " .. tostring(elite:IsShown())
-        .. "/" .. tostring(elite.previewUI.previewRole) .. "/" .. tostring(elite.previewUI.raidMarked))
-    elite.previewUI.previewRole = nil
+        .. "/" .. tostring(elite.previewUI.statusSample))
+    elite.previewUI.statusSample = nil
     local nativeGet = C_CVar.GetCVar
     C_CVar.GetCVar = function(key)
         if key == "nameplateShowCastBars" then return "0" end

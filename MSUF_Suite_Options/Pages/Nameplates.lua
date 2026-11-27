@@ -858,7 +858,7 @@ local function Build(ctx)
         else
             sections[spec.key] = PlainSection(ctx, builder, spec)
         end
-        Workspace.Track(ui, sections[spec.key], spec.scopes)
+        Workspace.Track(ui, sections[spec.key], spec.scopes, spec.key)
         if ui and spec.statusItems then
             ui.statusSections = ui.statusSections or {}
             ui.statusSections[spec.plateScope] = spec
@@ -866,7 +866,7 @@ local function Build(ctx)
     end
     local more = PlainSection(ctx, builder, { key = "more", title = "More settings" }, Unplaced())
     if more then Workspace.Track(ui, more, { enemy = 200 }) end
-    Workspace.Finish(ui)
+    Workspace.Finish(ui, preview)
 end
 
 P.RegisterPage({ key = PAGE, label = "Nameplates", title = "Nameplates", build = Build, icon = { 7, 0 },

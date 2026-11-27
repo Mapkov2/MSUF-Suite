@@ -133,6 +133,14 @@ for _, forever in ipairs({ false, true }) do
             auras.CrowdControlListFrame, auras.LossOfControlFrame = Frame(), Frame()
             Native(uf)
             if style == 0 and scale == 1 then
+                local geometry, geometryConfig = private.Geometry, { barGeometry = private.Mode.SAME_GEOMETRY }
+                local first, recycled = {}, {}
+                assert(geometry.Apply(first, uf, setup, geometryConfig, true, "enemy"))
+                local record = first.geometry
+                assert(geometry.Restore(first, uf, setup) and not first.geometry)
+                assert(geometry.Apply(recycled, uf, setup, geometryConfig, true, "enemy"))
+                assert(recycled.geometry == record, "recycled nameplate allocated a new geometry record")
+                assert(geometry.Restore(recycled, uf, setup) and not recycled.geometry)
                 local layout, row = private.Layout, auras.BuffListFrame
                 local auraConfig = { look = 1, enemy = true, barGeometry = 1,
                     auraEnemyBuffScale = 150, auraEnemyBuffAlpha = 40, auraEnemyBuffLayer = 2 }
@@ -588,7 +596,7 @@ local function DungeonPlate()
     return uf, name, hpText, Reset
 end
 
-local function CheckDungeonNameWidth(forever)
+local function CheckNativeNameWidth(forever)
     NS.Client.isForever = forever
     NamePlateConstants = forever and { NAME_PLATE_WIDTH = 190 } or { NAMEPLATE_WIDTH = 230 }
     NS.IsSecret = function(value) return value == "secret" end
@@ -597,31 +605,24 @@ local function CheckDungeonNameWidth(forever)
         healthBarHeight = 10, castBarHeight = 10, castIconHeight = 12, castBarToHealthBarSpacing = 2 }
     local config = { look = 4, barGeometry = 1, enemy = true, enemyTextMode = 2 }
     module.config = config
-    local layout, observer, timer, observed = private.Layout
-    C_Timer = { After = function(delay, fn)
-        assert(delay == 0 and not timer, "secret name changes must coalesce into one layout pass")
-        timer = fn
-    end }
-    local function Flush()
-        local callback = assert(timer)
-        timer = nil
-        callback()
-    end
-    private.NameText = { secretNameWidth = 66, ObserveNameClip = function(fn, marks) observer, observed = fn, marks end }
-    local function ConfigureWidths()
-        local names = private.NameText
-        local width = names.secretNameWidth
-        names.limits = { enemy = width and { pixels = width, healthSize = 10 } }
+    local layout = private.Layout
+    C_Timer = { After = function() error("a name width scheduled a timer") end }
+    private.NameText = {}
+    local function ConfigureWidth(width)
+        private.NameText.limits = { enemy = width and { pixels = width, healthSize = 10 } }
         layout.NameLimits()
     end
     local uf, name, hpText, Reset = DungeonPlate()
     local function Apply() layout.Apply(uf, "enemy", config) end
-    local function Unclipped() assert(name.points.LEFT[1] == uf.HealthBarsContainer, "native anchor was not restored") end
+    local function Unclipped()
+        assert(name.points.LEFT[1] == uf.HealthBarsContainer and name.points.RIGHT[1] == hpText,
+            "native anchor was not restored")
+    end
     local function Clipped()
         local left, right = name.points.LEFT, name.points.RIGHT
         assert(left[1] == uf.HealthBarsContainer and right[1] == left[1]
             and left[3] == 4 and right[3] == 70,
-            "secret name did not receive a stable 66-unit span")
+            "configured name did not receive a stable 66-unit span")
     end
     layout.Configure(config)
     Apply()
@@ -633,10 +634,12 @@ local function CheckDungeonNameWidth(forever)
     assert(not private.Geometry.LimitNativeName(uf, options, false, { Name = { 0, 0 } }, 66),
         "the width cap used secret baseline anchor offsets")
     options.unitNameAnchorStyle, options.healthBarToNameAboveSpacing = 1, nil
-    ConfigureWidths()
+    name.text = "An ordinary name"
+    ConfigureWidth(66)
     local layoutHandoffs = layouts
     Apply()
     Clipped()
+    assert(name.reads == 0, "the width cap read a public name")
     assert(layouts == layoutHandoffs, "an otherwise inactive plan ran the full layout for a name")
     local warmReads, warmWrites = name.reads, calls
     for _ = 1, 100 do Apply() end
@@ -644,27 +647,37 @@ local function CheckDungeonNameWidth(forever)
     Reset()
     uf.hook(uf)
     Clipped()
-    name.text = "An ordinary name"
-    observer(uf, false)
-    Clipped() -- The native name hook must never write geometry synchronously.
-    Flush()
-    Unclipped()
     name.text = "secret"
-    observer(uf, true)
-    uf.UpdateNameOverride = true
-    Flush()
-    Unclipped()
-    assert(name.points.RIGHT[1] == hpText, "the native HP text anchor was lost")
+    local beforeChange = calls
+    Apply()
+    Clipped()
+    assert(calls == beforeChange and name.reads == 0, "a text privacy change repeated layout")
+    name.shown = false
+    layout.Reapply(uf, "enemy", config)
+    Clipped()
+    assert(name.reads == 0, "the native rebuild read a hidden secret name")
+    name.shown = true
+    for _, override in ipairs({ function() return true end, "secret" }) do
+        uf.UpdateNameOverride = override
+        layout.Reapply(uf, "enemy", config)
+        Unclipped()
+    end
     uf.UpdateNameOverride = nil
     layout.Reapply(uf, "enemy", config)
     Clipped()
-    private.NameText.secretNameWidth = nil
-    ConfigureWidths()
+    ConfigureWidth()
     Apply()
     Unclipped()
 
-    private.NameText.secretNameWidth = 66
-    ConfigureWidths()
+    ConfigureWidth(66)
+    options.unitNameAnchorStyle, options.healthBarToNameAboveSpacing = 2, "secret"
+    module.pendingPlates[uf] = nil
+    Apply()
+    assert(module.pendingPlates[uf], "an unavailable native anchor lost its replay")
+    options.unitNameAnchorStyle, options.healthBarToNameAboveSpacing = 1, nil
+    Apply()
+    Clipped()
+    layout.Restore(uf)
     combat, uf.protected = true, true
     local before = calls
     Apply()
@@ -685,29 +698,24 @@ local function CheckDungeonNameWidth(forever)
     Reset()
     name.text = "Next pooled occupant"
     Apply()
-    Unclipped()
+    Clipped()
+    assert(name.reads == 0, "pooled acquisition read the new occupant's name")
 
     name.text = "secret"
     config.enemyTextMode = 4
-    private.NameText.secretNameWidth = 1000
-    ConfigureWidths()
+    ConfigureWidth(1000)
     Apply()
     local available = (forever and 190 or 230) - 20 - 8 - 15 * 10 * .75 - 2
     assert(name.points.RIGHT[3] - name.points.LEFT[3] == available, "long caps did not reserve the HP column")
 
     config.enemyTextMode = 2
     config.enemyNameOffsetX, config.enemyNameOffsetY = 9, -4
-    private.NameText.secretNameWidth = 66
     name.text = "Public name with custom offsets"
     layout.Configure(config)
-    ConfigureWidths()
+    ConfigureWidth(66)
     Apply()
-    assert(name.x == 9 and name.y == -4, "the public name did not acquire its ordinary offset")
-    name.text = "secret"
-    observer(uf, true)
-    Flush()
     assert(name.points.LEFT[3] == 13 and name.points.RIGHT[3] == 79 and name.points.LEFT[4] == -4
-        and (name.x or 0) == 0, "the capped name lost or doubled its manual offset")
+        and (name.x or 0) == 0, "the capped public name lost or doubled its manual offset")
 
     config.enemyNameRelativeAnchor = 10
     name.IsAnchoringRestricted = function() return false end
@@ -720,9 +728,8 @@ local function CheckDungeonNameWidth(forever)
     Apply()
     local manual, capPoints = NS.NameplateText.NameAnchor(config, "enemy"), name.points
     combat = true
-    name.text = "First public name after the pull began"
-    observer(uf, false)
-    Flush()
+    ConfigureWidth()
+    Apply()
     assert(name.points == capPoints and module.pendingPlates[uf], "lockdown replaced a manual anchor or lost its replay")
     combat = false
     Apply()
@@ -741,28 +748,25 @@ local function CheckDungeonNameWidth(forever)
     NamePlateSetupOptions.healthBarToNameAboveSpacing = 2
     layout.Configure(config)
     layout.Apply(friendly, "friendly", config)
-    assert(friendlyName.points.BOTTOMLEFT and not observed[friendly] and friendlyName.reads == 0,
+    assert(friendlyName.points.BOTTOMLEFT and friendlyName.reads == 0,
         "a friendly name received the hostile dungeon width state")
-    observer(friendly, true)
-    assert(not observed[friendly] and not timer, "a friendly secrecy notification queued dungeon geometry")
     local beforeCombat = calls
     combat = true
     layout.Apply(friendly, "friendly", config)
     assert(calls == beforeCombat, "a friendly name unnecessarily reapplied its centre anchor in combat")
     combat = false
-    local reads = friendlyName.reads
-    private.NameText.limits.friendly = { pixels = 52, fixed = true, healthSize = 10 }
+    private.NameText.limits.friendly = { pixels = 52, healthSize = 10 }
     layout.NameLimits()
     layout.Apply(friendly, "friendly", config)
-    assert(friendlyName.reads == reads and friendlyName.points.BOTTOMRIGHT,
-        "an explicit friendly width did not apply without inspecting the text")
-    private.NameText.secretNameWidth = nil
-    ConfigureWidths()
+    local left, right = friendlyName.points.BOTTOMLEFT, friendlyName.points.BOTTOMRIGHT
+    assert(right and right[3] - left[3] == 52 and friendlyName.reads == 0,
+        "native shortening did not cap a readable, centered friendly name")
+    ConfigureWidth()
     layout.Restore(friendly)
     module.pendingPlates[friendly] = nil
 end
 
-CheckDungeonNameWidth(false)
-CheckDungeonNameWidth(true)
+CheckNativeNameWidth(false)
+CheckNativeNameWidth(true)
 
 print("Mapko dimensions: Retail/Forever, seven styles, four scales, native rebuild, Custom, combat and restoration passed")

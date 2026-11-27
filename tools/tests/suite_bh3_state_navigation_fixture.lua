@@ -26,8 +26,8 @@ local function LoadNameplatePage(P, root, opened)
 end
 
 BH3("S04-A2",function()
--- Loads the real NameplatesEditorLayers.lua + NameplatesEditor.lua and right-clicks
--- preview handles. Prints which accordion is focused and which exact setting opens.
+-- Loads the shipped options editor and right-clicks preview handles to check
+-- which accordion or exact setting they open.
 local ROOT = arg[1] .. "/MSUF_Suite_Options/Pages/"
 local focused, opened = {}, {}
 local function noop() end
@@ -60,7 +60,12 @@ P.PreviewInteraction = { Outline = noop, Handles = function(host, opts) return c
 P.NameplatesEditorMarkers = {}
 LoadNameplatePage(P, ROOT, function(key) opened[#opened+1] = key; return true end)
 assert(loadfile(ROOT .. "NameplatesEditorLayers.lua"))("MSUF_Suite_Options", P)
+assert(loadfile(ROOT .. "NameplatesElements.lua"))("MSUF_Suite_Options", P)
+assert(loadfile(ROOT .. "NameplatesLayoutTemplates.lua"))("MSUF_Suite_Options", P)
+assert(loadfile(ROOT .. "NameplatesInspector.lua"))("MSUF_Suite_Options", P)
 assert(loadfile(ROOT .. "NameplatesPreviewLayout.lua"))("MSUF_Suite_Options", P)
+assert(loadfile(ROOT .. "NameplatesEditorGhosts.lua"))("MSUF_Suite_Options", P)
+assert(loadfile(ROOT .. "NameplatesEditorTools.lua"))("MSUF_Suite_Options", P)
 assert(loadfile(ROOT .. "NameplatesEditor.lua"))("MSUF_Suite_Options", P)
 local Editor = P.NameplatesEditor
 
@@ -74,7 +79,7 @@ local function Handle()
   function h:IsVisible() return self:IsShown() end
   return h
 end
-local ui = setmetatable({ sampleKind = "enemy",
+local ui = setmetatable({ sampleKind = "enemy", LayoutElements = noop,
   body = { IsShown = function() return true end, IsVisible = function() return true end,
     EnableKeyboard = noop, SetPropagateKeyboardInput = noop,
     SetScript = noop },
@@ -98,7 +103,7 @@ end
 
 end)
 BH3("S04-A3",function()
--- Real NameplatesEditorLayers.lua: the "Cast time" layer chip with the
+-- Real NameplatesEditorLayers.lua: the "Cast time" layer with the
 -- friendly sample selected, while the friendly cast time is switched off.
 local ROOT = arg[1] .. "/MSUF_Suite_Options/Pages/"
 local focused, opened = {}, {}
@@ -128,7 +133,7 @@ function ui:LayerOn(k) return L.On(self, k) end
 function ui:LayerAvailable(k) return L.Available(self, k) end
 L.Focus(ui, "castbar", "castTime")
 assert(reachedSection == "suite_nameplates_friendlyCast" and opened[1] == "msufsuite.nameplates.friendlyCastTimeEnabled"
-    and not focused[1], "S04-A3: friendly cast-time chip opened enemy controls")
+    and not focused[1], "S04-A3: friendly cast-time layer opened enemy controls")
 canOpen = false
 L.Focus(ui, "castbar", "castTime")
 assert(focused[1] == "SECTION:friendlyCast", "S04-A3: exact-open failure lost its local section fallback")

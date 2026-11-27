@@ -770,7 +770,7 @@ local function PaintFocusHandle(editor, sample)
     local marker = sample.decor.focusMarker
     local visible = marker and marker:IsShown()
     local handle = sample.focusHandle
-    if visible and not handle then
+    if marker and not handle then
         handle = CreateFrame("Button", nil, sample.cell)
         sample.focusHandle = handle
         editor:Bind(handle, "enemy.focusMarker", P.Tr("Focus diamond"), "enemyFocusMarkerX", "enemyFocusMarkerY", "enemyMarkers")
@@ -781,10 +781,6 @@ end
 
 function Preview.Paint(editor, s, m)
     Preview.PaintOpacity(editor, s, m)
-    if editor.targetStateButton then
-        editor.targetStateButton:SetAlpha(editor.targetSample ~= false and 1 or 0.5)
-        editor.focusStateButton:SetAlpha(editor.focusSample and 1 or 0.5)
-    end
     local p = Draw.Plan(m.barSettings or CONFIG, s.prefix)
     if not editor:LayerOn("outerFrame") then p.outer = false end
     if not editor:LayerOn("shadow") then p.shadow = false end

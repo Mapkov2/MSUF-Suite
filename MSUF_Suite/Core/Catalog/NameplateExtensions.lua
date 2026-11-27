@@ -122,6 +122,8 @@ if NS.Client.isForever then
     nameDisplay[#nameDisplay + 1] = B.Bool("nameplateFirstNameOnly", "Show only player first names", false)
 end
 B.Section(id, "plateNameDisplay", "Name display", nameDisplay)
+-- Preserve imported keys while nameplates only offer shortening of protected names.
+for _, rule in ipairs(nameDisplay) do rule.hidden = true end
 B.Section(id, "plateHealthDisplay", "Health and level display", {
     B.Bool("nameplateHideMaxLevel", "Hide maximum-level numbers", false),
     B.Bool("nameplateHideIncomingHeals", "Hide incoming healing on nameplates", false),

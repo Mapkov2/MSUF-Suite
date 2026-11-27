@@ -5,6 +5,8 @@ local Key = private.Key
 local Safety, Public, Finite = NS.Safety, NS.Public, NS.Finite
 local G = {}
 private.Geometry = G
+-- Blizzard reuses the plate after the active layout has been restored.
+local geometryRecords = setmetatable({}, { __mode = "k" })
 
 -- Every anchor the Suite writes on a plate snaps to physical pixels
 -- (PixelUtil, Blizzard_SharedXMLBase on Retail and Forever).
@@ -756,7 +758,13 @@ function G.Apply(state, uf, setup, config, force, prefix, width)
             if force or not old or old.inset == nil or old.healthHeight ~= healthHeight then health:SetHeight(healthHeight) end
         end
         CastSize(container, cast, setup, castHeight, iconWidth, iconHeight, old, force)
-        old = old or {}
+        if not old then
+            old = geometryRecords[uf]
+            if not old then
+                old = {}
+                geometryRecords[uf] = old
+            end
+        end
         old.inset, old.healthHeight, old.castHeight = inset, healthHeight, castHeight
         old.iconWidth, old.iconHeight, old.borderWidth = iconWidth, iconHeight, borderWidth
         state.geometry = old

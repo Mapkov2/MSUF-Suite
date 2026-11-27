@@ -176,12 +176,11 @@ end
 
 function Size.Build(ui, bar, body)
     bar.openButton:Hide()
-    bar.resetButton:ClearAllPoints()
-    bar.resetButton:SetPoint("RIGHT", bar, "RIGHT", -8, 0)
+    bar.resetButton:Hide()
     local row = CreateFrame("Frame", nil, bar)
     -- Use the rendered end of Y, not the axis container's nominal width.
     row:SetPoint("LEFT", bar.axisY.plusButton, "RIGHT", 6, 0)
-    row:SetPoint("RIGHT", bar.resetButton, "LEFT", -6, 0)
+    row:SetPoint("RIGHT", bar, "RIGHT", -8, 0)
     row:SetHeight(22)
     ui.sizeFields = {}
     ui.sizeFields[1] = Field(ui, row, body, 1)

@@ -7,7 +7,7 @@ local root = assert(arg[1], "repository root required"):gsub("\\", "/")
 -- nothing new after the first one. This contract holds:
 --   * budget: a secret native update of a plate that holds no captured name
 --     stays under the VM instruction budgets in NameText.lua and the shared safety wrappers, walks no table
---     (no pairs()/next()) and keeps the same native safety and text queries;
+--     (no pairs()/next()) and skips the shown query after a settled secret name;
 --   * frames: that update runs the hook alone, no other Lua function of
 --     NameText.lua (2026-11-15 raid trace: 10,213 of 24,848 hook runs each
 --     entered ReadLabel, 10,169 Protected; 10,153 then read a secret name);
@@ -37,9 +37,12 @@ local function ReadSource()
 end
 
 -- One NameText instance with its own frames, counters and settings.
-local function Instance(text, name)
+local function Instance(text, name, config)
     local world = { combat = false, natives = 0, writes = 0, gen = 0 }
-    local isSecret = function(v) return rawequal(v, SECRET) end
+    local isSecret = function(v)
+        world.secretChecks = (world.secretChecks or 0) + 1
+        return rawequal(v, SECRET)
+    end
     local function Public(value) return not isSecret(value) end
     local function IsForbidden(frame)
         return frame and type(frame.IsForbidden) == "function" and frame:IsForbidden() == true
@@ -57,10 +60,13 @@ local function Instance(text, name)
     local Text = {}
     function Text.Compile(config, prefix)
         world.gen = world.gen + 1
-        return { id = prefix .. world.gen, enabled = config.format == true,
+        return { id = prefix .. world.gen, enabled = config.format == true or config.limit ~= nil,
+            max = config.limit, displayName = config.format == true,
             customColor = config.color == true or config[prefix .. "Color"] == true,
             shared = config.shared and { id = "shared" .. world.gen } or nil }
     end
+    function Text.FontStyle() return { size = 12 } end
+    function Text.ResolveSize() return 12 end
     -- A label without text formats to nil, as the host's (Portable.Format).
     function Text.Format(state, value, look)
         state.formatMemo = look.id
@@ -86,6 +92,7 @@ local function Instance(text, name)
         world.textReads = (world.textReads or 0) + 1
         return self.value
     end
+    local callback
     function label:SetText(v) world.writes = world.writes + 1 self.value = v end
     function label:GetTextColor() world.natives = world.natives + 1 return self.r, self.g, self.b, self.a end
     function label:SetTextColor(r, g, b, a) world.writes = world.writes + 1 self.r, self.g, self.b, self.a = r, g, b, a or 1 end
@@ -95,22 +102,22 @@ local function Instance(text, name)
     local uf = { name = label }
     uf.IsForbidden = label.IsForbidden
     function uf:IsProtected() world.natives = world.natives + 1 return self.protected or false end
-    local callback
     hooksecurefunc = function(hooked, fn)
-        assert(hooked == "CompactUnitFrame_UpdateName")
+        assert(hooked == "CompactUnitFrame_UpdateName", "unexpected name setter hook")
         callback = fn
     end
     local private = { NS = NS, Suite = S, Mode = { LOOK_BLIZZARD = 2 } }
     local chunk = assert(loadstring(text, "@" .. name))
     chunk("MSUF_Suite_Nameplates", private)
     local Names = private.NameText
-    local config = { enemy = true, friendly = true, format = true, color = true }
+    config = config or { enemy = true, friendly = true, format = true, color = true }
     local module = { active = true, config = config, pendingPlates = {}, activeUnits = { nameplate1 = uf } }
     Names.Bind(module)
     Names.Configure(config)
     world.wrappers = wrappers
     world.Names, world.config, world.module, world.label, world.uf, world.source = Names, config, module, label, uf, "@" .. name
-    function world.Native() callback(uf) end
+    function world.Native() if callback then callback(uf) end end
+    function world.Hooked() return callback ~= nil end
     return world
 end
 
@@ -149,6 +156,50 @@ end
 
 local text = ReadSource()
 do
+    local options = { enemy = true, limit = 12 }
+    local w = Instance(text, "NameText.lua", options)
+    local limit = w.Names.limits.enemy
+    Check(limit and math.abs(limit.pixels - 86.4) < .0001, "shortening did not compile the configured width")
+    Check(not w.Names.inUse and not w.Hooked(), "shortening activated the name painter")
+    local natives, checks = w.natives, w.secretChecks
+    w.Names.Apply(w.uf, "enemy", "nameplate1")
+    for _ = 1, 100 do
+        w.label.value = "Public name"
+        w.Native()
+        w.label.value = SECRET
+        w.Native()
+    end
+    Check(w.natives == natives and w.secretChecks == checks and w.writes == 0 and not w.Names.states[w.uf],
+        "width-only names ran native text handling")
+end
+
+do
+    local w = Instance(text, "NameText.lua", { enemy = true, friendly = true, friendlyColor = true, limit = 12 })
+    Check(w.Hooked(), "the friendly color still needs the native paint hook")
+    w.Names.Apply(w.uf, "enemy", "nameplate1")
+    local natives = w.natives
+    for _ = 1, 100 do w.Native() end
+    Check(w.natives == natives and w.writes == 0, "the other side's paint hook probed shortening-only names")
+end
+
+do
+    local w = Instance(text, "NameText.lua")
+    w.Names.Apply(w.uf, "enemy", "nameplate1")
+    local state, writes = w.Names.states[w.uf], w.writes
+    w.config.format, w.config.color, w.config.limit = false, false, 12
+    w.combat, w.label.protected = true, true
+    w.Names.Configure(w.config)
+    w.Names.Apply(w.uf, "enemy", "nameplate1")
+    w.Native()
+    Check(state.formatted and state.tinted and w.writes == writes and w.module.pendingPlates[w.uf],
+        "switching to shortening lost a pending protected format or tint restore")
+    w.combat, w.label.protected = false, false
+    w.Names.Apply(w.uf, "enemy", "nameplate1")
+    Check(w.label.value == "Ravenous Shadowcaster" and w.label.r == .9 and not state.formatted and not state.tinted,
+        "leaving combat did not give the native name and tint back")
+end
+
+do
     local w = Instance(text, "NameText.lua")
     w.Names.Apply(w.uf, "enemy", "nameplate1")
     Check(w.label.value == "<Ravenous Shadowcaster>", "the public name was not formatted")
@@ -158,10 +209,10 @@ do
     local state = w.Names.states[w.uf]
     Check(state.raw == nil and state.unit == "nameplate1" and state.look ~= nil and Plain(state),
         "a secret name did not drop the state to its unit mapping")
-    idleSpent = Measure(w, IDLE_BUDGET, 5)
+    idleSpent = Measure(w, IDLE_BUDGET, 4)
     -- Neither widget is protected in this case, so both checks run.
     w.combat = true
-    combatSpent = Measure(w, COMBAT_BUDGET, 7)
+    combatSpent = Measure(w, COMBAT_BUDGET, 6)
 end
 
 do

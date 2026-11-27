@@ -99,7 +99,7 @@ for _, flavor in ipairs({ "Mainline", "Forever" }) do
     module.activeUnits.nameplate1 = uf
     Names.Configure(config)
     Names.Apply(uf, "enemy", "nameplate1")
-    assert(label.value == "R. T. Shadowca", "Shared name format was not inherited")
+    assert(label.value == "Ravenous Twilight Shadowcaster", "shortening changed a readable name")
     assert(label.r == .2 and label.g == .4 and label.b == .6 and label.a == .8, "Shared custom name color was not inherited: " .. tostring(label.r) .. "," .. tostring(label.g) .. "," .. tostring(label.b) .. "," .. tostring(label.a))
     local shared = NS.NameplateText.Shared(config)
     assert(shared.fontSize == 19 and shared.fontShadowAlpha == .35 and shared.fontShadowX == 2,
@@ -120,21 +120,23 @@ for _, flavor in ipairs({ "Mainline", "Forever" }) do
         callback(uf)
     end
     Native("Ancient Twilight Archmage")
-    assert(label.value == "A. T. Archmage", "native name reset was not reformatted")
+    assert(label.value == "Ancient Twilight Archmage", "a readable native repaint was rewritten")
+    assert(formatCalls == 0, "readable names reached the host formatter")
     local warmFormats = formatCalls
     for _ = 1, 1000 do Native("Ancient Twilight Archmage") end
     assert(formatCalls == warmFormats, "identical native name resets repeatedly called the host formatter")
-    assert(label.value == "A. T. Archmage", "warm native reset lost the formatted name")
+    assert(label.value == "Ancient Twilight Archmage", "warm native reset changed a readable name")
     combat, uf.protected = true, true
     Native("Ancient Twilight Sorcerer")
     assert(module.pendingPlates[uf], "protected native update was not queued")
     combat, uf.protected = false, false
     Names.Apply(uf, "enemy", "nameplate1")
-    assert(label.value == "A. T. Sorcerer", "protected native replay hit a stale warm cache")
+    assert(label.value == "Ancient Twilight Sorcerer" and Names.states[uf].raw == label.value and label.r == .2,
+        "protected replay lost the native name or failed to repaint its color")
     Native("Ancient Twilight Archmage")
     module.activeUnits.nameplate1 = {}
     Native("Unmapped Native")
-    assert(label.value == "Unmapped Native", "native hook repainted an unmapped plate")
+    assert(label.value == "Unmapped Native" and label.r == .9, "native hook repainted an unmapped plate")
     module.activeUnits.nameplate1 = uf
     Native("Ancient Twilight Archmage")
     label.shown = false
@@ -146,32 +148,25 @@ for _, flavor in ipairs({ "Mainline", "Forever" }) do
     config.enemyNameColorEnabled, config.enemyNameColor = true, "00ff00"
     Names.Configure(config)
     Names.Apply(uf, "enemy", "nameplate1")
-    assert(label.value == "Ancient" and label.g == 1, "local format/color override failed")
+    assert(label.value == "Ancient Twilight Archmage" and label.g == 1, "the shortening setting altered readable text or suppressed color")
     config.enemyNameFormat, config.enemyNameMaxChars = 4, 5
-    config.enemyNameClipSide = 2
+    config.enemyNameClipSide, config.enemyNameNoEllipsis = 2, false
+    config.enemyNameMaxWidth = 81
     Names.Configure(config)
     Names.Apply(uf, "enemy", "nameplate1")
-    assert(label.value == "hmage", "length/direction override failed")
+    assert(label.value == "Ancient Twilight Archmage", "legacy options rewrote a readable name")
     do
-        assert(Names.secretNameWidth == 30, "expected a geometry limit derived from five characters")
-        local observed, changes = {}, 0
-        Names.ObserveNameClip(function(frame, isSecret)
-            assert(frame == uf, "secret name layout targeted a different plate")
-            changes = changes + 1
-            observed[uf] = isSecret or nil
-        end, observed)
+        assert(Names.limits.enemy.pixels == 30, "retired fixed width replaced the five-character width estimate")
+        local limit = Names.limits.enemy
         Native(secret)
-        assert(changes == 1 and observed[uf] and rawequal(label.value, secret), "secret name did not signal layout")
-        for _ = 1, 30 do Native(secret) end
-        assert(changes == 1, "repeated secret names ran layout")
+        assert(Names.limits.enemy == limit and rawequal(label.value, secret), "a secret name changed the width setting or was rewritten")
         Native("Ancient Twilight Archmage")
-        assert(changes == 2 and not observed[uf] and label.value == "hmage", "plain text did not resume exact shortening")
+        assert(Names.limits.enemy == limit and label.value == "Ancient Twilight Archmage", "a public name changed the width setting or was rewritten")
         config.enemyNameFormat = 3
         Names.Configure(config)
-        assert(not Names.secretNameWidth, "word initials unexpectedly enable a width limit")
+        assert(not Names.limits.enemy, "word abbreviation unexpectedly set a name width")
         config.enemyNameFormat = 4
         Names.Configure(config)
-        Names.ObserveNameClip()
     end
     label.shown = false
     callback(uf)
@@ -198,7 +193,7 @@ for _, flavor in ipairs({ "Mainline", "Forever" }) do
     Native(secret)
     assert(Names.states[uf].unit == "nameplate1" and Names.states[uf].raw == nil, "secret lost the public unit mapping")
     Native("Old Native Name")
-    assert(label.value ~= "Old Native Name", "public name did not recover after secret input")
+    assert(label.value == "Old Native Name", "recovery rewrote the readable name")
     combat, uf.protected = true, true
     module.activeUnits.nameplate1 = nil
     Names.Release(uf)
@@ -207,16 +202,21 @@ for _, flavor in ipairs({ "Mainline", "Forever" }) do
     combat, uf.protected = false, false
     module.activeUnits.nameplate1 = uf
     Names.Apply(uf, "enemy", "nameplate1")
-    assert(label.value == "izard", "pooled same-token reuse repainted the old name")
-    module.config.enemy = false
+    assert(label.value == "New Native Wizard", "pooled same-token reuse repainted the old name")
+    config.enemyNameColorEnabled = true
+    Names.Configure(config)
     Names.Apply(uf, "enemy", "nameplate1")
+    module.config.enemy = false
     Native("Unskinned Enemy")
-    assert(label.value == "Unskinned Enemy", "disabled side was formatted by the native hook")
+    assert(label.value == "Unskinned Enemy" and label.r == .9, "native hook repainted a disabled side")
+    Names.Apply(uf, "enemy", "nameplate1")
+    config.enemyNameColorEnabled = false
     module.config.enemy = true
     provider = nil
     Names.Configure(config)
     Names.Apply(uf, "enemy", "nameplate1")
     assert(label.value == "Unskinned Enemy", "old host changed an unformatted native name")
+    assert(Names.limits.enemy.pixels == 30, "native clipping requires a host text formatter")
     config.enemyNameColorEnabled = true
     Names.Configure(config)
     Native("Old Host Color")
@@ -378,6 +378,6 @@ for _, flavor in ipairs({ "Mainline", "Forever" }) do
     Native("Unchanged Full Name")
     assert(writes == 0, "unchanged full names issue redundant native writes")
     NS.NameplateText.Paint(label, {}, sample, sampleLook)
-    assert(label.value == engine.Format({}, sample, "ABBREV_CUT", 14, false, "RIGHT"), "preview differs from runtime formatter")
+    assert(label.value == sample, "readable preview was rewritten")
     print("PASS nameplate names " .. flavor .. ": Shared/local/color, native reset, secret recovery, disabled/warm 10000 zero native calls, pool and old-host parity")
 end

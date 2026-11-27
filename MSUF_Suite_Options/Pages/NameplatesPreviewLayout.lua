@@ -5,9 +5,37 @@ local Layout = {}
 P.NameplatesPreviewLayout = Layout
 
 local TOOL_HEIGHT, TOOL_GAP = 20, 6
+-- Expanded preview columns: element panel | canvas, tools, selection | inspector.
+-- Narrow menus drop the inspector first, then the panel.
+local PANEL_WIDTH, INSPECTOR_WIDTH, COLUMN_GAP = 212, 236, 8
+local PANEL_MIN_WIDTH, INSPECTOR_MIN_WIDTH = 640, 960
 local LABEL_INSET = 8
 local ZOOM_STEPS = { 0.35, 0.50, 0.75, 1, 1.25, 1.50, 2, 3, 4 }
 local FIT_PADDING, MIN_FIT_ZOOM = 20, 0.05
+local CENTERED_NAME_WIDTH = 170
+
+local function ManualNamePlacement(m, anchor)
+    if m.namesOnly and not m.nameOnlyScope then
+        if m.nameAnchor == 1 then return "CENTER", "CENTER", 0, 0, CENTERED_NAME_WIDTH, "CENTER" end
+        return "BOTTOM", "TOP", 0, 2, CENTERED_NAME_WIDTH, "CENTER"
+    elseif anchor then
+        local justify = anchor:find("LEFT", 1, true) and "LEFT" or anchor:find("RIGHT", 1, true) and "RIGHT" or "CENTER"
+        return anchor, anchor, 0, 0, m.availableNameWidth, justify
+    elseif m.nameAnchor == 3 then
+        local width = m.barWidth - 8 + (m.classic and m.classicInset or 0)
+        return "BOTTOM", "TOP", m.classic and 8.625 * m.horizontal or 0, m.nameSpacing, width, "CENTER"
+    elseif m.nameAnchor == 2 then
+        local width = m.nativeLevel and m.barWidth + m.reserve - 4 or m.availableNameWidth
+        return "BOTTOMLEFT", "TOPLEFT", 4, m.nameSpacing, width, "LEFT"
+    end
+    return "LEFT", "LEFT", 4, 0, m.availableNameWidth, "LEFT"
+end
+
+local function NameTextWidth(m, width)
+    if m.centerName or m.namesOnly and not m.nameOnlyScope then return CENTERED_NAME_WIDTH end
+    if m.nameAnchor == 3 then return width end
+    return m.availableNameWidth
+end
 
 function Layout.RenderName(s, m, Get, SetupNumber, Place)
     local ID = "nameplates"
@@ -19,39 +47,62 @@ function Layout.RenderName(s, m, Get, SetupNumber, Place)
     local shared = not (m.npcWorldName or m.skinDisabled) and P.Suite.NameplateText.Shared(config)
     local size = P.Suite.NameplateText.ResolveSize(config, prefix .. "NameSize", shared)
     local anchor = not (m.centerName or m.namesOnly or m.skinDisabled) and Get(ID, "look") ~= 2 and P.Suite.NameplateText.NameAnchor(config, prefix)
-    local centered = m.centerName or m.namesOnly and not m.nameOnlyScope
     name:SetHeight(not (m.npcWorldName or m.skinDisabled) and (shared or Get(ID, prefix .. "TextEnabled")) and size > 0 and size
         or SetupNumber("healthBarFontHeight", (m.classic and 10 or m.forever and 14 or 12) * m.vertical))
     name:ClearAllPoints()
+    name.previewCenterNameKey, name.previewCenteredNameSample, name.previewCenteredNameMetrics = nil, nil, nil
+    local width = CENTERED_NAME_WIDTH
+    local justify = m.nameAnchor == 3 and "CENTER" or "LEFT"
     if m.npcWorldName then
         name:SetPoint("CENTER", s.cell, "CENTER", 0, 0)
-        name:SetWidth(170)
+        if m.namesOnly and not m.nameOnlyScope then justify = "CENTER" end
     elseif m.centerName then
         local spacing = m.namesOnly and not m.nameOnlyScope and 2 or m.nameSpacing
-        local y = -4 + m.nativeBarHeight / 2 + m.heightDelta + spacing + Get(ID, prefix .. "NameOffsetY")
-            + (shared and shared.fontBaselineOffset or 0)
-        name:SetPoint("BOTTOM", s.cell, "CENTER", 0, y)
-        name:SetWidth(170)
-    elseif centered then
-        if m.nameAnchor == 1 then Place(s, name, "CENTER", bar, "CENTER", 0, 0, "Name")
-        else Place(s, name, "BOTTOM", bar, "TOP", 0, 2, "Name") end
-        name:SetWidth(170)
-    elseif anchor then
-        Place(s, name, anchor, bar, anchor, 0, 0, "Name")
-        name:SetWidth(m.availableNameWidth)
-    elseif m.nameAnchor == 3 then
-        Place(s, name, "BOTTOM", bar, "TOP", m.classic and 8.625 * m.horizontal or 0, m.nameSpacing, "Name")
-        name:SetWidth(m.barWidth - 8 + (m.classic and m.classicInset or 0))
-    elseif m.nameAnchor == 2 then
-        Place(s, name, "BOTTOMLEFT", bar, "TOPLEFT", 4, m.nameSpacing, "Name")
-        name:SetWidth(m.nativeLevel and m.barWidth + m.reserve - 4 or m.availableNameWidth)
+        local baseY = -4 + m.nativeBarHeight / 2 + m.heightDelta + spacing + (shared and shared.fontBaselineOffset or 0)
+        name:SetPoint("BOTTOM", s.cell, "CENTER", 0, baseY + Get(ID, prefix .. "NameOffsetY"))
+        justify = "CENTER"
+        if m.namesOnly and not s.static then
+            name.previewCenterNameKey = m.scope .. "CenterName"
+            name.previewCenteredNameSample, name.previewCenteredNameMetrics, name.previewCenteredNameBaseY = s, m, baseY
+        end
     else
-        Place(s, name, "LEFT", bar, "LEFT", 4, 0, "Name")
-        name:SetWidth(m.availableNameWidth)
+        local point, relative, x, y, manualWidth, manualJustify = ManualNamePlacement(m, anchor)
+        Place(s, name, point, bar, relative, x, y, "Name")
+        width, justify = manualWidth, manualJustify
     end
-    s.nameText:SetWidth(centered and 170 or m.nameAnchor == 3 and name:GetWidth() or m.availableNameWidth)
-    local justify = anchor and (anchor:find("LEFT", 1, true) and "LEFT" or anchor:find("RIGHT", 1, true) and "RIGHT" or "CENTER")
-    s.nameText:SetJustifyH(justify or ((centered or m.nameAnchor == 3) and "CENTER" or "LEFT"))
+    name:SetWidth(width)
+    s.nameText:SetWidth(NameTextWidth(m, width))
+    s.nameText:SetJustifyH(justify)
+end
+
+local function AxisAnchor(point, low, high)
+    if point:find(low, 1, true) then return -.5 end
+    if point:find(high, 1, true) then return .5 end
+    return 0
+end
+
+-- Auto center deliberately ignores the saved X offset. When a user moves
+-- sideways, convert from the centered text position to the manual anchor so
+-- exiting auto center keeps the dragged text at the same place.
+function Layout.ManualNameOffsets(name, x, y)
+    local s, m = name.previewCenteredNameSample, name.previewCenteredNameMetrics
+    local cellX, cellY = s.cell:GetCenter()
+    local barX, barY = s.bar:GetCenter()
+    local barWidth, barHeight = s.bar:GetWidth(), s.bar:GetHeight()
+    local nameHeight, stringWidth = name:GetHeight(), s.nameText:GetStringWidth()
+    if not (Public(cellX) and Public(cellY) and Public(barX) and Public(barY) and Public(barWidth) and Public(barHeight)
+        and Public(nameHeight) and Public(stringWidth) and cellX and cellY and barX and barY and barWidth and barHeight
+        and nameHeight and stringWidth) then return end
+    local point, relative, baseX, baseY, width, justify = ManualNamePlacement(m)
+    local textWidth = m.namesOnly and not m.nameOnlyScope and CENTERED_NAME_WIDTH
+        or m.nameAnchor == 3 and width or m.availableNameWidth
+    local textCenter = (textWidth - math.min(stringWidth, textWidth)) * AxisAnchor(justify, "LEFT", "RIGHT")
+        + (textWidth - width) / 2
+    local manualX = barX + barWidth * AxisAnchor(relative, "LEFT", "RIGHT") + baseX
+        - width * AxisAnchor(point, "LEFT", "RIGHT") + textCenter
+    local manualY = barY + barHeight * AxisAnchor(relative, "BOTTOM", "TOP") + baseY
+        - nameHeight * AxisAnchor(point, "BOTTOM", "TOP")
+    return cellX + x - manualX, cellY + name.previewCenteredNameBaseY + y + nameHeight / 2 - manualY
 end
 
 -- Native base point of the health value on the health bar, from
@@ -114,7 +165,7 @@ local function PlaceTool(control, tools, point, x, y)
 end
 
 function Layout.Tools(ui)
-    local tools, width = ui.tools, ui.body:GetWidth()
+    local tools, width = ui.tools, ui.centerWidth or ui.body:GetWidth()
     if not width or width < 1 then return end
     local x, y = 0, 0
     local step = TOOL_HEIGHT + TOOL_GAP
@@ -128,27 +179,16 @@ function Layout.Tools(ui)
             size = Layout.FitButton(control, width, minimum)
         end
         if x + size > width then x, y = 0, y - step end
-        PlaceTool(control, tools, "TOPLEFT", x, control == ui.zoomLabel and y - 4 or y)
+        local inset = control == ui.zoomLabel and math.max(0, (TOOL_HEIGHT - control:GetHeight()) / 2) or 0
+        PlaceTool(control, tools, "TOPLEFT", x, y - inset)
         x = x + size + TOOL_GAP
     end
-    local pickerSize = Layout.FitButton(ui.elementPicker, width, 96)
-    local pickerWrapped = x + pickerSize > width
-    if pickerWrapped then y = y - step end
-    PlaceTool(ui.elementPicker, tools, "TOPRIGHT", 0, y)
-
-    local targetSize = Layout.FitButton(ui.targetStateButton, width, 126)
-    local focusSize = Layout.FitButton(ui.focusStateButton, width, 96)
-    if targetSize + TOOL_GAP + focusSize <= width then
-        y = y - step
-        PlaceTool(ui.targetStateButton, tools, "TOPRIGHT", -focusSize - TOOL_GAP, y)
-    elseif pickerWrapped and targetSize + TOOL_GAP + pickerSize <= width then
-        PlaceTool(ui.targetStateButton, tools, "TOPRIGHT", -pickerSize - TOOL_GAP, y)
-        y = y - step
-    else
-        PlaceTool(ui.targetStateButton, tools, "TOPRIGHT", 0, y - step)
-        y = y - 2 * step
+    if ui.elementPicker:IsShown() then
+        local pickerSize = Layout.FitButton(ui.elementPicker, width, 96)
+        if x + pickerSize > width then y = y - step end
+        PlaceTool(ui.elementPicker, tools, "TOPRIGHT", 0, y)
     end
-    PlaceTool(ui.focusStateButton, tools, "TOPRIGHT", 0, y)
+
     tools:SetHeight(TOOL_HEIGHT - y)
 end
 
@@ -164,6 +204,26 @@ function Layout.PrioritizeHandles(s)
     s.castTarget:SetFrameLevel(castLevel + 3)
     s.castIcon:SetFrameLevel(castLevel + 4)
     s.shield:SetFrameLevel(castLevel + 4)
+end
+
+local function LayoutSelectedTools(bar, width)
+    if not bar or not bar:IsShown() then return 0 end
+    local limit = width - 12
+    if limit < 20 then return 0 end
+    local title = math.min(limit, TextWidth(bar.title) + 3)
+    bar.title:SetWidth(title)
+    local x, y, widest = title + 10, 0, title
+    for _, button in ipairs(bar.buttons) do
+        if button:IsShown() then
+            local size = Layout.FitButton(button, limit, 20)
+            if x + size > limit then x, y = 0, y + TOOL_HEIGHT + 3 end
+            PlaceTool(button, bar, "TOPLEFT", 6 + x, -3 - y)
+            widest = math.max(widest, x + size)
+            x = x + size + 4
+        end
+    end
+    bar:SetSize(widest + 12, y + TOOL_HEIGHT + 6)
+    return bar:GetHeight() + 6
 end
 
 function Layout.Samples(ui)
@@ -184,42 +244,63 @@ function Layout.Samples(ui)
         end
     end
     ui.samples:SetSize(width - 16, 20 - y)
-    local raidTop = math.min(42 - y, math.max(8, height - ui.raidPalette:GetHeight() - 4))
     ui.raidPalette:ClearAllPoints()
-    ui.raidPalette:SetPoint("TOPRIGHT", ui.canvas, "TOPRIGHT", -8, -raidTop)
-    ui.fitTop = math.max(8 + ui.samples:GetHeight(), raidTop + ui.raidPalette:GetHeight())
+    ui.raidPalette:SetPoint("BOTTOMRIGHT", ui.canvas, "BOTTOMRIGHT", -8, 8)
+    ui.fitTop = 8 + ui.samples:GetHeight() + LayoutSelectedTools(ui.selectedTools, width - 16)
+    ui.fitBottom = 21 + ui.raidPalette:GetHeight()
+end
+
+local function PlaceColumn(frame, body, point, width)
+    frame:ClearAllPoints()
+    frame:SetPoint("TOP" .. point, body, "TOP" .. point, 0, 0)
+    frame:SetPoint("BOTTOM" .. point, body, "BOTTOM" .. point, 0, 4)
+    frame:SetWidth(width)
 end
 
 function Layout.Apply(self)
-    local body, canvas, tools, rail = self.body, self.canvas, self.tools, self.layerRail
-    canvas:ClearAllPoints()
-    canvas:SetPoint("TOPLEFT", body, "TOPLEFT", 0, 0)
+    local body, canvas, tools = self.body, self.canvas, self.tools
+    local panel, inspector = self.elementPanel, self.inspector
     local editing = not self.compact and not self.groupPreviewEnabled
+    local width = body:GetWidth() or 0
+    local showPanel = editing and width >= PANEL_MIN_WIDTH
+    local showInspector = editing and width >= INSPECTOR_MIN_WIDTH
+    local left = showPanel and PANEL_WIDTH + COLUMN_GAP or 0
+    local right = showInspector and INSPECTOR_WIDTH + COLUMN_GAP or 0
+    self.centerWidth = width - left - right
+    panel:SetShown(showPanel)
+    self.elementPicker:SetShown(editing and not showPanel)
+    inspector:SetShown(showInspector)
+    canvas:ClearAllPoints()
+    canvas:SetPoint("TOPLEFT", body, "TOPLEFT", left, 0)
     tools:SetShown(editing)
     if SB then SB.SetShown(body, editing) end
-    rail:SetShown(editing)
     self.samples:SetShown(editing)
     self.raidPalette:SetShown(editing)
     self.hint:SetShown(editing)
     if not editing then
-        self.fitTop = 0
+        self.fitTop, self.fitBottom = 0, 0
+        if self.selectedTools then self.selectedTools:Hide() end
         canvas:SetPoint("BOTTOMRIGHT", body, "BOTTOMRIGHT", 0, 8)
         return
     end
-    self:LayoutLayerRail()
-    -- Anchor each row above the actual wrapped rail, leaving all remaining
-    -- height to the canvas. Width changes therefore need no guessed row count.
-    local anchor = rail
+    if showPanel then PlaceColumn(panel, body, "LEFT", PANEL_WIDTH) end
+    if showInspector then PlaceColumn(inspector, body, "RIGHT", INSPECTOR_WIDTH) end
+    -- The center column stacks up from the body's bottom edge: selection bar,
+    -- tools, then the canvas takes the remaining height.
+    tools:ClearAllPoints()
     if self.selection then
         self.selection:ClearAllPoints()
-        self.selection:SetPoint("BOTTOMLEFT", rail, "TOPLEFT", 0, 6)
-        self.selection:SetPoint("BOTTOMRIGHT", rail, "TOPRIGHT", 0, 6)
-        anchor = self.selection
+        self.selection:SetPoint("BOTTOMLEFT", body, "BOTTOMLEFT", left, 4)
+        self.selection:SetPoint("BOTTOMRIGHT", body, "BOTTOMRIGHT", -right, 4)
+        tools:SetPoint("BOTTOMLEFT", self.selection, "TOPLEFT", 0, 5)
+        tools:SetPoint("BOTTOMRIGHT", self.selection, "TOPRIGHT", 0, 5)
+    else
+        tools:SetPoint("BOTTOMLEFT", body, "BOTTOMLEFT", left, 4)
+        tools:SetPoint("BOTTOMRIGHT", body, "BOTTOMRIGHT", -right, 4)
     end
-    tools:ClearAllPoints()
-    tools:SetPoint("BOTTOMLEFT", anchor, "TOPLEFT", 0, 5)
-    tools:SetPoint("BOTTOMRIGHT", anchor, "TOPRIGHT", 0, 5)
     canvas:SetPoint("BOTTOMRIGHT", tools, "TOPRIGHT", 0, 4)
+    self:LayoutElements()
+    P.NameplatesInspector.Refresh(self)
     Layout.Samples(self)
 end
 
@@ -240,6 +321,7 @@ local function FitBounds(ui)
     if not (Public(centerX) and Public(centerY) and Public(stageScale) and centerX and centerY and stageScale > 0) then return end
     local left, right, bottom, top
     for _, handle in ipairs(ui.handles) do
+        if handle.previewGhost and handle.previewGhost:IsVisible() then handle = handle.previewGhost end
         local visible = handle:IsVisible()
         if Public(visible) and visible then
             local x, y, w, h = handle:GetRect()
@@ -261,11 +343,12 @@ function Layout.UpdateViewport(ui)
     if ui.fitMode then
         local left, bottom, right, top = FitBounds(ui)
         local topInset = ui.fitTop or 0
+        local bottomInset = ui.fitBottom or 0
         local width = ui.canvas:GetWidth() - 2 * FIT_PADDING
-        local height = ui.canvas:GetHeight() - 2 * FIT_PADDING - topInset
+        local height = ui.canvas:GetHeight() - 2 * FIT_PADDING - topInset - bottomInset
         ui.zoom = left and math.max(MIN_FIT_ZOOM, math.min(1, width / (right - left), height / (top - bottom))) or 1
         if left then
-            x, y = -(left + right) * ui.zoom / 2, -(bottom + top) * ui.zoom / 2 - topInset / 2
+            x, y = -(left + right) * ui.zoom / 2, -(bottom + top) * ui.zoom / 2 + (bottomInset - topInset) / 2
         end
     end
     PositionStage(ui, x, y)
@@ -276,6 +359,12 @@ function Layout.Fit(ui)
     if ui.kit.drag or ui.panning then return end
     ui.fitMode, ui.panX, ui.panY = true, 0, 0
     Layout.UpdateViewport(ui)
+end
+
+function Layout.KeepViewport(ui)
+    if not ui.fitMode then return end
+    -- Re-fitting after an edit can center the very element that was moved.
+    ui.fitMode, ui.panX, ui.panY = nil, ui.viewX, ui.viewY
 end
 
 function Layout.SetZoom(ui, zoom)
