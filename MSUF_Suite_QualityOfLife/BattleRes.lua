@@ -2,6 +2,8 @@ local _, P = ...
 local NS, S = P.NS, P.Suite
 local ID, SPELL_ID = "battleRes", 20484 -- Rebirth exposes the shared combat-resurrection pool.
 local POINTS = NS.AnchorPoints
+local LABEL_FORMAT, ALWAYS_VISIBLE, DIVIDER_GAP = 2, 2, 3
+local CHAT_ANCHOR, CHAT_GAP = 2, 2
 local IN_COMBAT = { inCombat = true }
 local M = {}
 -- CHALLENGE_MODE_START may precede the API's active-state transition; the
@@ -84,25 +86,43 @@ local function CreateText(self)
     local font = S.ResolveFont(c.font) or (c.font ~= "" and c.font or nil)
     S.SetFont(self.time, font, c.fontSize, "OUTLINE")
     S.SetFont(self.separator, font, c.fontSize, "OUTLINE")
-    self.separator:SetText("+")
     if self.previewParent then return end
-    local down = Enum.NumericRuleFormatRounding.Down
-    local formatter = C_StringUtil.CreateNumericRuleFormatter()
-    formatter:SetBreakpoints({ { threshold = 0, format = "%02d:%02d", rounding = down,
-        components = { { div = 60, rounding = down }, { mod = 60, rounding = down } } } })
     local binding = C_DurationUtil.CreateDurationTextBinding()
     binding:SetFontString(self.time)
-    binding:SetFormatter(formatter)
     binding:SetUpdateInterval(1)
-    binding:SetZeroDurationText("")
-    binding:SetExpiredText("")
     binding:Disable()
     self.durationBinding = binding
+end
+
+local function SetTextFormat(self)
+    local labeled = self.config.textFormat == LABEL_FORMAT
+    local bracketed = labeled and self.countShown
+    self.showSeparator = not labeled or self.countShown
+    if self.labeled ~= labeled then
+        self.separator:SetText(labeled and "||" or "+")
+        self.labeled = labeled
+    end
+    if self.bracketed == bracketed then return end
+    self.bracketed = bracketed
+    local binding = self.durationBinding
+    if not binding then return end
+    local down = Enum.NumericRuleFormatRounding.Down
+    local formatter = C_StringUtil.CreateNumericRuleFormatter()
+    formatter:SetBreakpoints({ { threshold = 0, format = bracketed and "%d:%02d]" or "%02d:%02d", rounding = down,
+        components = { { div = 60, rounding = down }, { mod = 60, rounding = down } } } })
+    binding:SetFormatter(formatter)
+    local finished = bracketed and "0:00]" or ""
+    binding:SetZeroDurationText(finished)
+    binding:SetExpiredText(finished)
 end
 
 local function Anchor(region, point, relative, otherPoint, x, y)
     region:ClearAllPoints()
     region:SetPoint(point, relative, otherPoint, x, y)
+end
+
+local function Shown(region, value)
+    if value then region:Show() else region:Hide() end
 end
 
 local function BindTime(self, duration)
@@ -112,24 +132,43 @@ local function BindTime(self, duration)
     self.durationBinding:SetDuration(duration)
     self.durationBinding:Enable()
     self.time:Show()
-    self.separator:Show()
+    Shown(self.separator, self.showSeparator)
+    return true
+end
+
+local function SetChargeText(self, count, hasRecharge)
+    local labeled = self.compact and self.bracketed
+    if S.Public(count) and type(count) ~= "number" then
+        self.count:SetText(labeled and (hasRecharge and "[CR: --" or "[CR: --]") or "--")
+        return
+    end
+    -- The charge value may be secret. SetFormattedText consumes it natively.
+    local format = labeled and (hasRecharge and "[CR: %d" or "[CR: %d]") or "%d"
+    self.count:SetFormattedText(format, count)
+end
+
+local function ShowInactive(self)
+    ClearTimer(self)
+    local visible = self.config.visibility == ALWAYS_VISIBLE and (self.countShown or not self.compact)
+    if visible then
+        if self.countShown then SetChargeText(self) end
+        if self.maximumShown then self.maximum:SetText("") end
+    end
+    Shown(self.host, visible)
 end
 
 local function SampleTime(self, editMode)
     if not self.timerShown then return end
     if self.config.textOnly then
         if self.durationBinding then self.durationBinding:Disable() end
-        self.time:SetText("02:38")
+        self.time:SetText(self.bracketed and "2:38]" or "02:38")
         self.time:Show()
-        self.separator:Show()
+        Shown(self.separator, self.showSeparator)
     elseif not self.cooldownSample then
         self.cooldown:SetCooldown(GetTime(), editMode and 90 or 158)
         self.cooldownActive, self.cooldownSample = true, true
     end
-end
-
-local function Shown(region, value)
-    if value then region:Show() else region:Hide() end
+    return true
 end
 
 local function CustomDimension(value, fallback)
@@ -154,6 +193,11 @@ local function PlaceTimer(self, point, x, y)
         if point then
             Anchor(self.time, point, host, point, x, y)
             Anchor(self.separator, "RIGHT", self.time, "LEFT", -2, 0)
+        elseif self.bracketed then
+            Anchor(self.separator, "LEFT", self.count, "RIGHT", DIVIDER_GAP + x, y)
+            Anchor(self.time, "LEFT", self.separator, "RIGHT", DIVIDER_GAP, 0)
+        elseif c.textFormat == LABEL_FORMAT then
+            Anchor(self.time, "LEFT", host, "LEFT", x, y)
         else
             local separatorX = c.fontSize * 13 / 11 + x
             Anchor(self.separator, "LEFT", host, "LEFT", separatorX, y)
@@ -271,6 +315,7 @@ local function PaintElements(self, style)
     Shown(self.cooldown, not compact and self.timerShown)
     if compact then
         CreateText(self)
+        SetTextFormat(self)
         local size = c.fontSize * (c.timerSize or 100) / 100
         S.SetFont(self.time, compactFont, size, "OUTLINE")
         S.SetFont(self.separator, compactFont, size, "OUTLINE")
@@ -279,6 +324,12 @@ local function PaintElements(self, style)
     end
     if self.compact ~= compact or not self.timerShown then ClearTimer(self) end
     self.compact = compact
+end
+
+local function ChatAnchor(self)
+    if self.config.anchorTarget ~= CHAT_ANCHOR then return end
+    local tab = ChatFrame1Tab
+    if S.Public(tab) and tab and not NS.Safety.IsForbidden(tab) then return tab end
 end
 
 local function Place(self)
@@ -291,7 +342,13 @@ local function Place(self)
         local viewport = self.previewViewport
         self.host:SetScale(math.min(viewport.scale, viewport.width / width, viewport.height / height))
     else
-        S.PlaceHost(self.host, c)
+        local tab = ChatAnchor(self)
+        if tab then
+            self.host:SetScale(c.scale / 100)
+            Anchor(self.host, "BOTTOMLEFT", tab, "TOPLEFT", 0, CHAT_GAP * 100 / c.scale)
+        else
+            S.PlaceHost(self.host, c)
+        end
     end
     PaintCard(self, width, height, style)
     PaintElements(self, style)
@@ -306,7 +363,19 @@ end
 
 local function ReadInstanceType(self)
     local _, instanceType = GetInstanceInfo()
-    self.instanceType = S.Public(instanceType) and type(instanceType) == "string" and instanceType ~= "" and instanceType or nil
+    local kind = S.Public(instanceType) and type(instanceType) == "string" and instanceType ~= "" and instanceType or nil
+    if self.instanceType ~= kind then self.limitedPool = false end
+    self.instanceType = kind
+end
+
+local function ReadEncounter(self, active)
+    self.encounterActive, self.limitedPool = active, false
+    local kind = self.instanceType
+    if not active or self.challengeActive or (kind ~= "party" and kind ~= "scenario") then return end
+    local isLimited = C_InstanceEncounter.IsEncounterLimitingResurrections
+    if not isLimited then return end
+    local limited = isLimited()
+    self.limitedPool = S.Public(limited) and limited == true
 end
 
 local function InstancePending(self)
@@ -315,9 +384,9 @@ local function InstancePending(self)
 end
 
 local function InSharedPool(self)
-    if self.instanceType == "party" then return self.challengeActive == true end
+    if self.instanceType == "party" then return self.challengeActive == true or self.limitedPool == true end
     if self.instanceType == "raid" then return self.encounterActive == true end
-    return false
+    return self.instanceType == "scenario" and self.limitedPool == true
 end
 
 local Update
@@ -341,7 +410,7 @@ local function UpdateRecharge(self, active)
     if S.Public(duration) and duration == nil then return ClearTimer(self) end
     if self.compact then
         ClearTimer(self)
-        BindTime(self, duration)
+        return BindTime(self, duration)
     else
         self.cooldown:SetCooldownFromDurationObject(duration, true)
         self.cooldownActive, self.cooldownSample = true, nil
@@ -358,9 +427,9 @@ Update = function(self)
 
     if S.editMode and not NS.IsCombatLocked() then
         WatchCharges(self, false)
-        self.count:SetText("2")
         self.maximum:SetText("/3")
-        SampleTime(self, true)
+        local hasRecharge = SampleTime(self, true)
+        SetChargeText(self, 2, hasRecharge)
         self.host:Show()
         return
     end
@@ -368,48 +437,43 @@ Update = function(self)
     local inPool = InSharedPool(self)
     WatchCharges(self, inPool)
     if not inPool then
-        ClearTimer(self)
-        self.host:Hide()
+        ShowInactive(self)
         return
     end
 
     -- The table and its current charge can be secret in combat. Only public
-    -- fields guide Lua branches; Blizzard's display string goes to SetText.
+    -- fields guide Lua branches and restricted charges reach the native text sink.
     local info = C_Spell.GetSpellCharges(SPELL_ID)
     if not S.Public(info) or type(info) ~= "table" then
-        ClearTimer(self)
-        self.host:Hide()
+        ShowInactive(self)
         return
     end
     local maximum = info.maxCharges
     if not S.Finite(maximum) or maximum < 1 then
-        ClearTimer(self)
-        self.host:Hide()
+        ShowInactive(self)
         return
     end
 
-    if self.countShown then
-        local display = C_Spell.GetSpellDisplayCount(SPELL_ID)
-        if S.Public(display) and (type(display) ~= "string" or display == "") then display = "--" end
-        self.count:SetText(display)
-    end
+    local hasRecharge = UpdateRecharge(self, info.isActive)
+    if self.countShown then SetChargeText(self, info.currentCharges, hasRecharge) end
     if self.maximumShown then self.maximum:SetFormattedText("/%d", math.floor(maximum)) end
-    UpdateRecharge(self, info.isActive)
     self.host:Show()
 end
 
 local function ContextChanged(self, event)
     ReadInstanceType(self)
     if event == "ENCOUNTER_START" then
-        self.encounterActive = true
+        ReadEncounter(self, true)
     elseif event == "ENCOUNTER_END" then
-        self.encounterActive = false
+        ReadEncounter(self, false)
+    elseif event == "ENCOUNTER_STATE_CHANGED" then
+        ReadEncounter(self, EncounterActive())
     elseif event == "CHALLENGE_MODE_COMPLETED" or event == "CHALLENGE_MODE_RESET"
         or event == "WORLD_STATE_TIMER_STOP" then
         self.challengeActive = false
     elseif event == "PLAYER_ENTERING_WORLD" or event == "ZONE_CHANGED_NEW_AREA" then
-        self.encounterActive = EncounterActive()
         self.challengeActive = ChallengeActive()
+        ReadEncounter(self, EncounterActive())
     else
         self.challengeActive = ChallengeActive()
     end
@@ -422,6 +486,7 @@ end
 local function RecheckStart(self)
     ReadInstanceType(self)
     self.challengeActive = ChallengeActive()
+    ReadEncounter(self, self.encounterActive)
     Update(self)
 end
 
@@ -431,12 +496,12 @@ function M:Enable()
     Create(self)
     Place(self)
     ReadInstanceType(self)
-    self.encounterActive = EncounterActive()
     self.challengeActive = ChallengeActive()
+    ReadEncounter(self, EncounterActive())
     local context = self.context
     for _, event in ipairs({ "PLAYER_ENTERING_WORLD", "ZONE_CHANGED_NEW_AREA",
         "CHALLENGE_MODE_START", "CHALLENGE_MODE_COMPLETED", "CHALLENGE_MODE_RESET",
-        "WORLD_STATE_TIMER_START", "WORLD_STATE_TIMER_STOP", "ENCOUNTER_START", "ENCOUNTER_END" }) do
+        "WORLD_STATE_TIMER_START", "WORLD_STATE_TIMER_STOP", "ENCOUNTER_START", "ENCOUNTER_END", "ENCOUNTER_STATE_CHANGED" }) do
         context:Event(event, ContextChanged, IN_COMBAT)
     end
     Update(self)
@@ -447,6 +512,7 @@ function M:Refresh()
     WatchGloss(self, self.config.glossEnabled == true)
     Place(self)
     ReadInstanceType(self)
+    ReadEncounter(self, self.encounterActive)
     Update(self)
     if InstancePending(self) then self.startJob:Request() end
 end
@@ -465,6 +531,7 @@ function M:RegisterMovers()
     S.RegisterOwnedMover(ID, "charges", {
         label = "Battle resurrection", order = 636,
         getFrame = function() return self.host end,
+        isEnabled = function() return not ChatAnchor(self) end,
         xKey = "x", yKey = "y", pointKey = "point",
         point = function() return POINTS[self.config.point] or "CENTER" end,
         quickPosition = true, historyKeys = { "width", "height", "scale" },
@@ -481,9 +548,9 @@ function S.DrawBattleResPreview(parent, config, _, viewport)
     view.config, view.previewViewport = config, viewport
     Create(view)
     Place(view)
-    view.count:SetText("2")
     view.maximum:SetText("/3")
-    SampleTime(view)
+    local hasRecharge = SampleTime(view)
+    SetChargeText(view, 2, hasRecharge)
     view.host:Show()
     return view.host
 end

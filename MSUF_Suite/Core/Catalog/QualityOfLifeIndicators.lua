@@ -155,8 +155,8 @@ B.Section("durabilityAlert", "durability_warning", "Low durability warning", {
     Number("y", "Vertical position", 180, -3000, 3000),
 })
 
--- The shared battle-resurrection pool is only meaningful during an active
--- Mythic+ run or raid encounter. Blizzard owns the charge countdown itself.
+-- Blizzard owns the shared charge countdown for keystones and encounters
+-- with a shared resurrection limit.
 local battleRes = B.Module("battleRes", {
     title = "Battle resurrection",
     description = "Show available shared battle resurrections and the next recharge in Mythic+ and raid encounters.",
@@ -169,6 +169,8 @@ local battleRes = B.Module("battleRes", {
 })
 B.Section("battleRes", "battle_res", "Battle resurrection", {
     Bool("textOnly", "Text only"),
+    Choice("textFormat", "Format", 1, { "Default", "With label" }),
+    Choice("visibility", "Visibility", 1, { "Automatic", "Always" }),
     B.Font("font", "Font"),
     Number("fontSize", "Font size", 11, 8, 24),
     Bool("glossEnabled", "Glossy icons"),
@@ -176,12 +178,14 @@ B.Section("battleRes", "battle_res", "Battle resurrection", {
     Number("width", "Display width", 146, 60, 350),
     Number("height", "Display height", 44, 14, 80),
     Number("scale", "Scale (percent)", 100, 50, 200, 5),
+    Choice("anchorTarget", "Anchor point", 1, { "Screen anchor", "Chat" }),
     Choice("point", "Screen anchor", 5, NS.AnchorLabels),
     Number("x", "Horizontal position", 0, -4000, 4000),
     Number("y", "Vertical position", 120, -3000, 3000),
 })
 
 NS.SuiteCatalog.battleRes.rules.glossStrength.enableKey = "glossEnabled"
+NS.SuiteCatalog.battleRes.rules.textFormat.enableKey = "textOnly"
 
 local battleResAnchors = { "Default position" }
 for _, label in ipairs(NS.AnchorLabels) do battleResAnchors[#battleResAnchors + 1] = label end

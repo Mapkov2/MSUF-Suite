@@ -1,7 +1,9 @@
 local root = assert(arg[1], "repository root required")
 local callbacks, timers, installed = {}, {}, {}
 local instanceType, challenge, encounter, charges = "none", false, false, nil
+local limitingResurrections = false
 local chargeReads, displayReads, durationReads = 0, 0, 0
+local secret = {}
 
 local function Widget()
     local w = { shown = true }
@@ -42,7 +44,9 @@ local function Widget()
     end
     function w:SetFormattedText(format, ...)
         assert(self.fontPath, "FontString:SetFormattedText(): Font not set")
-        self.text, self.formatted = format:format(...), (self.formatted or 0) + 1
+        self.format, self.argument = format, ...
+        self.text = self.argument == secret and secret or format:format(...)
+        self.formatted = (self.formatted or 0) + 1
     end
     function w:SetCooldown(start, duration) self.preview = { start, duration } end
     function w:SetCooldownFromDurationObject(value) self.duration = value; self.preview = nil end
@@ -62,7 +66,10 @@ end
 -- The deprecated global exists only while loadDeprecationFallbacks is on;
 -- the module must use the namespaced API.
 IsEncounterInProgress = nil
-C_InstanceEncounter = { IsEncounterInProgress = function() return encounter end }
+C_InstanceEncounter = {
+    IsEncounterInProgress = function() return encounter end,
+    IsEncounterLimitingResurrections = function() return limitingResurrections end,
+}
 C_ChallengeMode = { IsChallengeModeActive = function() return challenge end }
 C_Spell = {
     GetSpellTexture = function(id) assert(id == 20484); return 123 end,
@@ -88,7 +95,6 @@ local function Drain()
     for _, callback in ipairs(pending) do callback() end
 end
 
-local secret = {}
 local S = { editMode = false }
 S.Text = function(value) return value end
 S.Public = function(value) return value ~= secret end
@@ -190,16 +196,39 @@ assert(M.host.width == 200 and M.host.height == 60 and M.host.scale == 1.25
     "battle resurrection popup size did not reach its frame safely")
 assert(M.host.point[1] == "CENTER" and M.host.point[4] == 10 and M.host.point[5] == 120)
 
+M.config.visibility = 2
+M:Refresh()
+assert(M.host.shown and M.count.text == "--" and M.maximum.text == "" and not M.cooldown.duration,
+    "always-visible world state did not show the inactive placeholder")
+instanceType, encounter = "party", true
+Event("ENCOUNTER_START")
+assert(M.host.shown and M.count.text == "--" and not callbacks.SPELL_UPDATE_CHARGES and chargeReads == 0,
+    "an ordinary dungeon encounter used a personal cooldown as the shared pool")
+instanceType, limitingResurrections = "scenario", secret
+Event("ENCOUNTER_STATE_CHANGED")
+assert(M.count.text == "--" and not callbacks.SPELL_UPDATE_CHARGES and chargeReads == 0,
+    "uncertain scenario resurrection rules were treated as a shared pool")
+limitingResurrections = true
+charges = { currentCharges = 1, maxCharges = 3, isActive = true, duration = {} }
+Event("ENCOUNTER_STATE_CHANGED")
+assert(M.host.shown and M.count.text == "1" and M.cooldown.duration == charges.duration and callbacks.SPELL_UPDATE_CHARGES,
+    "a native limited-rez encounter outside raid or Mythic+ did not use its shared charges")
+limitingResurrections, encounter = false, false
+Event("ENCOUNTER_STATE_CHANGED")
+assert(M.host.shown and M.count.text == "--" and not M.cooldown.duration and not callbacks.SPELL_UPDATE_CHARGES,
+    "scenario encounter end left shared charges running")
+M.config.visibility = 1
+
 instanceType, challenge = "party", true
 charges = { currentCharges = 2, maxCharges = 3, isActive = true,
-    display = "2", duration = {} }
+    display = "", duration = {} }
 Event("CHALLENGE_MODE_START")
 assert(M.host.shown and M.count.text == "2" and M.maximum.text == "/3"
     and M.cooldown.duration == charges.duration and callbacks.SPELL_UPDATE_CHARGES,
     "active Mythic+ charges or native countdown did not appear")
 local readBefore, instanceBefore = chargeReads, instanceReads
 charges = { currentCharges = 1, maxCharges = 3, isActive = true,
-    display = "1", duration = {} }
+    display = "", duration = {} }
 local formatted = M.maximum.formatted or 0
 Event("SPELL_UPDATE_CHARGES")
 assert(chargeReads == readBefore + 1 and M.count.text == "1" and M.cooldown.duration == charges.duration,
@@ -208,13 +237,13 @@ assert(chargeReads == readBefore + 1 and M.count.text == "1" and M.cooldown.dura
 assert(M.maximum.formatted == formatted + 1 and M.maximum.text == "/3",
     "the pool size was built as a Lua string on a charge event")
 
--- Current charge and time are allowed to be secret in combat. The display
--- string and duration object must flow directly to native UI setters.
+-- Current charge and time can be secret in combat. The numeric count and
+-- duration object must flow directly to native UI setters.
 charges = { currentCharges = secret, cooldownStartTime = secret,
     cooldownDuration = secret, maxCharges = 3, isActive = true,
-    display = secret, duration = secret }
+    display = "", duration = secret }
 Event("SPELL_UPDATE_CHARGES")
-assert(M.host.shown and M.count.text == secret and M.cooldown.duration == secret,
+assert(M.host.shown and M.count.text == secret and M.count.format == "%d" and M.cooldown.duration == secret,
     "secret charge data was compared, formatted or discarded")
 
 charges = { currentCharges = 3, maxCharges = 3, isActive = false,
@@ -271,7 +300,7 @@ M.active = false
 Drain()
 assert(not M.host.shown and not callbacks.SPELL_UPDATE_CHARGES and chargeReads == readBefore,
     "disabled tracker retained events or ran a deferred read")
-assert(displayReads > 0 and durationReads > 0)
+assert(displayReads == 0 and durationReads > 0, "shared count depended on the action-bar display string")
 
 
 -- Compact HUD mode uses the shared pool, not personal cooldowns or an aura.
@@ -311,6 +340,51 @@ M.config.fontSize = 24
 M:Refresh()
 assert(M.host.width >= 144 and M.host.height >= 26 and M.time.point[4] > 52
     and M.separator.point[4] > 28, 'large font overlaps the compact charge and countdown')
+
+-- Labeled compact mode uses one native recharge binding and flows after the
+-- actual count width, including an opaque count sent to a native text sink.
+M.config.fontSize, M.config.textFormat, M.config.point = 11, 2, 7
+M.config.x, M.config.y = 2, 273
+charges.display, charges.currentCharges, charges.isActive = '', 10, true
+M:Refresh()
+assert(M.count.text == '[CR: 10' and M.separator.text == '||' and M.separator.shown
+    and binding.enabled and M.time.shown and binding.formatter.rows[1].format == '%d:%02d]',
+    'labeled compact mode does not display count, divider and recharge')
+AssertPoint(M.host, 'BOTTOMLEFT', UIParent, 'BOTTOMLEFT', 2, 273)
+AssertPoint(M.separator, 'LEFT', M.count, 'RIGHT', 3, 0)
+AssertPoint(M.time, 'LEFT', M.separator, 'RIGHT', 3, 0)
+charges.currentCharges = secret
+Event('SPELL_UPDATE_CHARGES')
+assert(M.count.format == '[CR: %d' and M.count.argument == secret, 'label used a secret charge outside native text')
+charges.currentCharges, charges.isActive = 3, false
+Event('SPELL_UPDATE_CHARGES')
+assert(M.count.text == '[CR: 3]' and not M.separator.shown and not M.time.shown and not binding.enabled,
+    'full labeled pool left a divider or omitted the closing bracket')
+M.config.visibility = 2
+charges = nil
+Event('SPELL_UPDATE_CHARGES')
+assert(M.count.text == '[CR: --]' and not M.separator.shown and not M.time.shown and not binding.enabled,
+    'missing encounter data kept stale labeled charges or a timer')
+Event('CHALLENGE_MODE_COMPLETED')
+assert(M.host.shown and M.count.text == '[CR: --]' and not callbacks.SPELL_UPDATE_CHARGES,
+    'always-visible compact HUD failed to stay visible without watching personal charges')
+M.config.visibility, challenge = 1, true
+charges = { currentCharges = 3, maxCharges = 3, duration = {} }
+Event('CHALLENGE_MODE_START')
+charges.isActive = true
+M.config.timerShown = false
+M:Refresh()
+assert(M.count.text == '[CR: 3]' and not M.separator.shown and not M.time.shown and not binding.enabled,
+    'charge-only label depends on the recharge widget')
+M.config.timerShown, M.config.countShown = true, false
+M:Refresh()
+assert(not M.count.shown and not M.separator.shown and M.time.shown and binding.enabled
+    and binding.formatter.rows[1].format == '%02d:%02d', 'recharge-only format retained count punctuation')
+AssertPoint(M.time, 'LEFT', M.host, 'LEFT', 0, 0)
+M.config.countShown, M.config.textFormat = true, 1
+M:Refresh()
+assert(M.count.text == '3' and M.separator.text == '+' and M.separator.shown
+    and binding.formatter.rows[1].format == '%02d:%02d', 'legacy compact text did not recover after switching')
 M.config.textOnly = false
 M:Refresh()
 assert(M.host.width >= 146 and M.host.height >= 44 and M.config.width == 70 and M.config.height == 16,
@@ -327,7 +401,7 @@ cold.context = dofile(root .. "/tools/tests/suite_test_support.lua").ModuleTimer
     Event = function() end, RemoveEvent = function() end,
 })
 instanceType, challenge = "party", true
-charges = { maxCharges = 3, isActive = true, display = "1", duration = {} }
+charges = { currentCharges = 1, maxCharges = 3, isActive = true, display = "1", duration = {} }
 assert(cold.host == nil and cold.time == nil and cold.separator == nil)
 M.Enable(cold)
 assert(cold.host.shown and cold.separator.text == "+" and cold.durationBinding.enabled
@@ -371,6 +445,12 @@ previewConfig.font, previewConfig.fontSize = "PreviewWarm.ttf", 20
 assert(S.DrawBattleResPreview(parent, previewConfig, nil, viewport) == previewHost)
 AssertFont(preview, "PreviewWarm.ttf", 20)
 assert(not preview.durationBinding and #nativeBindings == bindingCount, "preview allocated a live duration binding")
+previewConfig.textFormat = 2
+S.DrawBattleResPreview(parent, previewConfig, nil, viewport)
+assert(preview.count.text == "[CR: 2" and preview.separator.text == "||" and preview.time.text == "2:38]"
+    and not preview.durationBinding and #nativeBindings == bindingCount,
+    "labeled preview does not mirror the live presentation")
+previewConfig.textFormat = 1
 previewConfig.countPoint, previewConfig.timerPoint = 6, 10 -- Center, Bottom right
 previewConfig.timerX, previewConfig.timerY = -4, 3
 S.DrawBattleResPreview(parent, previewConfig, nil, viewport)
@@ -384,7 +464,7 @@ AssertPoint(preview.separator, "RIGHT", preview.time, "LEFT", -2, 0)
 -- Independent geometry and saved media must reach the live display without
 -- touching charge reads except when the corresponding element is enabled.
 instanceType, challenge = "party", true
-charges = { maxCharges = 3, display = "1", isActive = true, duration = {} }
+charges = { currentCharges = 1, maxCharges = 3, display = "1", isActive = true, duration = {} }
 local previousConfig = M.config
 local c = {}
 for key, value in pairs(previousConfig) do c[key] = value end
@@ -438,6 +518,17 @@ c.timerSwipe = nil
 M:Refresh()
 assert(M.cooldown.drawSwipe == true and M.cooldown.drawBling == true and M.cooldown.swipeTexture == "swipe",
     "turning the swipe back on did not restore it")
+NS.Safety = { IsForbidden = function(frame) return frame.forbidden end }
+ChatFrame1Tab = Widget()
+c.anchorTarget, c.scale = 2, 150
+M:Refresh()
+AssertPoint(M.host, "BOTTOMLEFT", ChatFrame1Tab, "TOPLEFT", 0, 2 * 100 / 150)
+assert(not installed.mover.isEnabled(), "the docked display can be dragged off the General tab")
+ChatFrame1Tab.forbidden = true
+M:Refresh()
+assert(M.host.point[2] == UIParent and installed.mover.isEnabled(), "an unavailable tab lost the screen fallback")
+ChatFrame1Tab = nil
+c.anchorTarget, c.scale = 1, 100
 c.backgroundShown, c.borderOpacity, c.titleShown, c.iconShown, c.maximumShown, c.timerShown = false, 0, false, false, false, false
 local beforeCharges = chargeReads
 M:Refresh()
