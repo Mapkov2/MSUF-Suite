@@ -58,7 +58,7 @@ function Module:Refresh()
     Cancel(self)
     local c = self.config
     self.scopes = { actionBars = c.actionBars or nil, cooldownManager = c.cooldownManager or nil,
-        dataTexts = c.dataTexts or nil, procAlerts = c.procAlerts or nil, playerBuffGroups = c.playerBuffGroups or nil }
+        dataTexts = c.dataTexts or nil, procAlerts = c.procAlerts or nil }
     if self.factor == nil then self.factor = 1 end
     if self.factor == 1 then Hub.Changed(self.scopes, 1, c.hover) end
     RefreshVisibility(self)

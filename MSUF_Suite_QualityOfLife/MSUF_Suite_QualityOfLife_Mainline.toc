@@ -138,7 +138,6 @@ LootVendorRules.lua
 CombatLog.lua
 PlayerAuras.lua
 PlayerAuraSkins.lua
-PlayerBuffGroups.lua
 NativeExperienceBar.lua
 ExperienceTrack.lua
 ExperienceBarText.lua

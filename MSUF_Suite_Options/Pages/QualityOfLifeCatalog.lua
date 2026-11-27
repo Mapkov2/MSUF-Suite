@@ -52,9 +52,6 @@ local GROUPS = {
         sections = { "delve_sole_power" } },
     { id = "cheapestItem", title = "Delete cheapest item", switch = "enabled", sections = { "cheapestItem" },
         aliases = { "delete junk", "full bags", "cheapest item", "dci", "müll löschen", "taschen voll", "billigstes item" } },
-    { id = "playerBuffGroups", title = "Player buff groups", switch = "enabled",
-        sections = { "buff_group_layout", "buff_group_class", "buff_group_consumable", "buff_group_world",
-            "buff_group_custom", "buff_group_custom2", "buff_group_custom3", "buff_group_other" } },
     { id = "playerAuras", title = "Player aura layout", switch = "enabled", sections = { "player_auras" },
         aliases = { "player buffs", "minimap auras" } },
     { id = "playerAuraSkins", title = "Player aura skins", switch = "enabled", sections = { "player_aura_skins" }, aliases = { "buff skins" } },
@@ -188,7 +185,7 @@ local function Definitions()
 return {
     { id = "character", title = "Character", subgroups = {
         Subgroup("character", "Character",
-            "chatProfileLinks xpBar loadoutReminder characterExtras collectionNewMarkers autoUprank playerAuras playerAuraSkins playerBuffGroups"),
+            "chatProfileLinks xpBar loadoutReminder characterExtras collectionNewMarkers autoUprank playerAuras playerAuraSkins"),
         Subgroup("gear", "Gear", "characterUpgradeWindow socketGemSuggestions durabilityAlert"),
     } },
     { id = "lootMerchants", title = "Loot & Merchants", subgroups = {

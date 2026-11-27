@@ -610,6 +610,57 @@ questRow.OnClick(questRow, "LeftButton")
 assert(stoppedQuest == 42 and openedLog == 3,
     "the configured quest-watch modifier must also untrack")
 modifiedWatchClick = false
+do
+    local oldModifiedClick, oldChat, oldGetLink = IsModifiedClick, ChatFrameUtil, GetQuestLink
+    local oldChatLocked = suite.ChatLocked
+    local activeChat, locked, customModifier = {}, false, false
+    local link, lookups, inserts = "|Hquest:42|h[A New Hope]|h", 0, 0
+    IsModifiedClick = function(binding)
+        return binding == "CHATLINK" and (shiftDown or customModifier) or oldModifiedClick(binding)
+    end
+    ChatFrameUtil = {
+        GetActiveWindow = function() return activeChat end,
+        InsertLink = function(value)
+            assert(value == "|Hquest:42|h[A New Hope]|h")
+            inserts = inserts + 1
+            return true
+        end,
+    }
+    GetQuestLink = function(id)
+        assert(id == 42)
+        lookups = lookups + 1
+        return link
+    end
+    suite.ChatLocked = function() return locked end
+    stoppedQuest, shiftDown = nil, true
+    questRow:Click("LeftButton")
+    assert(lookups == 1 and inserts == 1 and stoppedQuest == nil and openedLog == 3,
+        "Shift-click with chat open must insert the quest link instead of untracking")
+    shiftDown, customModifier = false, true
+    tracker.rows["line:quests:42:1"]:Click("LeftButton")
+    assert(lookups == 2 and inserts == 2 and openedLog == 3,
+        "the configured chat-link modifier on an objective line must bypass the native quest window")
+    questRow:Click("RightButton")
+    assert(lastMenu.title == "A New Hope" and lookups == 2 and inserts == 2,
+        "the chat-link modifier must preserve the right-click menu")
+    customModifier, shiftDown, locked = false, true, true
+    questRow:Click("LeftButton")
+    assert(lookups == 2 and inserts == 2 and stoppedQuest == nil and openedLog == 3,
+        "a blocked chat-link click must not insert, untrack or open the quest")
+    locked, link = false, secret
+    questRow:Click("LeftButton")
+    link = nil
+    questRow:Click("LeftButton")
+    assert(lookups == 4 and inserts == 2 and stoppedQuest == nil and openedLog == 3,
+        "a missing or secret link must not be inserted or fall through to another quest action")
+    activeChat = nil
+    questRow:Click("LeftButton")
+    assert(lookups == 4 and inserts == 2 and stoppedQuest == 42 and openedLog == 3,
+        "Shift-click with chat closed must still untrack without requesting a link")
+    shiftDown = false
+    IsModifiedClick, ChatFrameUtil, GetQuestLink = oldModifiedClick, oldChat, oldGetLink
+    suite.ChatLocked = oldChatLocked
+end
 lastMenu = nil
 questRow.collapse.OnClick(questRow.collapse, "RightButton")
 assert(lastMenu and lastMenu.title == "A New Hope"

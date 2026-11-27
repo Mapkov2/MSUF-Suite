@@ -16,10 +16,9 @@ B.Section("hudVisibility", "hud_visibility", "HUD visibility", {
     Number("opacity", "Dimmed opacity (percent)", 25, 5, 100, 5),
     Number("delay", "Delay before dimming (seconds)", 2, 0, 20),
     Bool("actionBars", "Include Suite action bars", true),
-    Bool("cooldownManager", "Include the Cooldown Manager", true),
+    Bool("cooldownManager", "Include the Cooldown Manager", false),
     Bool("dataTexts", "Include data bars", true),
     Bool("procAlerts", "Include proc alerts", false),
-    Bool("playerBuffGroups", "Include player buff groups", false),
 })
 
 B.Module("procAlerts", {

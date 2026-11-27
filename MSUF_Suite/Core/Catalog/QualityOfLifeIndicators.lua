@@ -54,53 +54,6 @@ B.Section("xpBar", "xp_bar", "Experience bar", {
 B.Add("xpBar", Bool("foreverOptimizer", "Forever XP Optimizer", false), "xp_bar", "Experience bar",
     { hidden = not NS.Client.isForever })
 
-
--- The group strip owns its own client-filtered helpful auras. Blizzard's
--- existing buff bar retains its own visibility and layout settings.
-B.Module("playerBuffGroups", {
-    title = "Player buff groups", description = "Organize your active buffs in a separate strip.",
-    optIn = true, defaultEnabled = false, page = "suite_qualityOfLife", editElement = "groups",
-    available = function()
-        if NS.Client.modernEquipment and AuraContainerSortMethod and AuraContainerSortMethod.ExpirationOnly then return true end
-        return false, "Native aura groups are unavailable on this client"
-    end,
-})
-B.Section("playerBuffGroups", "buff_group_layout", "Buff group layout", {
-    Number("iconSize", "Buff icon size", 28, 16, 60),
-    Number("perRow", "Icons per row", 12, 4, 24),
-    Number("scale", "Scale (percent)", 100, 60, 180, 5),
-    Number("x", "Horizontal position", -20, -4000, 4000),
-    Number("y", "Vertical position", -212, -3000, 3000),
-    String("hiddenSpells", "Buffs to leave off the strip", "", 720),
-})
-do
-    local definitions = {
-        { "class", "Class buffs", true },
-        { "consumable", "Consumables", true },
-        { "world", "World and resting buffs", true },
-        { "custom", "Custom buff group 1", true },
-        { "custom2", "Custom buff group 2", true },
-        { "custom3", "Custom buff group 3", true },
-        { "other", "Other buffs", false },
-    }
-    local rules = NS.SuiteCatalog.playerBuffGroups.rules
-    for index, group in ipairs(definitions) do
-        local key, title = group[1], group[2]
-        local controls = {
-            Bool(key .. "Enabled", "Show this buff group", true),
-            Bool(key .. "Compact", "Show only the first icon of this group", false),
-            Number(key .. "Priority", "Group position", index, 1, #definitions),
-        }
-        if group[3] then
-            controls[#controls + 1] = String(key .. "Spells", "Add spells to this group", "", 720)
-        end
-        B.Section("playerBuffGroups", "buff_group_" .. key, title, controls)
-        if group[3] then rules[key .. "Spells"].spells = true end
-    end
-    rules.hiddenSpells.spells = true
-    rules.x.hidden, rules.y.hidden = true, true
-end
-
 -- The native player aura buttons keep Blizzard ownership and interactions.
 B.Module("playerAuras", {
     title = "Player aura layout", description = "Style native player buffs and debuffs beside the minimap.",
