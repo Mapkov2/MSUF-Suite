@@ -18,7 +18,7 @@ C_Timer = { After = function(_, job)
     pending = job
 end }
 local function Flush()
-    local job = assert(pending, "dual comparison did not schedule its settlement")
+    local job = assert(pending, "comparison did not schedule its settlement")
     pending = nil
     job()
 end
@@ -30,8 +30,17 @@ local function Frame(x, y, w, h, scale, cap)
     function frame:GetNumPoints() return #self.points end
     function frame:GetPoint(index) return "TOP", self.points[index] end
     function frame:HookScript(script, callback)
-        assert(script == "OnSizeChanged" and not self.resized)
-        self.resized = callback
+        if script == "OnShow" then
+            assert(not self.onShow)
+            self.onShow = callback
+        else
+            assert(script == "OnSizeChanged" and not self.resized)
+            self.resized = callback
+        end
+    end
+    function frame:Show()
+        self.shown = true
+        if self.onShow then self.onShow(self) end
     end
     function frame:IsForbidden() return self.forbidden end
     function frame:IsProtected() return self.protected == true, self.protected == true end
@@ -99,6 +108,87 @@ local function NativeRight()
     first.points, second.points = { item, second }, { item, item }
 end
 
+local function NativeSingleRight()
+    first.x = math.min(Right(item), Right(UIParent) - first.w)
+    first.y = item.y + item.h - first.h
+    first.points = { item, item }
+    second.shown = false
+end
+
+local function AssertSingleRepaired(message)
+    assert(first.writes == 1 and second.writes == 0 and item.writes == 0, "single comparison placement failed: " .. message)
+    assert(Inside(first) and not Intersects(first, item), "single comparison clipped or overlapped: " .. message)
+end
+
+Setup(1632, 906, 1310, 60, 325, 550)
+NativeSingleRight()
+assert(Intersects(first, item), "fixture did not reproduce the Guild News overlap")
+Update()
+AssertSingleRepaired("one equipped item at the right edge")
+assert(Right(first) < item.x and not pending, "single comparison missed the available space on the left")
+Update()
+assert(first.writes == 1, "a settled single comparison was reanchored")
+
+Setup(1632, 906, 1310, 60, 325, 550)
+for _ = 1, 3 do
+    NativeSingleRight()
+    item.shown, first.writes = false, 0
+    Layout.Update(manager, item, first, second, Header, true, nil)
+    assert(first.writes == 0, "anchored before the main item tooltip was shown")
+    item:Show()
+    AssertSingleRepaired("Guild News rebuilds and displays the item after the native comparison callback")
+    Flush()
+    assert(first.writes == 1, "settlement moved the comparison again after OnShow")
+end
+
+NativeSingleRight()
+item.shown, first.writes = false, 0
+Update()
+second.shown = true
+item:Show()
+Flush()
+assert(first.writes == 0 and second.writes == 0, "stale single comparison moved after the second one appeared")
+
+Setup(1632, 906, 1310, 60, 325, 550)
+NativeSingleRight()
+item.shown = false
+Update()
+item.missingBounds = true
+item:Show()
+assert(first.writes == 0, "OnShow used unsettled geometry")
+item.missingBounds = false
+Flush()
+AssertSingleRepaired("the initial OnShow had no geometry")
+
+Setup(680, 1050, 35, 660, 585, 290)
+NativeSingleRight()
+Update()
+AssertSingleRepaired("a narrow viewport required a single comparison below")
+assert(Top(first) < item.y, "single comparison overlapped the item instead of moving below")
+
+Setup(1600, 900, 200, 360, 450, 280)
+NativeSingleRight()
+Update()
+assert(first.writes == 0 and not pending, "a valid single comparison was reanchored")
+item.w = 1250
+NativeSingleRight()
+item.resized(item)
+Flush()
+AssertSingleRepaired("the item gained width after Blizzard positioned its comparison")
+
+Setup(1632, 906, 1310, 60, 325, 550)
+NativeSingleRight()
+first.points = { UIParent }
+Update()
+assert(first.writes == 0 and not pending, "single comparison replaced an external anchor")
+NativeSingleRight()
+item.shown = false
+Update()
+item.shown = true
+first.shown = false
+Flush()
+assert(first.writes == 0, "closing the single comparison did not cancel its pending reflow")
+
 Setup(1280, 900, 146, 426, 790, 300)
 NativeRight()
 assert(first.x == second.x and Intersects(first, second), "fixture did not reproduce the same-edge collision")
@@ -160,10 +250,6 @@ AssertRepaired("geometry became available on the next frame")
 
 Setup(1280, 900, 146, 426, 790, 300)
 NativeRight()
-second.shown = false
-Update()
-assert(not pending and first.writes == 0, "a single comparison tried to reflow")
-second.shown = true
 Delay()
 second.shown = false
 Flush()
@@ -214,4 +300,4 @@ Update()
 Flush()
 assert(first.writes == 0 and second.writes == 0 and not pending, "used missing geometry or retried without an event")
 
-print("item comparison reflow: native positions, edge collisions, mixed scales, late sizing and safety passed")
+print("item comparison reflow: single and dual edge collisions, native positions, visibility and safety passed")
