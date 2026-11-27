@@ -245,6 +245,7 @@ local positioned = setmetatable({}, { __mode = "k" })
 function C.PositionMessages(self, frame)
     local previous = positioned[frame]
     local x, y = self.config.messageTextX or 0, self.config.messageTextY or 0
+    y = y + C.MessageInputOffset(self, frame)
     if not previous and x == 0 and y == 0 then return end
     if not self.preview and NS.InCombat() then
         S.Queue("chat")

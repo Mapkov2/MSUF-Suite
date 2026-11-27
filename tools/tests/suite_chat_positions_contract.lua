@@ -205,6 +205,134 @@ Check(queued > beforeQueue and input:GetWidth() == 708, "input resize wrote at c
 frame.displayCallback(frame)
 At(line, "BOTTOMLEFT", frame, "BOTTOMLEFT", 0, 0, "message display moved at combat start")
 S.Queue, F.Suite.InCombat, F.Suite.IsCombatLocked = originalQueue, originalCombat, originalLockdown
+local messageX, messageY, completeMessages = c.messageTextX, c.messageTextY, c.completeMessages
+local frameHeight = frame:GetHeight()
+frame:SetHeight(100)
+c.messageTextX, c.messageTextY, c.completeMessages = 0, 0, false
+c.inputPushMessages = true
+c.inputAnimationDuration = .2
+input.chatFrame = frame
+local draft, inputTop, inputScale = "", 30, 1
+input:SetHeight(30)
+function input:GetText() return draft end
+function input:GetTop() return inputTop end
+function input:GetEffectiveScale() return inputScale end
+function frame:GetEffectiveScale() return 1 end
+frame.visibleLines = { line }
+local pushDriver
+local createSuiteFrame = S.CreateFrame
+S.CreateFrame = function(...)
+    pushDriver = createSuiteFrame(...)
+    return pushDriver
+end
+C.ApplyCompleteMessages(M, frame)
+C.InputAnimationEvent("focus", input)
+S.CreateFrame = createSuiteFrame
+local function PushStep(seconds)
+    local step = pushDriver and pushDriver:GetScript("OnUpdate")
+    assert(step, "native input event did not start message shift")
+    step(pushDriver, seconds)
+end
+PushStep(.1)
+At(line, "BOTTOMLEFT", frame, "BOTTOMLEFT", 0, 16, "opening interpolates")
+PushStep(.1)
+At(line, "BOTTOMLEFT", frame, "BOTTOMLEFT", 0, 32, "open clears the actual edit box")
+Check(not pushDriver:GetScript("OnUpdate"), "focused input kept ticking after settling")
+frame.visibleLines = { other }
+other:ClearAllPoints() other:SetPoint("BOTTOMLEFT", frame, "BOTTOMLEFT", 0, 0)
+frame.displayCallback(frame)
+At(line, "BOTTOMLEFT", frame, "BOTTOMLEFT", 0, 0, "recycled line released during input")
+At(other, "BOTTOMLEFT", frame, "BOTTOMLEFT", 0, 32, "native refresh preserves open offset")
+draft = "draft to keep"
+C.InputAnimationEvent("release", input)
+Check(not pushDriver:GetScript("OnUpdate"), "visible draft ended the message shift")
+local secret, public = {}, S.Public
+draft = secret
+S.Public = function(value) return value ~= secret and public(value) end
+C.InputAnimationEvent("release", input)
+S.Public = public
+Check(not pushDriver:GetScript("OnUpdate"), "unreadable input collapsed before native hide")
+C.InputAnimationEvent("hide", input)
+PushStep(.1)
+At(other, "BOTTOMLEFT", frame, "BOTTOMLEFT", 0, 16, "closing interpolates")
+C.InputAnimationEvent("focus", input)
+PushStep(.1)
+At(other, "BOTTOMLEFT", frame, "BOTTOMLEFT", 0, 24, "quick reopen continues from the current offset")
+draft = ""
+C.InputAnimationEvent("release", input)
+PushStep(.2)
+At(other, "BOTTOMLEFT", frame, "BOTTOMLEFT", 0, 0, "release restores native anchor")
+Check(not pushDriver:GetScript("OnUpdate"), "closed input kept ticking")
+
+input:SetHeight(32)
+inputTop = -5
+C.InputAnimationEvent("focus", input)
+PushStep(.2)
+At(other, "BOTTOMLEFT", frame, "BOTTOMLEFT", 0, 34, "bottom input outside the transcript still slides messages")
+C.InputAnimationEvent("hide", input)
+PushStep(.2)
+At(other, "BOTTOMLEFT", frame, "BOTTOMLEFT", 0, 0, "non-overlapping input restores the transcript on close")
+
+inputTop, inputScale = -4, 1.25
+C.InputAnimationEvent("focus", input)
+PushStep(.2)
+At(other, "BOTTOMLEFT", frame, "BOTTOMLEFT", 0, 42, "minimum travel uses the input height in chat coordinates")
+C.InputAnimationEvent("hide", input)
+PushStep(.2)
+
+inputTop, inputScale, c.messageTextY = 37, 1, -8
+C.InputAnimationEvent("focus", input)
+PushStep(.2)
+At(other, "BOTTOMLEFT", frame, "BOTTOMLEFT", 0, 39, "negative message offset still clears the top of the input")
+C.InputAnimationEvent("hide", input)
+PushStep(.2)
+At(other, "BOTTOMLEFT", frame, "BOTTOMLEFT", 0, -8, "closing retains the configured message offset")
+
+inputTop, c.messageTextY = 100, 0
+C.InputAnimationEvent("focus", input)
+PushStep(.2)
+At(other, "BOTTOMLEFT", frame, "BOTTOMLEFT", 0, 50, "movement stays bounded in small chat windows")
+C.InputAnimationEvent("hide", input)
+PushStep(.2)
+
+inputTop = 30
+input:SetHeight(30)
+local dockedLine = Region("ReviewDockedVisibleLine")
+dockedLine:SetPoint("BOTTOMLEFT", second, "BOTTOMLEFT", 0, 0)
+second.visibleLines = { dockedLine }
+second:SetHeight(100)
+second.GetEffectiveScale = frame.GetEffectiveScale
+second.GetBottom = frame.GetBottom
+second.MarkDisplayDirty = frame.MarkDisplayDirty
+local oldSelected = dock.selected
+dock.selected, frame.isDocked = second, true
+C.InputAnimationEvent("focus", input)
+PushStep(.2)
+At(dockedLine, "BOTTOMLEFT", second, "BOTTOMLEFT", 0, 32, "General input clears the displayed dock tab")
+At(other, "BOTTOMLEFT", frame, "BOTTOMLEFT", 0, 0, "hidden dock tab keeps its original anchor")
+dock.selected, frame.isDocked = oldSelected, nil
+C.InputAnimationEvent("hide", input)
+PushStep(.2)
+At(dockedLine, "BOTTOMLEFT", second, "BOTTOMLEFT", 0, 0, "changed tab selection still restores the shifted tab")
+C.InputAnimationEvent("focus", input)
+local originalDirty = frame.MarkDisplayDirty
+frame.MarkDisplayDirty = function() error("input animation requested a native refresh in combat") end
+F.Suite.InCombat = function() return true end
+S.Queue = function(id) if id == "chat" then queued = queued + 1 end end
+local previousQueue = queued
+PushStep(.1)
+At(other, "BOTTOMLEFT", frame, "BOTTOMLEFT", 0, 0, "input animation leaves native combat anchors alone")
+Check(queued > previousQueue and not pushDriver:GetScript("OnUpdate"), "combat defers placement without a ticker")
+S.Queue, F.Suite.InCombat, frame.MarkDisplayDirty = originalQueue, originalCombat, originalDirty
+frame.displayCallback(frame)
+At(other, "BOTTOMLEFT", frame, "BOTTOMLEFT", 0, 32, "post-combat display applies the focused offset")
+C.InputAnimationEvent("focus", input)
+PushStep(.2)
+c.inputPushMessages = false
+C.ApplyCompleteMessages(M, frame)
+At(other, "BOTTOMLEFT", frame, "BOTTOMLEFT", 0, 0, "toggle off restores immediately")
+c.messageTextX, c.messageTextY, c.completeMessages = messageX, messageY, completeMessages
+frame:SetHeight(frameHeight)
 -- Native layout rewrites happen after ApplyAll (login/layout/UI changes).
 -- Exercise the actual reversible context, and defer until the complete
 -- multi-anchor burst has finished instead of rewriting inside SetPoint.

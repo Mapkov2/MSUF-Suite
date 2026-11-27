@@ -7,7 +7,7 @@ local watched = setmetatable({}, { __mode = "k" })
 -- Native layout deliberately allocates one extra, partially clipped message.
 function C.PaintMessageLines(self, frame)
     C.PositionMessages(self, frame)
-    if not self.config.completeMessages then return end
+    if not self.config.completeMessages or C.MessageInputMoving(frame) then return end
     local top, bottom = frame:GetTop(), frame:GetBottom()
     if not (S.Finite(top) and S.Finite(bottom)) then return end
     for _, line in ipairs(frame.visibleLines) do
@@ -26,7 +26,8 @@ end
 
 function C.ApplyCompleteMessages(self, frame)
     local c = self.config
-    if not watched[frame] and (c.completeMessages or (c.messageTextX or 0) ~= 0 or (c.messageTextY or 0) ~= 0) then
+    if not c.inputPushMessages or c.inputTop then C.ResetInputMessagePush(frame) end
+    if not watched[frame] and (c.completeMessages or c.inputPushMessages or (c.messageTextX or 0) ~= 0 or (c.messageTextY or 0) ~= 0) then
         watched[frame] = true
         frame:AddOnDisplayRefreshedCallback(Refreshed)
     end
@@ -34,6 +35,7 @@ function C.ApplyCompleteMessages(self, frame)
 end
 
 function C.ReleaseCompleteMessages(frame)
+    C.ResetInputMessagePush(frame)
     C.ReleaseMessagePosition(C.M, frame)
     if watched[frame] then frame:MarkDisplayDirty() end
 end

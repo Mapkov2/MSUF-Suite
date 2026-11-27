@@ -279,6 +279,30 @@ local function ApplyTabWidth(self, visual, tab)
     end
 end
 
+-- ChatTabTemplate centers ordinary text at -5. Temporary tabs hang their
+-- title and conversation icon off the fixed-height left art instead.
+local function ApplyWhisperBaseline(self, visual, tab)
+    local label = visual.tabLabel
+    if not (self.config.tabPanel and visual.frame.isDocked and tab.conversationIcon) then
+        if visual.whisperBaseline then self.context:RestorePoints(label) end
+        visual.whisperBaseline = nil
+        return
+    end
+    if not NS.Safety.CanAnchor(label) then return end
+    local points = label:GetNumPoints()
+    if not Finite(points) or points ~= 1 then return end
+    local point, relative, edge, x, y = label:GetPoint(1)
+    if not (S.Public(point) and S.Public(relative) and S.Public(edge) and Finite(x) and Finite(y)
+        and point == "LEFT" and relative and relative == tab.Left and edge == "RIGHT") then return end
+    local artHeight, tabHeight = relative:GetHeight(), tab:GetHeight()
+    if not (Finite(artHeight) and Finite(tabHeight)) then return end
+    local baseline = (tabHeight - artHeight) * .5 - 5
+    if y ~= baseline then
+        self.context:Anchor(label, point, relative, edge, x, baseline)
+        visual.whisperBaseline = true
+    end
+end
+
 function C.ApplyTabGeometry(self, visual, tab)
     local c, context = self.config, self.context
     if visual.tabFill then
@@ -315,6 +339,7 @@ local function ApplyTabVisual(self, visual, tab, selected, chosenFont)
     end
     ApplyTabFont(self, visual.tabLabel, chosenFont)
     C.ApplyTabGeometry(self, visual, tab)
+    ApplyWhisperBaseline(self, visual, tab)
     M.tabs[tab], visual.tab = visual, tab
     local line = visual.tabLine
     C.PlaceTabMarker(line, tab, c)
@@ -600,8 +625,14 @@ function C.ReleaseWindow(self, visual)
     local tab = _G[frame:GetName() .. "Tab"]
     ReleaseNativeChrome(self, frame, tab)
     if visual.tabLabel then
+        if visual.whisperBaseline then self.context:RestorePoints(visual.tabLabel) end
+        visual.whisperBaseline = nil
         self.context:RestoreTuple(visual.tabLabel, "SetTextColor")
         self.context:RestoreTuple(visual.tabLabel, "SetFont")
+    end
+    if self.alignedDockLead == tab then
+        self.context:RestorePoints(tab)
+        self.alignedDockLead = nil
     end
     M.tabs[tab] = nil
     ReleaseTabAlpha(self.context, tab, visual)
@@ -613,6 +644,51 @@ end
 -- styled tab gets its padded width back (ApplyTabWidth). In combat the dock
 -- waits: with padding or a gap on, the module applies again once combat ends.
 local spacedTabs = setmetatable({}, { __mode = "k" })
+
+local function DynamicDockLead(dock)
+    local docked = dock.DOCKED_CHAT_FRAMES
+    for i = 1, math.min(#docked, 64) do
+        local frame = docked[i]
+        if NS.Safety.IsForbidden(frame) then return end
+        if not frame.isStaticDocked then return _G[frame:GetName() .. "Tab"] end
+    end
+end
+
+-- Preserve the scroll child's horizontal origin. The native first dynamic
+-- tab is center-anchored inside the scroll frame, so shortening the buttons
+-- moves it above the bottom-anchored static row.
+local function AlignDynamicDockLead(dock)
+    local tab = M.config.tabPanel and DynamicDockLead(dock) or nil
+    local previous = M.alignedDockLead
+    if previous and previous ~= tab then
+        M.context:RestorePoints(previous)
+        M.alignedDockLead = nil
+    end
+    local scrollFrame = dock.scrollFrame
+    local child = tab and M.tabs[tab] and scrollFrame and scrollFrame.GetScrollChild and scrollFrame:GetScrollChild()
+    if not child or not NS.Safety.CanAnchor(tab) then return end
+    if spacedTabs[tab] then
+        M.context:RestorePoints(tab)
+        spacedTabs[tab] = nil
+    end
+    local points = tab:GetNumPoints()
+    if not Finite(points) or points ~= 1 then return end
+    local point, relative, edge, x, y = tab:GetPoint(1)
+    if not (S.Public(point) and S.Public(relative) and S.Public(edge) and Finite(x) and Finite(y)
+        and relative == child) then return end
+    local native = point == "LEFT" and edge == "LEFT"
+    if not native and not (previous == tab and point == "BOTTOMLEFT" and edge == "BOTTOMLEFT") then return end
+    local dockBottom, childBottom = dock:GetBottom(), child:GetBottom()
+    local dockScale, childScale, tabScale = dock:GetEffectiveScale(), child:GetEffectiveScale(), tab:GetEffectiveScale()
+    if not (Finite(dockBottom) and Finite(childBottom) and Finite(dockScale) and dockScale > 0
+        and Finite(childScale) and childScale > 0 and Finite(tabScale) and tabScale > 0) then return end
+    local offset = (dockBottom * dockScale - childBottom * childScale) / tabScale
+    if native or math.abs(y - offset) > .01 then
+        M.context:Anchor(tab, "BOTTOMLEFT", child, "BOTTOMLEFT", x, offset)
+        M.alignedDockLead = tab
+    end
+end
+
 function C.DockGeometry()
     if not M.active or M.toolbarLayingOut then return end
     local padded = M.config.tabPadding and M.config.tabPadding > 0
@@ -622,6 +698,7 @@ function C.DockGeometry()
     end
     -- A width change asks Blizzard to lay out tabs again before we space them.
     C.LayoutToolbarDock()
+    if M.config.tabPanel or M.alignedDockLead then AlignDynamicDockLead(GENERAL_CHAT_DOCK) end
     if padded then
         for tab, visual in pairs(M.tabs) do ApplyTabWidth(M, visual, tab) end
     end

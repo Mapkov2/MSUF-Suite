@@ -188,7 +188,7 @@ B.Section(id, "tabs", "Tabs and accent", {
     B.Color("tabActiveBorder", "Active tab border", initial.accentColor),
     B.Color("tabInactiveBorder", "Inactive tab border", initial.borderColor),
     B.Bool("hideTabArt", "Hide Blizzard tab backgrounds", false),
-    B.Bool("tabPanel", "Dark tab strip", initial.tabPanel),
+    B.Bool("tabPanel", "Tabs inside chat frame", initial.tabPanel),
     B.Bool("headerClock", "Show clock in chat header", false),
     B.Bool("headerClock24Hour", "Use 24-hour chat clock", false),
     B.Bool("headerClockLocalTime", "Use local time for chat clock", false),
@@ -215,6 +215,8 @@ B.Section(id, "sidebar", "Button sidebar", {
 })
 B.Section(id, "input", "Input line", {
     B.Bool("animateInput", "Animate the chat input", false),
+    B.Tooltip(B.Bool("inputPushMessages", "Move messages above the input", false),
+        "Slides chat messages up while the bottom input is open and back down when it closes."),
     B.Number("inputAnimationDuration", "Input animation duration (seconds)", 0.18, 0.05, 0.5, 0.01),
     B.Number("inputX", "Horizontal position", 0, -400, 400),
     B.Number("inputY", "Vertical position", 0, -300, 300),
@@ -421,7 +423,6 @@ for _, key in ipairs({ "sidebarSide", "sidebarColor", "sidebarAlpha", "sidebarGa
     "sidebarWidth", "sidebarClassColor" }) do
     textRules[key].enableKey = "sidebarPanel"
 end
-textRules.inputAnimationDuration.enableKey = "animateInput"
 textRules.toolbarLocked.enableKey = "headerToolbar"
 textRules.inputColor.enableKey = "inputPanel"
 textRules.inputAlpha.enableKey = "inputPanel"

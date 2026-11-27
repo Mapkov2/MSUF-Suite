@@ -118,6 +118,10 @@ local function Messages(parts, config)
     C.PaintMessageLines(parts.previewOwner, parts.sample)
 end
 
+function S.ChatPaintPreviewMessages(parts)
+    Messages(parts, parts.previewOwner.config)
+end
+
 local function PreviewOwner()
     return { preview = true, context = {
         TextColor = function(_, label, ...) label:SetTextColor(...) end,
@@ -151,10 +155,13 @@ function S.ChatPaintMenuPreview(parts, c)
     Tabs(parts, c, top)
     Sidebar(parts, c)
     Input(parts)
-    if c.animateInput ~= parts.inputAnimationEnabled
-        or c.animateInput and c.inputAnimationDuration ~= parts.inputAnimationDuration then
-        if c.animateInput or parts.inputAnimationEnabled then S.ChatPreviewInputAnimation(parts.input, c) end
+    local pushMessages = c.inputPushMessages == true and not c.inputTop
+    if c.animateInput ~= parts.inputAnimationEnabled or pushMessages ~= parts.pushMessagesEnabled
+        or (c.animateInput or pushMessages) and c.inputAnimationDuration ~= parts.inputAnimationDuration then
+        local play = c.animateInput or pushMessages or parts.inputAnimationEnabled or parts.pushMessagesEnabled
         parts.inputAnimationEnabled, parts.inputAnimationDuration = c.animateInput, c.inputAnimationDuration
+        parts.pushMessagesEnabled = pushMessages
+        if play then S.ChatPreviewInputAnimation(parts.input, c, parts) end
     end
     parts.copy:ClearAllPoints()
     parts.copy:SetPoint("TOPRIGHT", parts.sample, "TOPRIGHT", -4 + c.copyButtonX, math.max(21, top) - 3 + c.copyButtonY)

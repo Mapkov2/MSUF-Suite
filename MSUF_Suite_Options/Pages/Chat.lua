@@ -142,8 +142,11 @@ local function BuildInputTools(ctx, b)
             extra = function(body, y, width)
                 P.Button(ctx, body, "Preview input animation", 16, y, width, function()
                     local ui = ctx.chatPreviewUI
-                    if ui then P.S.ChatPreviewInputAnimation(ui.parts.input, P.S.Config(ID)) end
-                end, function() return not P.Combat() and P.Get(ID, "animateInput") end,
+                    if ui then P.S.ChatPreviewInputAnimation(ui.parts.input, P.S.Config(ID), ui.parts) end
+                end, function()
+                    return not P.Combat() and (P.Get(ID, "animateInput")
+                        or P.Get(ID, "inputPushMessages") and not P.Get(ID, "inputTop"))
+                end,
                     P.Meta(PAGE, ID, "previewInputAnimation", "action", PAGE .. "_input"))
                 return y - 36
             end,

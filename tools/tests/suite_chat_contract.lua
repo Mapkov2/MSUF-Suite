@@ -3,7 +3,7 @@ local root = assert(arg[1])
 -- PLAYER_REGEN_DISABLED marks combat before InCombatLockdown() turns true.
 local inCombat, lockdown = false, false
 local NS = {
-    Safety = { IsForbidden = function() return false end },
+    Safety = { IsForbidden = function() return false end, CanAnchor = function() return true end },
     IsCombatLocked = function() return lockdown end,
     InCombat = function() return inCombat or lockdown end,
     RestrictedNotice = function() return "Blizzard blocks this right now." end,
@@ -55,6 +55,7 @@ local function Texture()
     function texture:ClearAllPoints() self.points = {} end
     function texture:SetPoint(...) self.points = self.points or {}; self.points[#self.points + 1] = { ... } end
     function texture:SetHeight(height) self.height = height end
+    function texture:GetHeight() return self.height or 32 end
     function texture:SetWidth(width) self.width = width end
     function texture:SetSize(width, height) self.width, self.height = width, height end
     function texture:SetTexCoord(...) self.coords = { ... } end
@@ -87,6 +88,8 @@ local function Frame(name)
             IsIgnoringParentAlpha = function(label) return label.ignoreParent == true end,
             SetPoint = function(label, ...) label.points = label.points or {}; label.points[#label.points + 1] = { ... } end,
             ClearAllPoints = function(label) label.points = {} end,
+            GetPoint = function(label, index) return unpack((label.points or {})[index or 1] or {}) end,
+            GetNumPoints = function(label) return #(label.points or {}) end,
             SetText = function(label, value) label.value = value end,
             SetShadowColor = function(label, ...) label.shadowColor = { ... } end,
             SetShadowOffset = function(label, ...) label.shadowOffset = { ... } end,
@@ -1281,6 +1284,43 @@ assert(gapPoint and gapPoint[1] == "LEFT" and gapPoint[2] == ChatFrame1Tab and g
 module.config.tabGap = 0
 module:Refresh()
 assert(not ctx.anchors[ChatFrame2Tab], "turning the tab gap off kept the moved tab")
+do
+    local dock = GENERAL_CHAT_DOCK
+    local previousScrollFrame, previousHeight = dock.scrollFrame, module.config.tabHeight
+    local child, scrollFrame = Frame("GeneralDockScrollChild"), Frame("GeneralDockScrollFrame")
+    function dock:GetBottom() return 100 end
+    function child:GetBottom() return 101.5 end
+    function scrollFrame:GetScrollChild() return child end
+    dock.scrollFrame = scrollFrame
+    ChatFrame3Tab:SetPoint("LEFT", child, "LEFT", 0, -1)
+    module.config.tabHeight = 18
+    module:Refresh()
+    local point, relative, edge, x, y = ChatFrame3Tab:GetPoint(1)
+    assert(point == "BOTTOMLEFT" and relative == child and edge == "BOTTOMLEFT" and x == 0
+        and child:GetBottom() + y == dock:GetBottom(), "Loot / Trade is above the shared tab row")
+    local alignedPoints = ChatFrame3Tab.points
+    dockTabsHook(dock)
+    assert(ChatFrame3Tab.points == alignedPoints, "unchanged dock layout rewrote the tab anchor")
+    ChatFrame3Tab:ClearAllPoints()
+    ChatFrame3Tab:SetPoint("LEFT", child, "LEFT", 0, -1)
+    local queue, deferred = S.Queue, false
+    S.Queue = function(id) if id == "chat" then deferred = true end end
+    lockdown = true
+    dockTabsHook(dock)
+    lockdown = false
+    S.Queue = queue
+    assert(deferred and ChatFrame3Tab:GetPoint(1) == "LEFT", "the joined header did not defer its layout in combat")
+    dockTabsHook(dock)
+    assert(ChatFrame3Tab:GetPoint(1) == "BOTTOMLEFT", "native dock layout knocked the tab out of alignment")
+    module.config.tabPanel = false
+    module:Refresh()
+    point, relative, edge, x, y = ChatFrame3Tab:GetPoint(1)
+    assert(point == "LEFT" and relative == child and edge == "LEFT" and x == 0 and y == -1,
+        "turning off the joined header did not restore the native dynamic tab")
+    ChatFrame3Tab:ClearAllPoints()
+    module.config.tabPanel, module.config.tabHeight, dock.scrollFrame = true, previousHeight, previousScrollFrame
+    module:Refresh()
+end
 -- Blizzard stores isDocked as 1 or nil (FCFDock_AddChatFrame and
 -- FCFDock_RemoveChatFrame); a floating window's tab is always selected
 -- (FCFTab_UpdateColors(tab, not isDocked or ...), FloatingChatFrame.lua).
@@ -1345,6 +1385,8 @@ ChatFrame4Tab = Frame("ChatFrame4Tab")
 ChatFrame4Tab.Left = ChatFrame4Tab:CreateTexture()
 ChatFrame4Tab.Text = ChatFrame4Tab:CreateFontString()
 ChatFrame4Tab.Text:SetText("secret")
+ChatFrame4Tab.conversationIcon = ChatFrame4Tab:CreateTexture()
+ChatFrame4Tab.Text:SetPoint("LEFT", ChatFrame4Tab.Left, "RIGHT", 10, -6)
 ChatFrame4Tab.noMouseAlpha = 0.2
 ChatFrame4Tab.mouseOverAlpha = 0.6
 -- Forever's FCFTab_UpdateAlpha gives an unselected tab 0.6 and 0.2.
@@ -1357,6 +1399,34 @@ temporaryHook()
 ChatFrame2.GetName = getName
 assert(#reports == 1 and module.visuals[ChatFrame4] and module.visuals[ChatFrame4].panel.shown,
     "a chat window that failed to style stopped the later windows")
+do
+    local tab, label = ChatFrame4Tab, ChatFrame4Tab.Text
+    local restoreHeight = module.config.tabHeight
+    module.config.tabHeight = 18
+    temporaryHook()
+    local point, relative, edge, x, y = label:GetPoint(1)
+    assert(point == "LEFT" and relative == tab.Left and edge == "RIGHT" and x == 10
+        and relative:GetHeight() * .5 + y == tab:GetHeight() * .5 - 5,
+        "the new whisper title ignored the shared baseline or lost its icon spacing")
+    local dock = GENERAL_CHAT_DOCK
+    local oldScrollFrame, oldDocked = dock.scrollFrame, dock.DOCKED_CHAT_FRAMES
+    local child, scrollFrame = Frame(), Frame()
+    function child:GetBottom() return 101.5 end
+    function scrollFrame:GetScrollChild() return child end
+    dock.scrollFrame, dock.DOCKED_CHAT_FRAMES = scrollFrame, { ChatFrame1, ChatFrame2, ChatFrame4 }
+    tab:SetPoint("LEFT", child, "LEFT", 0, -1)
+    temporaryHook()
+    assert(tab:GetPoint(1) == "BOTTOMLEFT", "a whisper opening as the first dynamic tab stayed above the row")
+    module.config.tabPanel = false
+    module:Refresh()
+    assert(select(5, label:GetPoint(1)) == -6 and tab:GetPoint(1) == "LEFT",
+        "turning off the joined header did not restore the native whisper anchors")
+    tab:ClearAllPoints()
+    dock.scrollFrame, dock.DOCKED_CHAT_FRAMES = oldScrollFrame, oldDocked
+    module.config.tabPanel = true
+    module.config.tabHeight = restoreHeight
+    module:Refresh()
+end
 assert(ChatFrame4Tab.Text:GetAlpha() == 1 and ChatFrame4Tab.Left.alpha == 0
     and not module.visuals[ChatFrame4].tabOverlay,
     "a new whisper window hid its native tab")

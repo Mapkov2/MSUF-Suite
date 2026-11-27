@@ -12,7 +12,7 @@ local patches = {
         'local slide = group:CreateAnimation("Scale")' },
     inputSnap = { "InputAnimation", 'record.slide:SetOffset(0, distance)', 'record.slide:SetOffset(0, distance + 8)' },
     inputDim = { "InputAnimation", 'group:SetToFinalAlpha(true)', '' },
-    inputDraft = { "InputAnimation", 'if S.Public(text) and text ~= "" then return end', '' },
+    inputDraft = { "InputAnimation", 'if readable and text ~= "" then return false end', '' },
 }
 
 local function Run(flavor)

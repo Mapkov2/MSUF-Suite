@@ -623,6 +623,36 @@ Check(animation.plays == plays + 1, "input animation action did not replay the p
 Check(P.Set("chat", "animateInput", false), "animation toggle refused")
 mw:RunTimers()
 Check(not animation.playing, "turning animation off did not stop the sample")
+local pushDriver
+local S = Suite.Suite
+local createSuiteFrame = S.CreateFrame
+S.CreateFrame = function(...)
+    pushDriver = createSuiteFrame(...)
+    return pushDriver
+end
+Check(P.Set("chat", "inputPushMessages", true), "message shift toggle refused")
+mw:RunTimers()
+S.CreateFrame = createSuiteFrame
+local function MessageOffset()
+    return select(5, parts.messageLines[1]:GetPoint(1))
+end
+local baseline = MessageOffset()
+local step = assert(pushDriver and pushDriver:GetScript("OnUpdate"), "toggle did not start the message preview")
+step(pushDriver, .14)
+local halfway = MessageOffset()
+step(pushDriver, .2)
+local raised = MessageOffset()
+Check(halfway > baseline and raised > halfway, "preview text did not slide up smoothly")
+step(pushDriver, .7)
+step(pushDriver, .14)
+Check(MessageOffset() < raised and MessageOffset() > baseline, "preview text did not slide back smoothly")
+step(pushDriver, .2)
+Check(MessageOffset() == baseline and not pushDriver:GetScript("OnUpdate"), "preview left the text shifted or the animation active")
+replay:GetScript("OnClick")(replay)
+Check(pushDriver:GetScript("OnUpdate") ~= nil, "preview button needs the separate input fade toggle")
+Check(P.Set("chat", "inputPushMessages", false), "message shift disable refused")
+mw:RunTimers()
+Check(MessageOffset() == baseline and not pushDriver:GetScript("OnUpdate"), "disabled preview left an animation running")
 Check(P.Set("chat", "toolbarLocked", false), "unlock refused")
 mw:RunTimers()
 Check(parts.resizeGrip:IsShown() and not parts.toolbar.buttons[3].strokes[4]:IsShown(), "unlocked grip/state missing from preview")
