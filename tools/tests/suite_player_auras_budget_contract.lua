@@ -442,6 +442,7 @@ Shipped(PLATFORM, "\n(function Suite%.ResolveFont%(key%)\n.-\nend)\n", "local Su
 
 local combat, queued, module = false, {}, nil
 local S = { RGB = Platform.RGB, ResolveFont = Platform.ResolveFont }
+S.GlobalFontPath = function() return "msuf.ttf" end
 S.Finite = Shipped(PLATFORM, "\n(local function Finite%(value%)\n.-\nend)\n",
     "local IsSecret, HUGE = ...", "return Finite", issecretvalue, math.huge)
 Shipped(SURFACES, "\n(function S%.PlaceEdges%(.-\nend)\n", "local S = ...", "", S)

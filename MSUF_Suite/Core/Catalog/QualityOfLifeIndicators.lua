@@ -83,14 +83,17 @@ B.Section("playerAuras", "player_auras", "Player aura layout", {
     Number("debuffOffset", "Debuff row offset", 80, -3000, 3000),
     Number("debuffX", "Debuff horizontal offset", 0, -4000, 4000),
     Bool("showDuration", "Show aura duration", true),
+    Choice("timerAnchor", "Timer anchor", 1, { "Bottom left", "Center" }),
     Number("borderSize", "Outline thickness", 2, 0, 4),
     B.Color("borderColor", "Outline color", "000000"),
     B.Font("font", "Font"),
     Number("fontSize", "Text size", 16, 8, 30),
+    Number("debuffTimerTextSize", "Debuff timer size (0 = shared)", 0, 0, 40),
     -- MSUF's icon skins of the Icon Skins page rows "Buffs" and "Debuffs".
     String("buffSkin", "Icon skin", "DEFAULT", 64),
     String("debuffSkin", "Icon skin", "DEFAULT", 64),
 })
+NS.SuiteCatalog.playerAuras.rules.timerAnchor.enableKey = "showDuration"
 NS.SuiteCatalog.playerAuras.rules.buffSkin.hidden = true
 NS.SuiteCatalog.playerAuras.rules.debuffSkin.hidden = true
 

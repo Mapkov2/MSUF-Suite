@@ -130,7 +130,12 @@ S.RGB = function() return 0, 0, 0 end
 S.PlaceEdges = function() end
 S.ResolveFont = function() return "modern.ttf" end
 S.Queue = function() end
-S.Text = function(text) return text end
+-- The real ruRU strings reproduce the host's UTF-8 label limit.
+local labels = {}
+local loadLocale = assert(loadfile(root .. "/MSUF_Suite/Locales/ruRU.lua"))
+setfenv(loadLocale, setmetatable({ _G = { MSUF = { LOCALE = "ruRU", L = labels } } }, { __index = _G }))()
+assert(#labels["Debuff horizontal offset"] > 40, "the test locale did not exercise the popup label limit")
+S.Text = function(text) return labels[text] or text end
 S.catalog = catalogNS.SuiteCatalog
 S.states = { playerAuras = { active = true } }
 S.Config = function() return config end
@@ -165,6 +170,9 @@ P.PlayerAuraSkins.Yield = function() end
 local elements = {}
 _G.MSUF_EditModeAPI = {
     RegisterElement = function(owner, element)
+        for _, control in ipairs(element.extraControls or {}) do
+            assert(#control.label <= 40, "Core would reject this Edit Mode popup label: " .. control.id)
+        end
         elements[owner .. ":" .. element.id] = element
         return true
     end,
@@ -217,7 +225,7 @@ end
 
 local buffs = assert(elements["MSUFSuite.playerAuras:buffs"], "the buff row has no MSUF Edit Mode mover")
 local debuffs = assert(elements["MSUFSuite.playerAuras:debuffs"], "the debuff row has no MSUF Edit Mode mover")
-assert(buffs.label == "Player buffs" and debuffs.label == "Player debuffs")
+assert(buffs.label == labels["Player buffs"] and debuffs.label == labels["Player debuffs"])
 -- MSUF flags the frame a mover drags (_msufDragActive): each mover holds a
 -- Suite frame laid over its row's container, never a Blizzard frame.
 for element, frame in pairs({ [buffs] = BuffFrame, [debuffs] = DebuffFrame }) do
@@ -242,13 +250,34 @@ local function Ids(element)
     return table.concat(ids, ",")
 end
 assert(Ids(buffs) == "x,y,iconWidth,iconHeight,iconZoom,perRow,spacing,rowSpacing", "buff controls: " .. Ids(buffs))
-assert(Ids(debuffs) == "debuffX,debuffOffset,debuffIconWidth,debuffIconHeight,iconZoom,perRow,spacing,rowSpacing",
+assert(Ids(debuffs) == "debuffX,debuffOffset,debuffIconWidth,debuffIconHeight,iconZoom,perRow,spacing,rowSpacing,debuffTimerTextSize",
     "debuff controls: " .. Ids(debuffs))
 -- Their size is in those controls: the host's W/H readout of the block goes.
 assert(buffs.sizeSummary == false and debuffs.sizeSummary == false, "the movers keep the W/H readout")
 assert(debuffs.extraControls[1].id == "debuffX" and debuffs.extraControls[1].positionAxis == "x"
     and debuffs.extraControls[2].id == "debuffOffset" and debuffs.extraControls[2].positionAxis == "y",
     "debuff offsets did not replace the host's generic position row")
+
+-- The popup changes only remaining time and includes the setting in Edit Mode history.
+local timerSize = debuffs.extraControls[#debuffs.extraControls]
+local function CheckTextSizes(shared, debuffTimer)
+    for index, buff in ipairs(BuffFrame.auraFrames) do
+        local debuff = DebuffFrame.auraFrames[index]
+        assert(buff.Duration.font[2] == shared, "the debuff timer setting changed a buff timer")
+        assert(buff.Count.font[2] == shared and debuff.Count.font[2] == shared, "the debuff timer setting changed a stack count")
+        assert(debuff.Duration.font[2] == debuffTimer, "the debuff timer font did not use its configured size")
+    end
+end
+local beforeTimerEdit = debuffs.captureState()
+assert(timerSize.label == labels["Timer text size"] and timerSize.get() == 0)
+CheckTextSizes(16, 16)
+assert(timerSize.set(26) and timerSize.get() == 26)
+CheckTextSizes(16, 26)
+assert(S.Set("playerAuras", "fontSize", 20))
+CheckTextSizes(20, 26)
+assert(debuffs.restoreState(beforeTimerEdit) and timerSize.get() == 0)
+CheckTextSizes(20, 20)
+assert(S.Set("playerAuras", "fontSize", 16))
 
 -- Icon zoom: the artwork cut per side. 7 is the crop the layout always had
 -- (52x26 icons: a .43 half width, .215 half height of the artwork).
@@ -441,12 +470,14 @@ assert(Drag(buffs, 12, 12, "preview", buffs.captureState()) == true)
 S.SetEditMode(false)
 Pinned("Edit Mode closed mid-drag")
 
--- Disable restores Blizzard's anchors and drops a preview.
+-- Disable restores Blizzard's anchors and fonts and drops a preview.
+assert(timerSize.set(26))
 assert(Drag(buffs, 9, 9, "preview", buffs.captureState()) == true)
 module.active = false
 S.states.playerAuras.active = false
 module:Disable()
 assert(not buffs.isEnabled() and not debuffs.isEnabled(), "the movers outlived the layout")
+CheckTextSizes(10, 10)
 -- Blizzard's original frame anchor (none in this model) and container anchor.
 assert(#BuffFrame.points == 0, "Disable left the Suite's frame anchor behind")
 Shifted(BuffFrame, 0, 0, "Disable")
@@ -454,6 +485,7 @@ module.active = true
 S.states.playerAuras.active = true
 module:Enable()
 Pinned("enabled again after a preview and Disable")
+CheckTextSizes(16, 26)
 
 -- The matching load event adopts frames that were unavailable at enable.
 module:Disable()

@@ -10,6 +10,9 @@ local looks, skinned, shifted, handles = {}, {}, {}, {}
 local generation, fontPath = 0, nil
 local borderRed, borderGreen, borderBlue
 local buffGeometry, debuffGeometry = {}, {}
+local countPoint = { "BOTTOMRIGHT", -2, 1 }
+local timerPoints = { { "BOTTOMLEFT", 2, 1 }, { "CENTER", 0, 0 } }
+local timerPoint
 local unpack, select, floor, ceil, max, min = unpack, select, math.floor, math.ceil, math.max, math.min
 local IsSecret = NS.IsSecret
 local Finite = S.Finite
@@ -189,22 +192,22 @@ local function Border(button, icon, c)
     border:SetShown(c.borderSize > 0)
 end
 
-local function Font(region, c)
+local function Font(region, size)
     if not saved[region] then return end
-    region:SetFont(fontPath, c.fontSize, "OUTLINE")
+    region:SetFont(fontPath, size, "OUTLINE")
     region:SetTextColor(1, 1, 1, 1)
     region:SetShadowColor(0, 0, 0, 1)
     region:SetShadowOffset(1, -1)
 end
 
-local function Pin(region, button, point, container)
+local function Pin(region, button, anchor, container)
     if not (region and region.SetFont) then return end
     if not saved[region] then
         if not Remember(region, container and DURATION or TEXT, button, container) then return end
         styled[button] = nil
     end
     region:ClearAllPoints()
-    region:SetPoint(point, button, point, point == "BOTTOMRIGHT" and -2 or 2, 1)
+    region:SetPoint(anchor[1], button, anchor[1], anchor[2], anchor[3])
 end
 
 local function NativeBorder(region, geometry)
@@ -226,9 +229,9 @@ local function Style(button, icon, geometry)
     end
     NativeBorder(button.DebuffBorder, geometry)
     NativeBorder(button.TempEnchantBorder, geometry)
-    Pin(button.Count, button, "BOTTOMRIGHT")
-    Font(button.Count, c)
-    Font(button.Duration, c)
+    Pin(button.Count, button, countPoint)
+    Font(button.Count, c.fontSize)
+    Font(button.Duration, geometry.timerTextSize)
     if saved[button.Duration] then button.Duration:SetAlpha(c.showDuration and 1 or 0) end
     styled[button] = generation
 end
@@ -272,7 +275,7 @@ local function Place(button, icon, slot, container, geometry, auraAnchor)
         -- When we cannot restore the anchor, only override a size we can restore.
         icon:SetSize(geometry.width, geometry.height)
     end
-    Pin(button.Duration, button, "BOTTOMLEFT", container)
+    Pin(button.Duration, button, timerPoint, container)
     if styled[button] ~= generation then style(button, icon, geometry) end
     return true
 end
@@ -618,10 +621,14 @@ end
 local function Adopt()
     buffFrame, debuffFrame = _G.BuffFrame, _G.DebuffFrame
     local c = M.config
-    fontPath = S.ResolveFont(c.font) or NS.MSUFMedia.font
+    fontPath = S.ResolveFont(c.font) or S.GlobalFontPath()
+    timerPoint = timerPoints[c.timerAnchor] or timerPoints[1]
     borderRed, borderGreen, borderBlue = S.RGB(c.borderColor)
     UpdateGeometry(buffGeometry, c.iconWidth, c.iconHeight, c)
     UpdateGeometry(debuffGeometry, c.debuffIconWidth or c.iconWidth, c.debuffIconHeight or c.iconHeight, c)
+    buffGeometry.timerTextSize = c.fontSize
+    local debuffTimerSize = c.debuffTimerTextSize or 0
+    debuffGeometry.timerTextSize = debuffTimerSize > 0 and debuffTimerSize or c.fontSize
     -- Any refresh, including drag commit or cancel, returns preview containers to their frames.
     for frame in pairs(shifted) do shifted[frame] = nil end
     Invalidate()
@@ -686,7 +693,9 @@ function M:Disable()
 end
 
 local BUFF_LAYOUT = { "iconWidth", "iconHeight", "iconZoom", "perRow", "spacing", "rowSpacing" }
-local DEBUFF_LAYOUT = { "debuffIconWidth", "debuffIconHeight", "iconZoom", "perRow", "spacing", "rowSpacing" }
+local DEBUFF_LAYOUT = { "debuffIconWidth", "debuffIconHeight", "iconZoom", "perRow", "spacing", "rowSpacing", "debuffTimerTextSize" }
+local DEBUFF_LABELS = { debuffX = "X", debuffOffset = "Y", debuffIconWidth = "Width",
+    debuffIconHeight = "Height", debuffTimerTextSize = "Timer text size" }
 
 local function Round(value) return floor(value + .5) end
 local function Handle(frame)
@@ -767,7 +776,7 @@ end
 
 local function Control(key, axis)
     local rule = S.catalog[ID].rules[key]
-    return { id = key, label = S.Text(rule.label), kind = "number",
+    return { id = key, label = S.Text(DEBUFF_LABELS[key] or rule.label), kind = "number",
         positionAxis = axis, min = rule.min, max = rule.max, step = rule.step or 1,
         get = function() return S.Config(ID)[key] end,
         set = function(value) return S.Set(ID, key, value) end }

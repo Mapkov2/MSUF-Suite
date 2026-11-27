@@ -104,7 +104,10 @@ S.CreateFrame=function()return Region()end
 S.CreateTexture=function()return Region()end
 S.RGB=function()return 0,0,0 end
 S.PlaceEdges=function()end
-S.ResolveFont=function()return 'modern.ttf' end
+local globalFont = 'shared.ttf'
+S.ResolveFont=function(key) return key ~= "" and 'modern.ttf' or nil end
+S.GlobalFontPath=function() return globalFont end
+P.NS.MSUFMedia = { font = 'fallback.ttf' }
 S.Queue=function(id)queued=id end
 S.Install=function(id,m)captured=m end
 hooksecurefunc=function(obj,key,callback)local old=obj[key];obj[key]=function(self,...)local out={old(self,...)};callback(self,...);return unpack(out)end end
@@ -312,5 +315,32 @@ assert(frame.points[1][4]==-10 and frame.points[1][5]==0,'buffs did not move bes
 assert(debuff.points[1][2]==Minimap and debuff.points[1][4]==-16 and debuff.points[1][5]==-88,
  'debuffs did not follow the minimap below the buff rows, shifted by their horizontal offset')
 assert(frame.auraFrames[1].width==28 and debuff.auraFrames[1].width==28)
+local duration, debuffDuration = frame.auraFrames[1].Duration, debuff.auraFrames[1].Duration
+assert(duration.points[1][1]=='BOTTOMLEFT', 'existing layouts should keep their timer position')
+captured.config.timerAnchor = 2
+captured:Refresh()
+for _, region in ipairs({ duration, debuffDuration }) do
+ local placement = region.points[1]
+ assert(#region.points==1 and placement[1]=='CENTER' and placement[3]=='CENTER'
+  and placement[4]==0 and placement[5]==0, 'centering did not move the native duration on both rows')
+end
+assert(frame.auraFrames[1].Count.points[1][1]=='BOTTOMRIGHT', 'centering moved the stack count')
+captured.config.font = ""
+captured:Refresh()
+assert(duration.font[1] == globalFont and debuffDuration.font[1] == globalFont,
+ 'an empty aura font should resolve the shared MSUF face')
+globalFont = 'new-shared.ttf'
+captured:Refresh()
+assert(duration.font[1] == globalFont and debuffDuration.font[1] == globalFont,
+ 'a shared font change should repaint both native aura rows')
+captured.config.font = 'x'
+captured:Refresh()
+assert(duration.font[1] == 'modern.ttf' and debuffDuration.font[1] == 'modern.ttf',
+ 'an explicit aura font should keep taking precedence')
+captured.config.timerAnchor = 1
+captured:Refresh()
+assert(duration.points[1][1]=='BOTTOMLEFT' and debuffDuration.points[1][1]=='BOTTOMLEFT',
+ 'changing profiles should restore the former timer position')
 captured:Disable()
+assert(#debuffDuration.points==0 and debuffDuration.font[2]==10, 'disable did not release the timer position')
 print('player aura gain, edit mode font reset, rectangular border and disable restore: OK')
