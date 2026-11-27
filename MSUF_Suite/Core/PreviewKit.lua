@@ -166,6 +166,9 @@ Handles.__index = Handles
 --   start (a followed drag passed the threshold; a native one began), stop
 --   (before the write), done (after the write and moved), cancel.
 --   write(x, y, dragged) gets dragged = true for the commit of a drag.
+--   snap(region, dx, dy, scale) -> dx, dy: adjusts a followed drag's offset
+--   (region units; scale = screen pixels per unit) before it is drawn and
+--   again for its commit, so the stored value is the position shown.
 function Kit.Handles(host, opts)
     opts = opts or EMPTY
     local owner = opts.owner or host.frame
@@ -239,11 +242,12 @@ function Handles:Nudge(dx, dy)
     return self:Commit(entry, x + dx, y + dy)
 end
 
--- Every write goes here: refused in combat, repainted either way. A drag's
--- commit says so to the page's write (dragged), which may refuse a stale one.
+-- Every write goes here: refused in combat, repainted unless the page owns
+-- the commit paint. A drag's commit says so to the page's write, which may
+-- refuse a stale one.
 function Handles:Commit(entry, x, y, dragged)
     local ok = not self:Blocked() and entry.write(x, y, dragged) ~= false
-    self.host:Paint("commit")
+    if not self.opts.ownsCommitPaint then self.host:Paint("commit") end
     return ok
 end
 
@@ -323,6 +327,7 @@ local function Follow(entry)
         drag.moving = true
         if controller.opts.drag then controller.opts.drag(entry.region, "start") end
     end
+    if controller.opts.snap then dx, dy = controller.opts.snap(entry.region, dx, dy, scale) end
     entry.follow(entry.region, dx, dy)
 end
 
@@ -363,6 +368,10 @@ Up = function(entry, button)
     if controller.opts.manualDrag and entry.follow and not moved then
         if controller.opts.drag then controller.opts.drag(entry.region, "done", false) end
         return
+    end
+    -- The commit takes the snapped offset the last frame drew.
+    if moved and x and entry.follow and controller.opts.snap then
+        dx, dy = controller.opts.snap(entry.region, dx, dy, scale)
     end
     if controller.opts.drag then controller.opts.drag(entry.region, "stop", moved) end
     local ok = moved and not drag.blocked and controller:Commit(entry, drag.ox + dx, drag.oy + dy, true)
