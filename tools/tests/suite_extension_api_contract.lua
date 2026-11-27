@@ -1,6 +1,5 @@
 local root = assert(arg[1])
 local ready, combat, notices
-local imported
 local function Profile() return { suite = {} } end
 local Suite = {
     API = {}, DB = Profile(),
@@ -14,7 +13,6 @@ local Suite = {
         local ok, first, second, third = pcall(fn, ...)
         if ok then return first, second, third end
     end,
-    SuiteProfiles = { maxBytes = 100, Import = function(name, value) imported = { name, value } return true end },
 }
 assert(loadfile(root .. "/MSUF_Suite/Core/Extensions.lua"))("Suite", Suite)
 local API, Extensions = Suite.API.Extensions, Suite.Extensions
@@ -39,11 +37,8 @@ assert(plugin.PublishDataText("Count", "12", 99) and notices == 1)
 assert(plugin.PublishDataText("Count", "12", 99) and notices == 1)
 local broker, reserved = Extensions.Broker("MSUF.Example")
 assert(reserved and broker.text == "12" and broker.label == "Count")
-assert(plugin.RegisterProfile("Starter", 1, "MSUFS3:suite"))
-assert(not plugin.RegisterProfile("Duplicate", 1, "MSUFS3:bad"))
-assert(Extensions.ProfilePacks()[1].label == "Starter")
-assert(not Extensions.ImportProfile("Example", 2, "Demo"))
-assert(Extensions.ImportProfile("Example", 1, "Demo") and imported[1] == "Demo")
+assert(Extensions.ProfilePacks == nil and Extensions.ImportProfile == nil, "profile pack runtime was not retired")
+assert(plugin.RegisterProfile("Starter", 1, "MSUFS3:suite") == false, "retired profile pack registration must return false")
 local failing = assert(API.Register("Failing", function()
     ready = (ready or 0) + 1
     error("callback error")
@@ -61,6 +56,6 @@ Extensions.TooltipLines("Item", 77, {}, Add)
 assert(rows == 2 and not plugin.SetSetting("favorite", true))
 combat = false
 assert(failing.Unregister() and plugin.Unregister())
-assert(not plugin.PublishDataText("Count", "99") and #Extensions.ProfilePacks() == 0)
+assert(not plugin.PublishDataText("Count", "99"))
 assert(not Extensions.Broker("MSUF.Example"))
 print("Suite extension lifecycle validated")

@@ -1,5 +1,5 @@
 local _, Suite = ...
--- Registered addons share Suite's presentation and profile entry points.
+-- Registered addons share Suite's presentation and per-profile settings.
 -- Each owns one ID and can withdraw the callbacks and data it published.
 local API = { version = 1 }
 local Extensions = {}
@@ -118,14 +118,8 @@ function API.Register(id, tooltip)
         end,
         SetSetting = function(key, value) return SetSetting(entry, key, value) end,
         PublishDataText = function(label, value, icon) return Publish(entry, label, value, icon) end,
-        RegisterProfile = function(label, revision, text)
-            if painting or entries[id] ~= entry or not Text(label, 80) or label == "" then return false end
-            if not Suite.Finite(revision) or revision < 1 or revision > 100000 or revision % 1 ~= 0 then return false end
-            if entry.pack and entry.pack.revision >= revision then return false end
-            if not Text(text, Suite.SuiteProfiles.maxBytes) or not text:match("^MSUFS[123]:") then return false end
-            entry.pack = { id = id, label = label, revision = revision, text = text }
-            return true
-        end,
+        -- Keep v1 callers safe after retiring profile pack registration.
+        RegisterProfile = function() return false end,
         Unregister = function() return Unregister(entry) end,
     }
 end
@@ -165,25 +159,4 @@ function Extensions.AddBrokers(names)
         if #names >= 256 then break end
         if entry.dataText and not seen[name] then names[#names + 1] = name end
     end
-end
-
-function Extensions.ProfilePacks()
-    local packs = {}
-    for _, entry in ipairs(order) do
-        local pack = entry.pack
-        if pack then packs[#packs + 1] = { id = pack.id, label = pack.label, revision = pack.revision } end
-    end
-    table.sort(packs, function(a, b)
-        if a.label == b.label then return a.id < b.id end
-        return a.label < b.label
-    end)
-    return packs
-end
-
-function Extensions.ImportProfile(id, revision, name)
-    if Suite.InCombat() or not Key(id) then return false end
-    local entry = entries[id]
-    local pack = entry and entry.pack
-    if not pack or pack.revision ~= revision then return false, "The registered profile changed. Reopen this page." end
-    return Suite.SuiteProfiles.Import(name, pack.text)
 end
