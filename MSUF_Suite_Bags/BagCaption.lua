@@ -331,7 +331,10 @@ end
 -- event: the combat event being handled (NS.InCombat), else nil.
 function Caption.Sync(state, event)
     local module = P.BagsModule
-    local shown = module.active and state.owned and not S.GamepadUI() and state.native:IsShown() == true
+    -- The X's own flag as this pass saw it (NativeVisibility).
+    local own = state.native:IsShown()
+    if S.Public(own) then state.nativeShown = own == true else state.nativeShown = nil end
+    local shown = module.active and state.owned and not S.GamepadUI() and own == true
     for _, cell in ipairs(state.cells) do cell:SetShown(shown) end
     visible[state] = shown and state.close:IsVisible() or nil
     SyncEvents()
@@ -391,9 +394,15 @@ local function KeepFaded(native, alpha)
     if state and state.owned and alpha ~= 0 then native:SetAlpha(0) end
 end
 
+-- A window show or hide also reaches its X, and WindowShown and WindowHidden
+-- already handle that edge. Only a change of the X's own flag (the Gamepad
+-- UI's Initialize/Uninitialize) syncs here.
 local function NativeVisibility(native)
     local state = natives[native]
-    if state then Caption.Sync(state) end
+    if not state then return end
+    local own = native:IsShown()
+    if state.nativeShown ~= nil and S.Public(own) and (own == true) == state.nativeShown then return end
+    Caption.Sync(state)
 end
 
 local function HookNative(native)

@@ -32,21 +32,69 @@ local function SizeBorder(t, width)
     end
 end
 
+function Appearance.WindowShape()
+    local skin = P.NS.Skin
+    return skin and skin.GetRoundedWindowGeometry and skin.GetRoundedWindowGeometry()
+end
+
+local function PaintShadow(t, geometry, opacity)
+    local shadow = t[1]
+    if geometry then
+        P.NS.Skin.PaintRoundedWindowShadow(shadow, geometry, opacity, not t.rounded)
+    else
+        if t.rounded then
+            shadow:ClearTextureSlice()
+            shadow:SetVertexColor(1, 1, 1, 1)
+        end
+        shadow:SetColorTexture(0, 0, 0, opacity)
+    end
+end
+
+local function RoundChrome(t, shadowOpacity)
+    local geometry = Appearance.WindowShape()
+    if geometry or t.roundedMask then
+        t.roundedMask = P.NS.Skin.MaskOwnedWindow(t.shell, t.roundedMask, geometry,
+            t[2], t[3], t[4], t[5], t.feather, t.closeFill, not t.combined and t[6] or nil)
+    end
+    local rounded = t.roundedMask and t.roundedMask.active == true or nil
+    PaintShadow(t, rounded and geometry, shadowOpacity)
+    if t.rounded ~= rounded then
+        t.rounded = rounded
+        for i = 6, 9 do t[i]:SetShown(not rounded or i == 6 and not t.combined) end
+        if not rounded and t.roundedBorder then t.roundedBorder:Hide() end
+    end
+    return geometry and not rounded and P.NS.InCombat()
+end
+
+local function PaintRoundBorder(t, width, r, g, b, a)
+    local art = P.NS.Skin.PaintRoundedWindowOutline
+    t.roundedBorder = art(t.shell, t.roundedBorder, width, r, g, b, a, nil, nil, true, true)
+end
+
 local function PaintBorder(t, c, ar, ag, ab)
     if not t.combined then
-        if t.borderWidth then SizeBorder(t, 1) end
         t[6]:SetColorTexture(ar, ag, ab, .45)
-        for i = 7, 9 do t[i]:SetColorTexture(.28, .31, .36, .55) end
+        if t.rounded then
+            PaintRoundBorder(t, 1, .28, .31, .36, .55)
+        else
+            if t.borderWidth then SizeBorder(t, 1) end
+            for i = 7, 9 do t[i]:SetColorTexture(.28, .31, .36, .55) end
+        end
         return
     end
     local default = Appearance.DefaultBorder(c)
     local width = default and 1 or c.backpackBorderWidth
-    SizeBorder(t, width)
+    local r, g, b, a
     if default then
-        for i = 6, 9 do t[i]:SetColorTexture(unpack(default)) end
+        r, g, b, a = unpack(default)
     else
-        local r, g, b = S.RGB(c.backpackBorderColor)
-        local a = width > 0 and c.backpackBorderOpacity / 100 or 0
+        r, g, b = S.RGB(c.backpackBorderColor)
+        a = width > 0 and c.backpackBorderOpacity / 100 or 0
+    end
+    if t.rounded then
+        PaintRoundBorder(t, width, r, g, b, a)
+    else
+        SizeBorder(t, width)
         for i = 6, 9 do t[i]:SetColorTexture(r, g, b, a) end
     end
 end
@@ -77,11 +125,12 @@ function Appearance.Window(t, c)
     local ar, ag, ab = S.RGB(c.accentColor)
     local opacity = c.backgroundOpacity / 100
     local glass = t.combined and c.look == FOREVER_LOOK
-    t[1]:SetColorTexture(0, 0, 0, (glass and .10 or .5) * opacity)
+    local shadowOpacity = (glass and .10 or .5) * opacity
     PaintBody(t, glass, panel, r, g, b, opacity)
     t[3]:SetColorTexture(r + .025, g + .025, b + .025, (glass or panel) and .28 * opacity or opacity)
     t[4]:SetColorTexture(ar, ag, ab, panel and .12 or .24)
     if t[5] then t[5]:SetColorTexture(r * .7, g * .7, b * .7, (glass or panel) and .46 * opacity or opacity) end
+    local deferred = RoundChrome(t, shadowOpacity)
     PaintBorder(t, c, ar, ag, ab)
     if t.goldLabel then
         local font = S.ResolveFont(c.font)
@@ -89,6 +138,7 @@ function Appearance.Window(t, c)
         if t.dailyGoldLabel then S.SetFont(t.dailyGoldLabel, font, 11, "OUTLINE") end
     end
     if panel then P.BagPanelAppearance.Paint(t, c, opacity) end
+    return deferred
 end
 
 function Appearance.Button(button, selected)

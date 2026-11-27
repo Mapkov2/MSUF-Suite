@@ -75,6 +75,36 @@ do
     W.Settle()
     assert(W.calls.info == view + reads + W.sizes[1], "a BAG_UPDATE must read only that bag again")
     assert(ButtonFor(1, 1).shown and V.index.items[7].itemID == 12, "the changed slot shows its new item")
+
+    -- ContainerFrame_GenerateFrame runs Blizzard's anchor pass after the show:
+    -- its post-hook lays the window out once (Bags.lua ShownWindowLayout).
+    -- In combat lockdown the show hook still lays it out before that pass
+    -- (the protected bag's post-hook then waits for the combat end).
+    local apply, layouts, early, passes = W.M.ApplyWindowLayout, 0, 0, nil
+    W.M.ApplyWindowLayout = function(...)
+        layouts = layouts + 1
+        if W.anchorPasses == passes then early = early + 1 end
+        return apply(...)
+    end
+    for _, locked in ipairs({ false, true }) do
+        W.CloseBags()
+        W.Settle()
+        if locked then W.EnterCombat() end
+        layouts, early, passes = 0, 0, W.anchorPasses
+        W.OpenBags()
+        assert(layouts == 1 and early == (locked and 1 or 0),
+            ("an opening laid the bag out %d times, %d before Blizzard's pass, locked: %s"):format(layouts, early, tostring(locked)))
+        W.Settle()
+        if locked then W.LeaveCombat(); W.Settle() end
+    end
+    layouts, early, passes = 0, 0, W.anchorPasses
+    W.Native(function()
+        W.Reagent:Show()
+        UpdateContainerFrameAnchors()
+    end)
+    assert(layouts == 1 and early == 0, "a reagent opening laid out before Blizzard's pass")
+    W.M.ApplyWindowLayout = apply
+    assert(#W.taint == 0 and #W.combatLayout == 0, "the opening layout tainted or wrote in lockdown")
 end
 
 ---------------------------------------------------------------- combat

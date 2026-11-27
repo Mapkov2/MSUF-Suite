@@ -296,7 +296,9 @@ W.Native(function() X:Show() end)
 assert(close:IsShown() and minimize:IsShown(), "the caption did not return with Blizzard's X")
 
 ---------------------------------------------------------------- the reagent bag
-W.Native(function() W.Reagent:Show() end)
+-- ContainerFrame_GenerateFrame: the anchor pass follows the show, and its
+-- post-hook lays the window out (Bags.lua ShownWindowLayout).
+W.Native(function() W.Reagent:Show(); UpdateContainerFrameAnchors() end)
 W.Settle()
 local reagent = assert(Caption.states[W.Reagent], "the reagent bag has no caption")
 assert(reagent.close:IsVisible(), "the open reagent bag shows no close cell")
@@ -385,6 +387,65 @@ do
         "protected delegate was not released when combat ended")
     CheckEvents(Q, false, false, false, "protected cleanup complete")
     assert(#Q.taint == 0 and #Q.combatLayout == 0, "visibility routing triggered a protected write")
+end
+
+do
+    -- A window edge reaches the X's OnShow/OnHide too; WindowShown already
+    -- synced it (and WindowHidden handles the close), so that edge syncs once.
+    -- The X's own Hide/Show (Gamepad UI) still syncs and the cells follow.
+    local F = World()
+    local cap, X = F.P.BagCaption, F.CF.CloseButton
+    local state = cap.states[F.CF]
+    F.CloseBags()
+    F.Settle()
+    local sync, syncs = cap.Sync, 0
+    cap.Sync = function(...) syncs = syncs + 1; return sync(...) end
+    F.OpenBags()
+    F.RunScript(X, "OnShow")
+    F.CloseBags()
+    F.RunScript(X, "OnHide")
+    assert(syncs == 1, "one window edge synced the caption " .. syncs .. " times")
+    F.OpenBags()
+    F.Settle()
+    syncs = 0
+    F.Native(function() X:Hide() end)
+    assert(syncs == 1 and not state.close:IsShown() and not state.minimize:IsShown(), "the X's own hide left the caption")
+    F.Native(function() X:Show() end)
+    assert(syncs == 2 and state.close:IsShown() and state.minimize:IsShown(), "the X's own show did not restore the caption")
+    cap.Sync = sync
+    assert(#F.taint == 0 and #F.combatLayout == 0, "caption edges tainted the bag")
+end
+
+do
+    -- The side panel's drag strip hides with the window: a reopen in the same
+    -- presentation writes no anchor. An open on Blizzard's grid (combat) puts
+    -- it back on the title, and the Suite layout returns it to the panel.
+    local D = World()
+    local handle = assert(D.M.windows[D.CF].dragHandle)
+    assert(D.P.BagPresentation.IsPanel(D.config), "the fixture must show the side panel")
+    local writes = 0
+    for _, method in ipairs({ "ClearAllPoints", "SetPoint", "SetAllPoints" }) do
+        local native = handle[method]
+        handle[method] = function(...) writes = writes + 1; return native(...) end
+    end
+    D.CloseBags()
+    D.Settle()
+    D.OpenBags()
+    D.Settle()
+    assert(writes == 0, "a warm reopen anchored the drag strip again: " .. writes)
+    local _, relative = handle:GetPoint(1)
+    assert(relative == D.CF and handle:GetNumPoints() == 2, "the side panel lost its drag strip")
+    D.CloseBags()
+    D.Settle()
+    D.EnterCombat()
+    D.OpenBags()
+    _, relative = handle:GetPoint(1)
+    assert(relative == D.CF.TitleContainer, "Blizzard's grid kept the side panel's drag strip")
+    D.LeaveCombat()
+    D.Settle()
+    _, relative = handle:GetPoint(1)
+    assert(relative == D.CF and D.P.InventoryView.layout == "suite", "the Suite layout did not return the panel's drag strip")
+    assert(#D.taint == 0 and #D.combatLayout == 0, "the drag strip tainted or wrote to the bag in lockdown")
 end
 
 print("Bags caption " .. flavor .. ": cells, close, maximize, minimize, restore, combat, gamepad, reagent and release passed")

@@ -204,8 +204,9 @@ hooksecurefunc = function(frame, name, callback)
     if frame == "UpdateContainerFrameAnchors" then
         hooks.NativeAnchors = name
     else
-        assert(name == "UpdateItems" or frame == ContainerFrameCombinedBags and name == "UpdateItemSlots")
-        hooks[frame == ContainerFrame6 and "ReagentItems" or name] = callback
+        assert(name == "UpdateItems" or name == "UpdateItemSlots"
+            and (frame == ContainerFrameCombinedBags or frame == ContainerFrame6))
+        hooks[frame == ContainerFrame6 and "Reagent" .. name:gsub("^Update", "") or name] = callback
     end
 end
 local function Copy(value)
@@ -414,6 +415,8 @@ function context:CVar(key, value)
 end
 function context:Event(name, callback) self.events[name] = callback end
 function context:RemoveEvent(name) self.events[name] = nil end
+-- EventRegistry callbacks (ColorManager.OnColorDataUpdated in Bags.lua).
+function context:Callback(name, callback) self.registry = self.registry or {}; self.registry[name] = callback end
 function context:Alpha(frame, value)
     self.alphas = self.alphas or {}
     if self.alphas[frame] == nil then self.alphas[frame] = frame:GetAlpha() end

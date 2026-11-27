@@ -172,7 +172,7 @@ end
 local function PaintBorderExamples(ui, preview, c, bank)
     local examples = preview.borderExamples
     if not examples then
-        examples = CreateFrame("Frame", nil, ui.header)
+        examples = CreateFrame("Frame", nil, preview.stage)
         examples:SetSize(preview.width, 44)
         examples.item = Slot(preview, ui, examples)
         examples.empty = Slot(preview, ui, examples)
@@ -501,9 +501,21 @@ local function PaintLayout(ui, preview, c, bank, native)
     PaintNativeBackpack(ui, preview, c)
 end
 
+local function LayoutPreview(ui, preview)
+    local extra = math.max(0, (ui.tabs and ui.tabs:GetHeight() or 26) - 26)
+    if preview.tabOffset ~= extra then
+        preview.tabOffset = extra
+        preview.stage:SetPoint("TOPLEFT", ui.header, "TOPLEFT", 0, -extra)
+    end
+    local samples = preview.borderExamples and preview.borderExamples:IsShown() and 48 or 0
+    local height = math.max(406, 102 + preview.window:GetHeight()) + samples
+    P.MenuWorkspace.FitHeader(ui, extra + height + math.ceil(preview.footer:GetStringHeight() or 14))
+end
+
 local function Paint(ui, preview)
     if not K.Runtime("MSUF_Suite_Bags", "BagsNewPreview") then
         P.SetTranslatedText(preview.footer, Tr("Preview is available outside combat."))
+        ui.layoutTabContent()
         return
     end
     local c = S.Config("bags")
@@ -532,8 +544,7 @@ local function Paint(ui, preview)
     preview.freeJump:SetShown(showFree)
     preview.free:SetText(string.format(bank and Tr("%d free") or Tr("%d free + %d reagent"), 22, 4))
     P.SetTranslatedText(preview.footer, Tr("Sample values. Click an element to open its settings."))
-    P.MenuWorkspace.FitHeader(ui, math.max(406, 102 + preview.window:GetHeight())
-        + (bank and 0 or 48) + math.ceil(preview.footer:GetStringHeight() or 14))
+    ui.layoutTabContent()
 end
 
 local function WatchViewport(ui)
@@ -549,13 +560,23 @@ local function WatchViewport(ui)
     if events:IsVisible() then Activate() end
 end
 
-function P.BuildBagsMenuPreview(ui)
-    if not ui then return end
+local function CreatePreview(ui)
+    local stage = CreateFrame("Frame", nil, ui.header)
+    stage:SetSize(ui.width, 1)
     local width = math.min(520, ui.width - 40)
-    local window = K.Button(ui.header, 20, -76, width, 304, function() ui:Focus("suite_bags_appearance") end)
+    local window = K.Button(stage, 20, -76, width, 304, function() ui:Focus("suite_bags_appearance") end)
     local content = CreateFrame("Frame", nil, window)
     content:SetPoint("TOPLEFT")
-    local preview = { window = window, content = content, width = width, settings = {}, slots = {}, groups = {}, bankLook = {}, geometry = {} }
+    K.Text(stage, "Preview", 16, -52, ui.width - 32)
+    local footer = K.Text(stage, "", 16, -390, ui.width - 32)
+    return { stage = stage, window = window, content = content, footer = footer, width = width,
+        settings = {}, slots = {}, groups = {}, bankLook = {}, geometry = {} }
+end
+
+function P.BuildBagsMenuPreview(ui)
+    if not ui then return end
+    local preview = CreatePreview(ui)
+    local window, content = preview.window, preview.content
     local guide = CreateFrame("Frame", nil, content)
     guide:SetFrameLevel(content:GetFrameLevel() + 7)
     guide:EnableMouse(false)
@@ -613,10 +634,9 @@ function P.BuildBagsMenuPreview(ui)
     preview.cleanupLabel = K.Text(cleanup, "Clean up bags", 4, -4, 156)
     cleanup.previewLabel = preview.cleanupLabel
     preview.goldJump = GuideTarget(preview, K.Jump(ui, preview.chrome.goldLabel, content, "suite_bags_finance"))
-    K.Text(ui.header, "Preview", 16, -52, ui.width - 32)
-    preview.footer = K.Text(ui.header, "", 16, -390, ui.width - 32)
     ui.bagsPreview = preview
-    P.MenuWorkspace.FitHeader(ui, 406 + math.ceil(preview.footer:GetStringHeight() or 14))
+    ui.layoutTabContent = function() LayoutPreview(ui, preview) end
+    ui.layoutTabContent()
     K.Watch(ui, function()
         Paint(ui, preview)
         RefreshGuide(preview)

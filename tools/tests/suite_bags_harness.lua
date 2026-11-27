@@ -175,15 +175,19 @@ local function CombinedBag(W, env)
         end
     end
     -- UpdateItemSlots: bag 4 down to 0, slot N down to 1 (ContainerFrame.lua).
+    -- The live pool hands its buttons out in hash order (Pools.lua); with
+    -- W.reversePool = n the first n pooled buttons come back reversed.
     function frame:UpdateItemSlots()
         for i = 1, #self.pool do self.pool[i].shown = false end
         Clear(self.Items)
+        local reversed = math.min(W.reversePool or 0, #self.pool)
         for bag = 4, 0, -1 do
             local size = W.sizes[bag] or 0
             for i = 1, size do
                 local index = #self.Items + 1
-                local button = self.pool[index] or ItemButton(W, env, self, index)
-                self.pool[index] = button
+                local from = index <= reversed and reversed - index + 1 or index
+                local button = self.pool[from] or ItemButton(W, env, self, index)
+                self.pool[from] = button
                 self.Items[index] = button
                 button:Initialize(self, bag, size - i + 1)
             end
@@ -234,9 +238,12 @@ local function IndividualBag(W, env, name, bag, parent)
         local size = W.sizes[bag] or 0
         self.pool = self.pool or {}
         Clear(self.Items)
+        -- W.reversePool: see the combined bag's UpdateItemSlots.
+        local reversed = math.min(W.reversePool or 0, #self.pool)
         for slot = 1, size do
-            local button = self.pool[slot] or ItemButton(W, env, self, slot)
-            self.pool[slot], self.Items[slot] = button, button
+            local from = slot <= reversed and reversed - slot + 1 or slot
+            local button = self.pool[from] or ItemButton(W, env, self, slot)
+            self.pool[from], self.Items[slot] = button, button
             button.bagID, button.id = bag, slot
         end
     end
@@ -624,6 +631,21 @@ function H.New(root, options)
     W.Insecure = Insecure
     local function Taint(what) if not W.secure then W.taint[#W.taint + 1] = what end end
     W.Taint = Taint
+    -- EventRegistry (CallbackRegistryMixin): one callback per owner and event,
+    -- called as callback(owner, ...); addon callbacks run insecure.
+    local registry = {}
+    EventRegistry = {
+        RegisterCallback = function(_, event, callback, owner)
+            registry[event] = registry[event] or {}
+            registry[event][owner] = callback
+        end,
+        UnregisterCallback = function(_, event, owner)
+            if registry[event] then registry[event][owner] = nil end
+        end,
+        TriggerEvent = function(_, event, ...)
+            for owner, callback in pairs(registry[event] or {}) do Insecure(callback, owner, ...) end
+        end,
+    }
 
     ---------------------------------------------------------------- widgets
     local Widget = {}

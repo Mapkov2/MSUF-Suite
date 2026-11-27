@@ -201,6 +201,23 @@ local function OwnChrome(self, frame, textures)
     end
 end
 
+-- The Suite's drag strip over the title, for the presentation it shows in. The
+-- strip is the Suite's own frame and hides with the window, so a close leaves
+-- it as it is: a reopen in the same presentation writes no anchor (each write
+-- also reaches the window focus chrome hooks).
+local function AnchorDragHandle(self, t, panel, rail)
+    local handle = t.dragHandle
+    if not handle or t.handlePanel == panel and t.handleRail == rail then return end
+    t.handlePanel, t.handleRail = panel, rail
+    handle:ClearAllPoints()
+    if panel then
+        handle:SetPoint("TOPLEFT", self.frame, "TOPLEFT", rail + 12, -8)
+        handle:SetPoint("BOTTOMRIGHT", self.frame, "TOPRIGHT", -Private.BagCaption.PANEL_TITLE, -46)
+    else
+        handle:SetAllPoints(self.frame.TitleContainer)
+    end
+end
+
 function M:UpdatePresentation(closing, layout)
     local t = self.windows and self.windows[self.frame]
     if not t then return end
@@ -208,9 +225,12 @@ function M:UpdatePresentation(closing, layout)
     local panel = Private.BagPresentation.IsPanel(self.config) and not combat or false
     local rail = panel and Private.BagPresentation.Rail(self.config) or 0
     t.combat = combat
-    -- The close still releases Blizzard's title and the drag handle before combat.
-    -- Paint the appropriate surface when the frame actually shows again.
-    if not closing and (t.panel ~= panel or t.rail ~= rail) then PaintWindow(t, self.config) end
+    -- The close still releases Blizzard's title before combat. Paint the
+    -- appropriate surface and place the drag strip when the frame shows again.
+    if not closing then
+        if t.panel ~= panel or t.rail ~= rail then PaintWindow(t, self.config) end
+        AnchorDragHandle(self, t, panel, rail)
+    end
     if t.presentation == panel and t.presentationRail == rail then return end
     t.presentation, t.presentationRail = panel, rail
     local title = self.frame.TitleContainer
@@ -219,15 +239,6 @@ function M:UpdatePresentation(closing, layout)
             Layout.Alpha(self.context, title.TitleText, 0)
         else
             Layout.RestoreProperty(self.context, title.TitleText, "SetAlpha")
-        end
-    end
-    if t.dragHandle then
-        t.dragHandle:ClearAllPoints()
-        if panel then
-            t.dragHandle:SetPoint("TOPLEFT", self.frame, "TOPLEFT", rail + 12, -8)
-            t.dragHandle:SetPoint("BOTTOMRIGHT", self.frame, "TOPRIGHT", -Private.BagCaption.PANEL_TITLE, -46)
-        else
-            t.dragHandle:SetAllPoints(title)
         end
     end
 end
@@ -576,8 +587,12 @@ end
 -- the pass right after the show hooks (ContainerFrame_OnHide runs it at
 -- once), so a stale list means Blizzard's own pass is due. Runs the pass only
 -- while the list holds; returns whether it ran.
+function M.NativeAnchorPassDue()
+    return ContainerFrameSettingsManager.bagsShown == nil
+end
+
 function M.NativeAnchorPass()
-    if NS.IsCombatLocked() or ContainerFrameSettingsManager.bagsShown == nil then return false end
+    if NS.IsCombatLocked() or M.NativeAnchorPassDue() then return false end
     UpdateContainerFrameAnchors()
     return true
 end

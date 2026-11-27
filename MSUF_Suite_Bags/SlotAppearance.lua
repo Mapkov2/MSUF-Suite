@@ -96,8 +96,9 @@ function Slots.Native(module, button, record, empty, activating)
     record.strokeVersion = cache.version[record.strokeKey]
     if not activating and record.strokeEmpty == empty and record.strokeQuality == quality then
         if record.strokeStyle == module.slotStyle then return end
-        -- A layout can reuse the same decoration after changing physical slots.
-        -- Colored items still consult Blizzard for an updated accessibility color.
+        -- A style change without a palette change reuses the decoration. A
+        -- ColorManager update (Bags.lua SlotColorsChanged) bumps the palette
+        -- revision too, so colored items consult Blizzard's color again.
         if record.paintRevision == module.slotPaintRevision and (empty or not S.Finite(quality) or quality <= Enum.ItemQuality.Common) then
             record.strokeStyle = module.slotStyle
             return

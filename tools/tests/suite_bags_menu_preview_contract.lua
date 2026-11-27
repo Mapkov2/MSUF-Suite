@@ -17,7 +17,9 @@ function W.NS.HostBridge.OpenExactMenuSetting(menu, page, section, key)
  exact={page,section,key}
  return exactAvailable
 end
-P.MenuWorkspace={FitHeader=function(ui,height) ui.header:SetHeight(height) end}
+P.HM.SetFixedPreviewHeight = function(_, height) P.reservedHeight = height end
+P.W = {}
+assert(loadfile(root.."/MSUF_Suite_Options/Menu/Workspace.lua"))("Options",P)
 assert(loadfile(root.."/MSUF_Suite_Options/Menu/PreviewInteraction.lua"))("Options",P)
 assert(loadfile(root.."/MSUF_Suite_Options/Menu/PreviewCanvas.lua"))("Options",P)
 local createPreview=W.S.BagsNewPreview
@@ -29,7 +31,7 @@ end
 local paintWindow=W.S.BagsPaintPreviewWindow
 W.S.BagsPaintPreviewWindow=function(...) paints=paints+1;return paintWindow(...) end
 local uiWidth=tonumber(arg[3]) or 720
-local ui={width=uiWidth,selected="bags",ctx={wrapper=CreateFrame("Frame",nil,UIParent),refreshers={}},
+local ui={width=uiWidth,selected="bags",spec={height=220},ctx={wrapper=CreateFrame("Frame",nil,UIParent),refreshers={}},
  header=CreateFrame("Frame",nil,UIParent),Focus=function(_,section) focused=section;return true end}
 ui.header:SetSize(uiWidth,220);ui.header:SetPoint("TOPLEFT",UIParent,"TOPLEFT",0,0)
 assert(loadfile(root.."/MSUF_Suite_Options/Pages/BagsPreview.lua"))("Options",P)
@@ -283,5 +285,54 @@ if W.NS.Client.isForever then
 else
  assert(#groups == 2, "Retail preview showed a keyring")
 end
+
+-- The preview can paint before the workspace installs its direct tabs.
+ui.selected = "inventory"
+W.config.inventoryRows = 12
+ui.refreshPreview()
+ui.spec.page = "suite_bags"
+ui.spec.tabs = { { id = "inventory", label = "Inventory organisation" }, { id = "bank", label = "Bank" } }
+ui.sections, ui.groups = {}, {}
+for _, tab in ipairs(ui.spec.tabs) do
+    ui.groups[tab.id] = { frame = CreateFrame("Frame", nil, ui.ctx.wrapper), height = 80 }
+end
+ui.body, ui.builder = {}, { FinishSection = function() end }
+P.HM.GetMissingSectionResolver = function() end
+P.HM.SetMissingSectionResolver = function() end
+P.HM.SetSectionCursor = function() end
+P.HideControlTitle = function() end
+P.W.SegmentTabs = function(_, parent, opts)
+    local tabs = CreateFrame("Frame", nil, parent)
+    tabs:SetPoint("TOPLEFT", parent, "TOPLEFT", opts.x, -opts.y)
+    tabs:SetSize(opts.width, 26)
+    return tabs, function() opts.afterRefresh(ui.selected) end, nil, opts.set
+end
+local function CheckPreviewBounds()
+    assert(ui.header:GetHeight() == P.reservedHeight, "the sticky header reserves a different height")
+    assert(preview.footer:GetBottom() >= ui.header:GetBottom() + 8, "Backpack preview overlaps the settings")
+end
+local singleRowHeight, windowTop = ui.header:GetHeight(), preview.window:GetTop()
+before = paints
+P.MenuWorkspace.Finish(ui)
+CheckPreviewBounds()
+assert(ui.header:GetHeight() == singleRowHeight, "installing tabs replaced the measured preview height")
+ui.tabs:SetHeight(56)
+W.RunScript(ui.tabs, "OnSizeChanged", ui.tabs:GetWidth(), 56)
+CheckPreviewBounds()
+assert(ui.header:GetHeight() == singleRowHeight + 30 and preview.window:GetTop() == windowTop - 30,
+    "wrapping the tabs did not move the preview and reserve space for the extra row")
+ui.tabs:SetHeight(26)
+W.RunScript(ui.tabs, "OnSizeChanged", ui.tabs:GetWidth(), 26)
+CheckPreviewBounds()
+assert(ui.header:GetHeight() == singleRowHeight and preview.window:GetTop() == windowTop,
+    "returning to one tab row did not restore the preview layout")
+assert(paints == before, "laying out the tab row repainted the preview")
+ui.chooseTab("bank")
+CheckPreviewBounds()
+assert(not examples:IsShown(), "bank mode shows Backpack border samples")
+ui.chooseTab("inventory")
+CheckPreviewBounds()
+assert(examples:IsShown() and ui.header:GetHeight() == singleRowHeight,
+    "returning to the Backpack did not restore the sample row and its space")
 assert(W.calls.info==0 and W.calls.quest==0,"representative menu preview scans inventory")
 print("independent Bags menu geometry/routing/cold/hidden/provider checks passed: "..(arg[2] or "Mainline"))

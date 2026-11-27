@@ -159,4 +159,46 @@ do
         "the manually sized bag kept pulsing with every row visible")
 end
 
+-- Blizzard's UpdateFrameSize sizes the bag for its own grid on every open,
+-- right before its anchor pass. The Suite takes its size back in that hook
+-- (InventoryView NativeSizeChanged): the pass and its post-hook work on the
+-- final size, and the first flush adds no pass and no resize.
+do
+    local W = H.New(root, { client = arg[2] or "Mainline", catalogPresentation = true,
+        screenWidth = 960, screenHeight = 768, config = { inventoryView = 1 } })
+    W.sizes[0] = 10
+    W.Put(0, 1, 101, 1)
+    W.Apply(); W.OpenBags(); W.Settle()
+    local g, CF = W.P.InventoryView.geometry, W.CF
+    local setSize, resizes = CF.SetSize, 0
+    CF.SetSize = function(...) resizes = resizes + 1; return setSize(...) end
+    W.CloseBags(); W.Settle()
+    W.OpenBags()
+    assert(CF:GetWidth() == g.width and CF:GetHeight() == g.height, "the reopened bag showed Blizzard's grid size")
+    local passes, sized = W.anchorPasses, resizes
+    W.Settle()
+    assert(W.anchorPasses == passes and resizes == sized,
+        ("the first flush laid the reopened bag out again: %d passes, %d resizes"):format(W.anchorPasses - passes, resizes - sized))
+    -- New contents: the flush measures and resizes once, without animation.
+    local height = g.height
+    W.CloseBags(); W.Settle()
+    W.sizes[1] = 30
+    for slot = 1, 30 do W.Put(1, slot, 101, 1) end
+    W.OpenBags()
+    sized = resizes
+    W.Settle()
+    assert(g.height > height and resizes == sized + 1 and CF:GetHeight() == g.height,
+        "a reopen with more rows did not resize once: " .. (resizes - sized))
+    -- In combat Blizzard's own grid size stays until the combat layout.
+    W.CloseBags(); W.Settle()
+    W.EnterCombat()
+    W.OpenBags()
+    local rows = math.ceil(CF:GetBagSize() / 10)
+    assert(CF:GetWidth() == 10 * 37 + 9 * 5 + 15 and CF:GetHeight() == rows * 37 + (rows - 1) * 5 + 103,
+        "a combat open took the Suite size before the combat layout")
+    W.LeaveCombat(); W.Settle()
+    CF.SetSize = setSize
+    assert(#W.errors == 0 and #W.taint == 0 and #W.combatLayout == 0, "the open size hook tainted or wrote in lockdown")
+end
+
 print("Bags content fit, manual size, scale, full-height, preview and combat passed: "..(arg[2] or "Mainline"))

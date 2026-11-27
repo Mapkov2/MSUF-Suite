@@ -55,14 +55,21 @@ local function CheckWarmSlotWrites()
     W.CloseBags()
     W.OpenBags()
     W.Settle()
-    assert(paints == 1, "only the rare slot needs a palette check: " .. paints)
+    -- A layout pass never changes a slot: a plain reopen asks nothing again.
+    assert(paints == 0, "a plain reopen consulted the slot palette again: " .. paints)
     assert(writes == 0, "unchanged native slot decorations rewritten on reopen: " .. writes)
+    -- Blizzard's accessibility palette (ColorManager.OnColorDataUpdated):
+    -- an open bag repaints at once, a closed one on its next show.
+    local filled = W.M.overlays[W.P.InventoryView.index.buttons[1]]
     color.g = .7
+    EventRegistry:TriggerEvent("ColorManager.OnColorDataUpdated")
+    assert(filled.slotEdges[1].color[2] == .7, "an open bag missed Blizzard's revised quality color")
     W.CloseBags()
+    color.g = .55
+    EventRegistry:TriggerEvent("ColorManager.OnColorDataUpdated")
     W.OpenBags()
     W.Settle()
-    local filled = W.M.overlays[W.P.InventoryView.index.buttons[1]]
-    assert(filled.slotEdges[1].color[2] == .7, "reopen missed Blizzard's revised quality color")
+    assert(filled.slotEdges[1].color[2] == .55, "reopen missed Blizzard's revised quality color")
     W.config.enabled = false
     W.Apply()
     W.config.enabled = true
@@ -72,6 +79,67 @@ local function CheckWarmSlotWrites()
 end
 
 CheckWarmSlotWrites()
+
+-- Blizzard's pool hands its buttons out in hash order (Pools.lua), so a few
+-- move on each open. Only a moved button is styled again (once over both of
+-- the open's passes) and repainted, with the quality of its new slot. Here
+-- the reversed buttons trade 6 (rare) with 9 (epic) and 7 with 8 (empty),
+-- so HasItem, stale until UpdateItems, already fits at the show.
+local function CheckReshuffledSlots()
+    local W = H.New(root, { client = arg[2], config = { inventoryView = 1, showItemLevel = false, showBindBadge = false } })
+    W.sizes[0] = 9
+    W.Define(101, { name = "Rare item", quality = 3 })
+    W.Define(102, { name = "Epic item", quality = 4 })
+    W.Put(0, 1, 101)
+    W.Put(0, 3, 102)
+    W.Put(0, 6, 101)
+    W.Put(0, 9, 102)
+    W.Apply()
+    W.OpenBags()
+    W.Settle()
+    local before = {}
+    for _, button in W.CF:EnumerateValidItems() do before[button] = button:GetBagID() * 1000 + button:GetID() end
+    W.CloseBags()
+    W.Settle()
+    local Slots = W.P.BagSlotAppearance
+    local native, paint, styled, painted = Slots.Native, Slots.Paint, {}, {}
+    Slots.Native = function(module, button, ...)
+        styled[button] = (styled[button] or 0) + 1
+        return native(module, button, ...)
+    end
+    Slots.Paint = function(record, frame, ...)
+        painted[frame] = (painted[frame] or 0) + 1
+        return paint(record, frame, ...)
+    end
+    W.reversePool = 4
+    W.OpenBags()
+    W.Settle()
+    W.reversePool = nil
+    Slots.Native, Slots.Paint = native, paint
+    local moved = 0
+    for _, button in W.CF:EnumerateValidItems() do
+        local bag, slot = button:GetBagID(), button:GetID()
+        local item = W.Item(bag, slot)
+        local quality = item and W.data[item.id].quality or nil
+        if bag * 1000 + slot ~= before[button] then
+            moved = moved + 1
+            assert(styled[button] == 1, "a moved slot was styled " .. tostring(styled[button]) .. " times")
+            assert(painted[button] == (quality and 1 or nil), "a moved slot's stroke was painted " .. tostring(painted[button]) .. " times")
+        else
+            -- A filled slot reads its cache version again after the closed
+            -- bag's pause (CombatIdle.lua); that check paints nothing.
+            assert(not styled[button] or item and styled[button] == 1,
+                "an unmoved slot was styled " .. tostring(styled[button]) .. " times")
+            assert(not painted[button], "an unmoved slot was repainted")
+        end
+        -- The slot cache keeps an empty slot as false.
+        assert((W.M.overlays[button].strokeQuality or nil) == quality, "a moved slot kept its old slot's quality stroke")
+    end
+    assert(moved == 4, "the reversed pool moved " .. moved .. " buttons")
+    assert(#W.errors == 0 and #W.taint == 0, table.concat(W.errors, ";") .. table.concat(W.taint, ";"))
+end
+
+CheckReshuffledSlots()
 
 for _, view in ipairs({1,4}) do
     local W=H.New(root,{client=arg[2],config={inventoryView=view,showItemLevel=false,showBindBadge=false,

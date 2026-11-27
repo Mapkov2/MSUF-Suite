@@ -413,13 +413,21 @@ local function CombinedItemsUpdated()
     if M.active then M:UpdateVisible() end
 end
 
+-- A native show is followed by Blizzard's anchor pass, whose post-hook lays the
+-- window out; a stale open-bag list marks that pass as due (BagWindow.lua).
+-- ContainerFrame_GenerateFrame, and on Forever also the combined bag's OnShow,
+-- run it (ContainerFrame.lua, forever d9c22e32 1295-1318 and 2857-2862).
+local function ShownWindowLayout()
+    if NS.IsCombatLocked() or not M.NativeAnchorPassDue() then M:RefreshWindowLayout() end
+end
+
 local function CombinedShown()
     if not M.active then return end
     Loads.Retry(M.loads)
     local style = M.windows and M.windows[M.frame]
     if style then Private.BagMotion.Play(style.shell, M.config) end
     M:UpdateVisible()
-    M:RefreshWindowLayout()
+    ShownWindowLayout()
     RefreshMovers()
 end
 
@@ -441,21 +449,42 @@ local function ReagentShown()
     if not M.active then return end
     StyleVisibleSlots(M, ContainerFrame6)
     Private.InventoryView.Request()
-    M:RefreshWindowLayout()
+    ShownWindowLayout()
     RefreshMovers()
 end
 
--- A pooled item button can be reassigned to a different bag or slot.
+-- A pooled item button can be reassigned to a different bag or slot. The pool
+-- hands its buttons out in hash order (Blizzard_SharedXMLBase/Pools.lua), so
+-- each open moves a few: only a button whose slot changed is styled again.
 local function NativeSlotsAssigned(frame)
     if not M.active then return end
     for _, button in frame:EnumerateValidItems() do
         local record = M.overlays[button]
-        if record then record.slotStyle, record.strokeKey = nil, nil end
+        if record then
+            local bag, slot = button:GetBagID(), button:GetID()
+            if not (S.Finite(bag) and S.Finite(slot)) or record.strokeKey ~= bag * Slots.KEY + slot then
+                record.slotStyle, record.strokeKey = nil, nil
+            end
+        end
     end
 end
 
 local function StandaloneItemsUpdated(frame)
     if M.active and M.windows and M.windows[frame] then StyleVisibleSlots(M, frame) end
+end
+
+-- Blizzard's accessibility palette changed (ColorManager.lua UpdateColorData,
+-- run for every colorblind override change): the quality strokes ask again.
+local function SlotColorsChanged(module)
+    module.slotPaintRevision = (module.slotPaintRevision or 0) + 1
+    module.slotStyle = (module.slotStyle or 0) + 1
+    StyleVisibleSlots(module, module.frame)
+    StyleVisibleSlots(module, ContainerFrame6)
+    if module.standaloneFrames then
+        for _, frame in ipairs(module.standaloneFrames) do StandaloneItemsUpdated(frame) end
+    end
+    -- The keyring's own buttons (KeyringInventory.lua) restyle in the view's pass.
+    if Private.InventoryView.active then Private.InventoryView.Request() end
 end
 
 local function StandaloneShown(frame)
@@ -492,6 +521,8 @@ local function InstallHooks(self)
     end
     frame:HookScript("OnShow", CombinedShown)
     frame:HookScript("OnHide", CombinedHidden)
+    -- GenerateFrame also reassigns the reagent pool.
+    hooksecurefunc(ContainerFrame6, "UpdateItemSlots", NativeSlotsAssigned)
     hooksecurefunc(ContainerFrame6, "UpdateItems", ReagentItemsUpdated)
     ContainerFrame6:HookScript("OnShow", ReagentShown)
     ContainerFrame6:HookScript("OnHide", ReagentHidden)
@@ -595,6 +626,7 @@ function M:Enable()
     InstallHooks(self)
     self.context:Event("USE_COMBINED_BAGS_CHANGED", CombinedModeChanged, IN_COMBAT)
     self.context:Event("PLAYER_REGEN_ENABLED", CombatEnded, IN_COMBAT)
+    self.context:Callback("ColorManager.OnColorDataUpdated", SlotColorsChanged)
     self:WatchBackpackBindings(true)
     self:ApplyBankLevels()
     self:Refresh()

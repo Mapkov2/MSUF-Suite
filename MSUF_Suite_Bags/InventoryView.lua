@@ -123,6 +123,21 @@ local function SplitOwnerShown()
     return StackSplitFrame:IsShown() and InventoryView.visibleButtons[StackSplitFrame.owner] == true
 end
 
+-- Blizzard sizes the bag for its own grid and runs its anchor pass right after
+-- (ContainerFrame.lua GenerateFrame, OnShow, OnTokenWatchChanged). Taking the last
+-- Suite size back here lets that pass and its post-hook work on the final size.
+local function NativeSizeChanged()
+    local g, frame = InventoryView.geometry, InventoryView.frame
+    if InventoryView.active and M.active and g.width and g.height and frame:IsShown() and not NS.InCombat()
+        and not P.BagResize.active and not P.BagWindowMotion.active and InventoryView.layout ~= "combat"
+        and S.ModuleState("bags") and not SplitOwnerShown()
+        and (frame:GetWidth() ~= g.width or frame:GetHeight() ~= g.height) then
+        M:PinBagResizeCorner()
+        frame:SetSize(g.width, g.height)
+    end
+    Request()
+end
+
 local function SplitClosed()
     if not InventoryView.splitPending then return end
     InventoryView.splitPending = false
@@ -319,6 +334,8 @@ local function OnEvent(_, event, value, success)
 end
 
 -- Blizzard re-acquires and re-anchors its item buttons; slot order is read again.
+-- A layout never changes a button's slot: Bags.lua NativeSlotsAssigned restyles
+-- the buttons UpdateItemSlots moved.
 local function NativeLayoutChanged()
     if not M.active then return end
     if not InventoryView.active or not InventoryView.frame:IsVisible() then
@@ -326,7 +343,6 @@ local function NativeLayoutChanged()
         return
     end
     InventoryView.hiddenLayoutDirty = nil
-    M.slotStyle = (M.slotStyle or 0) + 1
     InventoryView.positionsDirty = true
     -- Blizzard also moves hidden slots, which the next Suite pass may skip.
     for _, slot in pairs(InventoryView.slotState) do slot.x, slot.y = nil, nil end
@@ -474,7 +490,7 @@ function InventoryView.Refresh()
     if not InventoryView.hooked then
         hooksecurefunc(InventoryView.frame, "UpdateItems", Request)
         hooksecurefunc(InventoryView.frame, "UpdateItemLayout", NativeLayoutChanged)
-        hooksecurefunc(InventoryView.frame, "UpdateFrameSize", Request)
+        hooksecurefunc(InventoryView.frame, "UpdateFrameSize", NativeSizeChanged)
         InventoryView.frame:HookScript("OnShow", WindowShown)
         InventoryView.frame:HookScript("OnHide", WindowHidden)
         StackSplitFrame:HookScript("OnHide", SplitClosed)

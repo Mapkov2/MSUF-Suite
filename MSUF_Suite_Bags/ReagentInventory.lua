@@ -22,20 +22,6 @@ local function Changed()
     P.InventoryView.Request()
 end
 
-local function LayoutChanged()
-    if not M.active then return end
-    if not ContainerFrame6:IsVisible() then
-        M.slotStyle = (M.slotStyle or 0) + 1
-        Changed()
-        return
-    end
-    for _, button in ContainerFrame6:EnumerateValidItems() do
-        local record = M.overlays[button]
-        if record then record.slotStyle, record.strokeStyle = nil, nil end
-    end
-    Changed()
-end
-
 local function Property(frame, getter, setter, value)
     local ctx = Reagent.context
     local set = NS.IsCombatLocked() and ctx.UnprotectedProperty or ctx.Property
@@ -148,7 +134,8 @@ function Reagent.Refresh()
     Reagent.context = Reagent.context or S.NewContext("bags")
     if not Reagent.hooked then
         hooksecurefunc(ContainerFrame6, "UpdateItems", Changed)
-        hooksecurefunc(ContainerFrame6, "UpdateItemLayout", LayoutChanged)
+        -- A layout only re-anchors; Bags.lua restyles the slots UpdateItemSlots moved.
+        hooksecurefunc(ContainerFrame6, "UpdateItemLayout", Changed)
         ContainerFrame6:HookScript("OnHide", Changed)
         Reagent.hooked = true
     end

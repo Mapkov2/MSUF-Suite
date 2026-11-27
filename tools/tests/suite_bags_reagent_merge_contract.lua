@@ -248,4 +248,28 @@ do
     Clean(W)
 end
 
+-- ContainerFrame_GenerateFrame reassigns the reagent pool too (hash order,
+-- Pools.lua): a moved reagent button takes its new slot's quality stroke.
+do
+    local W = Ready(false, true)
+    W.Define(104, { name = "Epic reagent", class = 7, quality = 4 })
+    W.Put(5, 2, 104, 5)
+    W.OpenBags()
+    W.Settle()
+    local first, second = W.Reagent.Items[1], W.Reagent.Items[2]
+    assert(W.M.overlays[first].strokeQuality == 3 and W.M.overlays[second].strokeQuality == 4, "reagent strokes missing")
+    W.CloseBags()
+    W.Native(function() W.Reagent:Hide() end)
+    W.Settle()
+    W.reversePool = 2
+    W.OpenBags()
+    W.Settle()
+    W.reversePool = nil
+    assert(W.Reagent.Items[1] == second and W.Reagent.Items[2] == first, "the reagent pool did not reshuffle")
+    assert(W.M.overlays[second].strokeQuality == 3 and W.M.overlays[first].strokeQuality == 4,
+        "a reassigned reagent button kept its old slot's quality stroke")
+    Merged(W)
+    Clean(W)
+end
+
 print("reagent integration: native slots, views, search, counts, replacement, restore and combat passed")
