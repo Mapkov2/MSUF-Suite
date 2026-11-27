@@ -2267,6 +2267,54 @@
    "symbol": "P.W.SegmentTabs"
   },
   {
+   "file": "MSUF_Suite_Options/Pages/NameplatesEditorGhosts.lua",
+   "kind": "addon",
+   "reason": "Optional Menu2 tooltip export. The inactive preview handle still displays and can be selected on a host without tooltips.",
+   "symbol": "P.M.AddTooltip"
+  },
+  {
+   "file": "MSUF_Suite_Options/Pages/NameplatesEditorTools.lua",
+   "kind": "addon",
+   "reason": "Optional Menu2 preview chrome. The selected-element toolbar retains its controls and layout on legacy hosts.",
+   "symbol": "H.ApplyPreviewChrome"
+  },
+  {
+   "file": "MSUF_Suite_Options/Pages/NameplatesEditorTools.lua",
+   "kind": "addon",
+   "reason": "Optional Menu2 tooltip export. Snap and guide controls work without hover help on a host missing AddTooltip.",
+   "symbol": "M.AddTooltip"
+  },
+  {
+   "file": "MSUF_Suite_Options/Pages/NameplatesElementPanel.lua",
+   "kind": "addon",
+   "reason": "Optional Menu2 tooltip export. Element list selection, visibility and profile controls work without hover help.",
+   "symbol": "M.AddTooltip"
+  },
+  {
+   "file": "MSUF_Suite_Options/Pages/NameplatesElementPanel.lua",
+   "kind": "addon",
+   "reason": "Optional Menu2 preview chrome. The element list retains its layout and controls on legacy hosts.",
+   "symbol": "chrome.ApplyPreviewChrome"
+  },
+  {
+   "file": "MSUF_Suite_Options/Pages/NameplatesInspector.lua",
+   "kind": "addon",
+   "reason": "Optional Menu2 preview chrome. The inspector retains its layout and actions on legacy hosts.",
+   "symbol": "chrome.ApplyPreviewChrome"
+  },
+  {
+   "file": "MSUF_Suite_Options/Pages/NameplatesLayoutTemplates.lua",
+   "kind": "addon",
+   "reason": "Optional Menu2 status feedback. The confirmed settings batch and Undo do not rely on the toast.",
+   "symbol": "P.M.ShowStatusFeedback"
+  },
+  {
+   "file": "MSUF_Suite_Options/Pages/NameplatesLayoutTemplates.lua",
+   "kind": "addon",
+   "reason": "Legacy context-menu descriptions can lack a tooltip setter. The template label and confirmation remain available.",
+   "symbol": "row.SetTooltip"
+  },
+  {
    "file": "MSUF_Suite_Options/Pages/NameplatesEditor.lua",
    "kind": "addon",
    "reason": "H is MSUF2.PreviewHelpers (Shell/Menu2/MSUF_Menu2_PreviewHelpers.lua on the Main and Classic hosts, {} without it). ApplyPreviewChrome gives the canvas the shared preview frame; without it the canvas stays plain.",
@@ -2277,12 +2325,6 @@
    "kind": "addon",
    "reason": "MSUF2 widget export (Shell/Menu2/MSUF_Menu2_Widgets.lua on the Main and Classic hosts) that opens and flashes a section; without it a right-click only opens the setting.",
    "symbol": "W.FocusCollapsibleSection"
-  },
-  {
-   "file": "MSUF_Suite_Options/Pages/NameplatesEditor.lua",
-   "kind": "addon",
-   "reason": "Layer chips made by MSUF2.PreviewHelpers.CreateLayerButton (Main and Classic hosts) repaint themselves through Refresh; the plain T.Button fallback for an MSUF build without that helper has none and is dimmed by alpha.",
-   "symbol": "button.Refresh"
   },
   {
    "file": "MSUF_Suite_Options/Pages/NameplatesEditor.lua",

@@ -1,6 +1,22 @@
 {
   "removed": [
     {
+      "category": "locale",
+      "item": "Raid shortcuts (Retail)",
+      "basis": "moved",
+      "evidence": "MSUF_Suite/Core/Catalog/QualityOfLifeGroup.lua and suite_group_followups_contract.lua",
+      "reason": "The options use Raid shortcuts on both clients because the same module now supports Retail and Forever.",
+      "date": "2026-11-27"
+    },
+    {
+      "category": "locale",
+      "item": "Raid shortcuts are available only in Retail",
+      "basis": "dead",
+      "evidence": "Gethe/wow-ui-source forever d9c22e32cb240afb82bb2ecefbb78ef935333f59: SecureTemplates.lua and the loaded Mainline Blizzard_CompactRaidFrameManager.lua",
+      "reason": "The prior client restriction is obsolete because Forever supports the native countdown, ready check and secure marker actions.",
+      "date": "2026-11-27"
+    },
+    {
       "category": "rule_metadata",
       "item": "[\"forever:bags.inventoryView\",\"choice\",false,1,4,1,\"\"]",
       "basis": "owner",
@@ -8287,6 +8303,22 @@
       "evidence": "QualityOfLife.lua and QualityOfLifeCatalog.lua use the updated localized strings; the modules keep their existing IDs.",
       "reason": "Update tooltip wording for consistent rules and both supported clients.",
       "date": "2026-11-22"
+    },
+    {
+      "category": "locale",
+      "item": "Shows your most recent successful spells. Standard rows have an icon, name and marker; Icons only is a compact vertical icon column. Display width applies to standard rows; icon width follows row height in the icon preset. Position and anchor are set in MSUF Edit Mode, which shows sample actions. The list stops listening while disabled. Spells whose details the client keeps private cannot appear.",
+      "basis": "moved",
+      "evidence": "MSUF_Suite_Options/Pages/QualityOfLifeHelp.lua action_tracker and tools/tests/suite_action_tracker_contract.lua",
+      "reason": "Update the existing help for horizontal and vertical growth and the native icon-only cast display.",
+      "date": "2026-11-27"
+    },
+    {
+      "category": "locale",
+      "item": "Shown windows: %d. Raise the number of windows to show this one.",
+      "basis": "dead",
+      "evidence": "tools/tests/suite_meter_native_preview_contract.lua opens the Menu2 picker on both clients and checks that its choices follow the window count.",
+      "reason": "The picker only selects active windows, so a warning about selecting an inactive window can no longer appear.",
+      "date": "2026-11-27"
     }
   ]
 }

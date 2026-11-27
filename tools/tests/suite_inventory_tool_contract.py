@@ -433,6 +433,22 @@ S.RegisterOwnedMover("test", "live", {})
             with self.assertRaises(ValueError):
                 inventory.extract(root)
 
+    def test_locale_scan_waits_for_catalog_and_source_validation(self):
+        for failing_step in ("catalog", "source_inventory"):
+            with (
+                self.subTest(failing_step=failing_step),
+                patch.object(inventory, "catalog", return_value=[]),
+                patch.object(inventory, "source_inventory"),
+                patch.object(inventory, "english_keys", return_value=set()) as scan,
+                patch.object(inventory, "ProcessPoolExecutor", create=True) as pool,
+            ):
+                # Model the old worker's submission without starting a subprocess.
+                pool.return_value.__enter__.return_value.submit.side_effect = lambda extract, root: extract(root)
+                getattr(inventory, failing_step).side_effect = ValueError(failing_step)
+                with self.assertRaisesRegex(ValueError, failing_step):
+                    inventory.extract(Path("synthetic"))
+                scan.assert_not_called()
+
     def test_verify_detects_tampering_and_skips_missing_commit(self):
         with tempfile.TemporaryDirectory(prefix="suite-inventory-test-") as tmp:
             root = fixture(Path(tmp))
@@ -505,7 +521,8 @@ MUTANTS = (
     ("unchecked freeze", "suite_inventory_diff.py", "if status and not args.accept_problems:", "if False:"),
     ("uncaught syntax errors", "suite_inventory_diff.py", "OSError, ValueError, SyntaxError, subprocess",
      "OSError, ValueError, subprocess"),
-    ("lost locales", "suite_inventory_diff.py", 'inventory["locale"].update(english.result())', "pass"),
+    ("lost locales", "suite_inventory_diff.py", 'inventory["locale"].update(english_keys(root))', "pass"),
+    ("premature locale scan", "suite_inventory_diff.py", "    constants = {}", "    english_keys(root)\n    constants = {}"),
     ("lost defaults", "suite_inventory_catalog.lua", 'emit("defaults", key, type(rule.default), rule.default)', ""),
     ("lost choices", "suite_inventory_catalog.lua", 'emit("choices", key, index, choice)', ""),
     ("lost sections", "suite_inventory_catalog.lua", 'emit("sections", key, rule.section, rule.sectionTitle or "")', ""),

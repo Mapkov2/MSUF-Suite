@@ -8,8 +8,6 @@ See suite_inventory.md for extraction boundaries and evidence requirements.
 """
 
 import argparse
-from concurrent.futures import ProcessPoolExecutor
-from concurrent.futures.process import BrokenProcessPool
 import contextlib
 from datetime import date
 import io
@@ -62,19 +60,16 @@ def english_keys(root):
 def extract(root, clients=CLIENTS):
     inventory = {name: set() for name in CATEGORIES}
     constants = {}
-    # The locale pass is the longest and shares nothing with the others, so it
-    # runs in its own process while the catalogs and the source pass finish.
-    with ProcessPoolExecutor(max_workers=1) as process:
-        english = process.submit(english_keys, root)
-        for client in clients:
-            rows = catalog(root, client)
-            for category, *parts in rows:
-                if category == "constants":
-                    constants[parts[0]] = parts[1]
-                else:
-                    inventory[category].add(item(*parts))
-        source_inventory(root, inventory, constants)
-        inventory["locale"].update(english.result())
+    for client in clients:
+        rows = catalog(root, client)
+        for category, *parts in rows:
+            if category == "constants":
+                constants[parts[0]] = parts[1]
+            else:
+                inventory[category].add(item(*parts))
+    source_inventory(root, inventory, constants)
+    # Start the expensive locale pass only after both structural scans succeed.
+    inventory["locale"].update(english_keys(root))
     return inventory
 
 
@@ -330,7 +325,7 @@ def main(argv=None):
         if args.client != "both":
             raise ValueError("the frozen gate always checks both clients")
         return check(data["items"], extract(args.root), load_allowlist(args.allowlist), data["revision"], args.diff)
-    except (OSError, ValueError, SyntaxError, subprocess.SubprocessError, BrokenProcessPool) as error:
+    except (OSError, ValueError, SyntaxError, subprocess.SubprocessError) as error:
         print("FAIL feature inventory: " + str(error))
         return 1
 
