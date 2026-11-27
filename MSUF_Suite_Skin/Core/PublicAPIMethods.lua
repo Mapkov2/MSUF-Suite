@@ -24,6 +24,7 @@ local TargetEntry = Shared.TargetEntry
 local ClaimDependency = Shared.ClaimDependency
 local CleanupEntry = Shared.CleanupEntry
 local DropEntry = Shared.DropEntry
+local GetScope = Shared.GetScope
 local ReconcileEntry = Shared.ReconcileEntry
 local QueueEntry = Shared.QueueEntry
 local SelectEntry = Shared.SelectEntry
@@ -76,15 +77,6 @@ local function ValidIdentifier(value)
     if type(value) ~= "string" or #value < 1 or #value > 64 then return false end
     if value:match("^%s") or value:match("%s$") then return false end
     return value:match("^[^:%c]+$") ~= nil
-end
-
-local function GetScope(facade)
-    local scope = scopeRecords[facade]
-    if not scope or scope.released or scope.client.released
-        or scope.client.unregisterPending then
-        return nil, "released"
-    end
-    return scope
 end
 
 local function GetClient(facade)
@@ -481,6 +473,8 @@ function ScopeMethods:RefreshAll()
     if not scope then return false, reason end
     return QueueScopeOperation(scope, "refresh")
 end
+
+ScopeMethods.IsCurrent = Shared.ScopeIsCurrent
 
 function ScopeMethods:ReleaseAll()
     local scope, reason = GetScope(self)

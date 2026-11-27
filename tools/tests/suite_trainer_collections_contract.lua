@@ -153,9 +153,11 @@ ClassTrainerFrame_InitServiceButton(row, 11, true)
 assert(row.surfaceVisible == false and row.normal.alpha == 1)
 
 -- The original grip covered the action's bottom-right corner in both panels.
+-- The window policy loads before the chrome (MSUF_Suite_Skin_Mainline.toc).
+NS.WindowControlPolicy = { ScreenRatio = function() return 1 end,
+    Anchor = function(region, ...) region:ClearAllPoints(); region:SetPoint(...) end }
 assert(loadfile(skin .. "Rendering/WindowControlNativeArt.lua"))("skin", NS)
 assert(loadfile(skin .. "Rendering/WindowControlChrome.lua"))("skin", NS)
-NS.WindowControlPolicy = { ScreenRatio = function() return 1 end }
 UIParent = { GetWidth = function() return 1280 end }
 for _, frame in ipairs({trainerFrame, CollectionsJournal}) do
     local grip = { ClearAllPoints = function() end }

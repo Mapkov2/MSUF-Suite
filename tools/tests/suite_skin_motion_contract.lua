@@ -181,6 +181,22 @@ do
     toggle:Fire("OnClick")
     Check(Motion.count == 1 and surface.fill:GetAlpha() < 1, "first actual checkbox change lost its reveal")
     Tick()
+    -- 2026-11-26 trace: 625 surface shows, most of them controls. A control's
+    -- show refreshes the checked baseline only; gestures keep their checks.
+    local reads, isEnabled = 0, toggle.IsEnabled
+    function toggle:IsEnabled() reads = reads + 1 return isEnabled(self) end
+    for index = 1, 10 do
+        toggle.checked = index % 2 == 0
+        toggle:Hide()
+        toggle:Show()
+        Check(surface.motion.checked == toggle.checked, "a control show lost its checked baseline")
+    end
+    Check(reads == 0, ("ten control shows read IsEnabled %d times"):format(reads))
+    toggle.IsEnabled = isEnabled
+    toggle.checked = false
+    toggle:Fire("OnClick")
+    Check(Motion.count == 1, "a click after control shows lost its reveal")
+    Tick()
 end
 do
     local overlay = state.hoverOverlay
@@ -814,6 +830,44 @@ for _, contentFirst in ipairs({ false, true }) do
 end
 NS.ContentMotion.UnwatchOwner(openingOwner)
 
+-- A window whose owner presents the opening itself (the Character Glass view)
+-- is covered: no native fade over its whole tree, and a child deferred to the
+-- opening resolves as covered. A declined cover, or combat, keeps the fade.
+do
+    local window = Target("Frame", UIParent)
+    local child = Target("Frame", window)
+    NS.ContentMotion.Watch(window, openingOwner)
+    window:Hide()
+    local coverCalls, accept, covered = 0, true, nil
+    NS.ContentMotion.SetOpeningCover(window, function(frame)
+        coverCalls = coverCalls + 1
+        if accept then frame.alpha = 0 end
+        return accept
+    end)
+    window.shown = true -- visible before its OnShow hook, as on a native open
+    Check(NS.ContentMotion.DeferToOpening(child, function(_, value) covered = value end),
+        "a child did not defer to the window opening")
+    window:Fire("OnShow")
+    Check(coverCalls == 1 and covered == true and NS.ContentMotion.records[window] == nil,
+        "a covered opening still faded the window")
+    window:Hide()
+    accept = false
+    window:Show()
+    local fade = NS.ContentMotion.records[window]
+    Check(coverCalls == 2 and fade and fade.group.plays == 1, "a declined cover skipped the opening fade")
+    window:Hide()
+    accept, lockdown = true, true
+    window:Show()
+    Check(coverCalls == 2 and fade.group.plays == 2, "the opening cover ran in combat")
+    lockdown = false
+    window:Hide()
+    NS.ContentMotion.SetOpeningCover(window, nil)
+    window:Show()
+    Check(coverCalls == 2 and fade.group.plays == 3, "a removed cover still covered the opening")
+    window:Hide()
+    NS.ContentMotion.Unwatch(openingOwner, window)
+end
+
 local function HoldNextFrame()
     local earlier, pending = C_Timer.After, {}
     C_Timer.After = function(delay, callback)
@@ -985,7 +1039,9 @@ do
     local mailbox = Target("Frame", UIParent)
     local first, second, peer = Target("Button", mailbox), Target("Button", mailbox), Target("Button", mailbox)
     local previousMailbox, previousFirst, previousSecond = MailFrame, MailFrameTab1, MailFrameTab2
-    local previousHook = hooksecurefunc
+    local previousHook, previousTime = hooksecurefunc, GetTime
+    -- TabMotion dedupes repaints per client frame (frame-stable GetTime).
+    GetTime = function() return 1 end
     local refresh, selection = NS.ControlSkin.Refresh, NS.MenuMotion.SelectionChanged
     MailFrame, MailFrameTab1, MailFrameTab2 = mailbox, first, second
     local installedHooks, refreshed, animated = {}, {}, {}
@@ -1027,6 +1083,7 @@ do
     NS.ControlSkin.Refresh, NS.MenuMotion.SelectionChanged = refresh, selection
     for _, tab in ipairs({ first, second, peer }) do NS.ControlSkin.states[tab] = nil end
     MailFrame, MailFrameTab1, MailFrameTab2 = previousMailbox, previousFirst, previousSecond
+    GetTime = previousTime
 end
 local nestedRoot, nestedBody = Target("Frame", UIParent), Target("Frame")
 nestedRoot.Content, nestedBody.parent = nestedBody, nestedRoot

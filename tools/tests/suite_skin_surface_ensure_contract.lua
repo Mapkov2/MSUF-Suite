@@ -363,7 +363,7 @@ NS.Surface = {
     SetVisible = Noop,
 }
 NS.Cosmetics = { Fade = function() return true end, SuppressVertexAlpha = function() return true end }
-NS.ControlSkin = { DisableOwner = Noop }
+NS.ControlSkin = { DisableOwner = Noop, MarkFixedButtonSpec = function(spec) return spec end }
 NS.IconSkin = { Apply = function() return {} end }
 NS.GenericWindows = { IsCategoryEnabled = function() return true end }
 NS.DB.skinCategories = { economy = true, social = false }

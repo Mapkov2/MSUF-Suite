@@ -5,6 +5,15 @@ local Content = { records = setmetatable({}, { __mode = "k" }), active = {}, wat
 NS.ContentMotion = Content
 local Safety, Motion = NS.Safety, NS.Motion
 local revision = 0
+-- frame -> cover(frame): true when the owner hid the frame for its own opening.
+local covers = setmetatable({}, { __mode = "k" })
+
+-- A window whose owner presents the opening itself (the Character Glass view)
+-- skips the alpha fade over its whole native subtree. Its children's deferred
+-- fades resolve as covered, exactly as after a played opening.
+function Content.SetOpeningCover(frame, cover)
+    covers[frame] = cover
+end
 
 local function Stop(record)
     if Content.active[record] then record.group:Stop() end
@@ -222,6 +231,11 @@ local function Shown(frame)
     watch.shown = true
     if instant then
         if instant == frame then watch.openedAt = GetTime() end
+        CompleteOpening(watch, frame)
+        return
+    end
+    local cover = covers[frame]
+    if cover and not NS.IsCombatLocked() and Safety.Dispatch(cover, frame) == true then
         CompleteOpening(watch, frame)
         return
     end

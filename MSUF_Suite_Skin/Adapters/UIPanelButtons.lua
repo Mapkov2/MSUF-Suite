@@ -232,7 +232,18 @@ local function NativeListAction(button)
         or button == Field(_G, "MountJournalMountButton") or button == Field(_G, "PetJournalSummonButton"))
 end
 
+-- A bag action is skinned once. Every bag show cascades UIPanelButton_OnShow,
+-- which only sets the textures of slices this skin already faded
+-- (SecureUIPanelTemplates.lua), so a warm show has nothing to repair. A cold
+-- or disabled button never reads the Bags owner here.
+local function WarmBagAction(button)
+    if not NS.ControlSkin.IsWarm(button, OWNER, BAG_ACTION_SPEC) or not Enabled() then return false end
+    local actions = NS.SuiteCore().Suite.BagActionButtons
+    return actions and actions[button] and true or false
+end
+
 local function OnUIPanelButtonShown(button)
+    if WarmBagAction(button) then return end
     -- Visibility callbacks can run while opening combat UI. Do not retain or
     -- mutate a foreign control in that path; the next out-of-combat show (or a
     -- bounded adapter refresh) will capture it.

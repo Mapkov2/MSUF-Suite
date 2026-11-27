@@ -384,11 +384,42 @@ do
     end
     Check(agreed and samples > 0 and samples < 112, "native gold was classified unlike Safety.SameColor")
 
-    -- Single frames (window passes, surfaces) keep their full read.
+    -- Single frames (window passes, surfaces) are tracked again on every skin
+    -- and show (2026-11-26 trace: 1,184 TrackFrame calls). A frame with a
+    -- readable region count revisits its recorded FontStrings only.
     local single = Node({ FontString(1, 1, 1) })
     Yellow.TrackFrame(single)
     Yellow.TrackFrame(single)
-    Check(single.enumerations == 2, "BlizzardYellow.TrackFrame started caching a single frame")
+    Check(single.enumerations == 1, "BlizzardYellow.TrackFrame enumerated an unchanged single frame again")
+    local gold = FontString(1, 0.82, 0)
+    local surface = Node({ Region(), Region(), gold, Region(), Region(), Region(), Region() })
+    for _ = 1, 5 do Yellow.TrackFrame(surface) end
+    Check(surface.enumerations == 1 and gold.writes == 1 and ShowsDesired(gold),
+        "a repeated surface skin enumerated its unchanged regions again")
+    gold:SetTextColor(1, 0.82, 0, 1)
+    gold.writes = 0
+    Yellow.TrackFrame(surface)
+    Check(surface.enumerations == 1 and gold.writes == 1 and ShowsDesired(gold),
+        "text Blizzard reset to native gold was not recolored on the warm path")
+    local late = FontString(1, 0.82, 0)
+    surface.regions[#surface.regions + 1] = late
+    Yellow.TrackFrame(surface)
+    Yellow.TrackFrame(surface)
+    Check(surface.enumerations == 2 and late.writes == 1 and ShowsDesired(late) and gold.writes == 1,
+        "a FontString added to a tracked surface was not expanded once and recolored")
+    surface.hierarchySecret = true
+    for _ = 1, 3 do Check(Yellow.TrackFrame(surface) == 0, "a secret region was compared or recolored") end
+    Check(surface.enumerations == 5, "a secret region count reused a recorded region list")
+    surface.hierarchySecret = false
+    Yellow.TrackFrame(surface)
+    Yellow.TrackFrame(surface)
+    Check(surface.enumerations == 6, "a readable count after secrets did not record its regions again")
+    local plain = { regions = { FontString(1, 0.82, 0) }, enumerations = 0 }
+    function plain:IsForbidden() return false end
+    function plain:GetRegions() self.enumerations = self.enumerations + 1 return unpack(self.regions) end
+    Yellow.TrackFrame(plain)
+    Yellow.TrackFrame(plain)
+    Check(plain.enumerations == 2, "a frame without a region count lost its full read")
 
     -- An unchanged recycled row allocates nothing.
     for _ = 1, 3 do Yellow.TrackFrames(nodes, #nodes) end

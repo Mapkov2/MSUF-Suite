@@ -131,6 +131,19 @@ Check(result == "applied" and host:GetTargetStatus(hidden) == "pending-visible",
 hidden:Show()
 Check(host:GetTargetStatus(hidden) == "applied", "shown host handoff")
 
+local stable = assert(NS.PublicAPI.RegisterSuiteAddon("perfy-stable"))
+local panel = Frame(nil, UIParent)
+Check(stable:SkinFrame(panel) and stable:IsCurrent(), "authored scope stayed dirty after its first paint")
+local initialAttaches = attaches
+for _ = 1, 10 do Check(stable:IsCurrent(), "unchanged authored scope became dirty") end
+Check(attaches == initialAttaches, "scope readiness repainted an unchanged surface")
+NS.Registry.NotifyListeners("geometry", "windowRadius")
+Check(not stable:IsCurrent(), "scope readiness ignored the new settings generation")
+Check(stable:RefreshAll() and attaches == initialAttaches + 1 and stable:IsCurrent(), "settings change did not repaint once")
+_G.combat = true
+Check(stable:ReleaseAll() and not stable:IsCurrent(), "scope readiness ignored a pending release")
+Drain()
+
 local drop = Button(UIParent)
 drop.Text, drop.Arrow, drop.Background = Art(drop, "FontString"), Art(drop), Art(drop)
 local selected, callbacks = 0, {}

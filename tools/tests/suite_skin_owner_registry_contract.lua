@@ -41,7 +41,9 @@ local hidden = {}
 local NS = {
     IsCombatLocked = function() return locked end,
     Registry = { AddListener = function() end },
-    Surface = { SetVisible = function(target, visible) hidden[target] = visible == false end },
+    -- AdapterKit attaches unprotected shells on a combat apply as well.
+    Surface = { SetVisible = function(target, visible) hidden[target] = visible == false end,
+        Attach = function() return {} end, Ensure = function() return {} end },
 }
 for _, file in ipairs({ "../MSUF_Suite/Appearance/Safety.lua", "../MSUF_Suite/Appearance/CombatGate.lua", "Adapters/AdapterKit.lua" }) do
     assert(loadfile(root .. "/MSUF_Suite_Skin/" .. file))("MSUF_Suite_Skin", NS)

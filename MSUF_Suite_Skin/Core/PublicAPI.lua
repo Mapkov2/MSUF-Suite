@@ -623,6 +623,25 @@ local function SelectEntry(scope, target, entry)
     return QueueEntry(scope, target, entry)
 end
 
+local function GetScope(facade)
+    local scope = scopeRecords[facade]
+    if not scope or scope.released or scope.client.released or scope.client.unregisterPending then
+        return nil, "released"
+    end
+    return scope
+end
+
+-- For clients whose authored controls keep their artwork between shows.
+local function ScopeIsCurrent(facade)
+    local scope = GetScope(facade)
+    if not scope or scope.suspended or scope.pendingOperation or not RuntimeEnabled(scope) then return false end
+    for _, entry in pairs(scope.targets) do
+        if entry.applied ~= true or entry.appliedFor ~= settingsGeneration or entry.status ~= "applied"
+            or entry.release or entry.pendingVisible then return false end
+    end
+    return true
+end
+
 -- Private to PublicAPIMethods.lua, which loads next (TOC order) and takes it
 -- off NS again.
 NS.PublicAPIShared = {
@@ -642,6 +661,8 @@ NS.PublicAPIShared = {
     ClaimDependency = ClaimDependency,
     CleanupEntry = CleanupEntry,
     DropEntry = DropEntry,
+    GetScope = GetScope,
+    ScopeIsCurrent = ScopeIsCurrent,
     ReconcileEntry = ReconcileEntry,
     QueueEntry = QueueEntry,
     SelectEntry = SelectEntry,

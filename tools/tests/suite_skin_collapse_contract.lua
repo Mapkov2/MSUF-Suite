@@ -669,7 +669,43 @@ local function CheckWarmReopenCapture()
     list:Show(); list:Fire("OnShow")
     Check(copy.fonts[1].text == "changed while hidden" and copy.fonts[1].color[2] == 0.6,
         "reopened list kept stale closing artwork")
+    -- 2026-11-26 trace (FriendsFrame reopen): the show hook and the native
+    -- layout of the same frame each walked the rows and recaptured every copy.
+    -- A driven list takes one baseline per reopen, in either order.
+    local walks, forEach = 0, list.ForEachFrame
+    function list:ForEachFrame(callback) walks = walks + 1 return forEach(self, callback) end
+    H.HoldJobs()
+    for _ = 1, 4 do
+        Reopen(list)
+        list:TriggerEvent("layout")
+        H.DrainJobs()
+        H.HoldJobs()
+    end
+    print(("Four driven reopens with their native layout: %d row walks"):format(walks))
+    Check(walks == 4, "a driven reopen walked and recaptured its rows twice")
+    walks = 0
+    list:Hide()
+    list:Show()
+    list:TriggerEvent("layout")
+    list:Fire("OnShow")
+    Check(walks == 1 and H.QueuedJobs() == 0, "a layout before the show hook did not take the reopen baseline")
+    walks = 0
+    list:Hide()
+    c.label.text = "changed again while hidden"
+    list:Show(); list:Fire("OnShow")
+    Check(walks == 0 and H.QueuedJobs() == 1, "a driven reopen did not wait for its native layout")
+    Check(H.DrainJobs() == 1 and walks == 1 and copy.fonts[1].text == "changed again while hidden",
+        "a reopen without a native layout lost its next-frame baseline")
+    H.HoldJobs()
+    walks = 0
+    Reopen(list)
+    list:Hide()
+    Check(H.QueuedJobs() == 0 and H.DrainJobs() == 0 and walks == 0, "a closed list kept its reopen baseline")
+    H.HoldJobs()
+    Reopen(list)
     NS.GenericWindows.releaseContent("warm-reopen")
+    Check(H.QueuedJobs() == 0 and H.DrainJobs() == 0 and walks == 0, "a released list kept its reopen baseline")
+    list.ForEachFrame = forEach
 
     local addons = Frame(UIParent, true)
     local addonBox = List(addons, true)

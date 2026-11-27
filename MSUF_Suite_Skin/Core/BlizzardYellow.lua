@@ -216,18 +216,9 @@ local function TrackRegions(record, ...)
     return count
 end
 
--- Recolor only FontStrings already reached through a known Blizzard adapter.
--- This intentionally avoids global frame enumeration and never walks unrelated
--- addon globals. GenericWindows and Surface call this on bounded/exact targets,
--- including pooled ScrollBox rows when Blizzard initializes them.
-function BlizzardYellow.TrackFrame(frame)
-    if not CanTrack(frame) or type(frame.GetRegions) ~= "function" then return 0 end
-    RefreshDesiredColor()
-    return TrackRegions(nil, frame:GetRegions())
-end
-
 -- Blizzard initializes a pooled row again on every scroll, and its nodes keep
--- their regions. Each node's FontStrings are recorded with its region count
+-- their regions; a skinned surface or control is tracked again on every show
+-- and skin. Each node's FontStrings are recorded with its region count
 -- and revisited directly while the count stays. A region is never destroyed,
 -- so the set changes only by a new region (the count grows) or a reparented
 -- one; row templates create theirs once. A secret count or region (Hierarchy
@@ -257,6 +248,18 @@ local function TrackNode(frame)
     end
     record.regions = regions
     return TrackRegions(record, frame:GetRegions())
+end
+
+-- Recolor only FontStrings already reached through a known Blizzard adapter.
+-- This intentionally avoids global frame enumeration and never walks unrelated
+-- addon globals. GenericWindows and Surface call this on bounded/exact targets,
+-- including pooled ScrollBox rows when Blizzard initializes them. A frame that
+-- reports its region count revisits only its recorded FontStrings (TrackNode).
+function BlizzardYellow.TrackFrame(frame)
+    if not CanTrack(frame) or type(frame.GetRegions) ~= "function" then return 0 end
+    RefreshDesiredColor()
+    if Safety.ReadableMethod(frame, "GetNumRegions") then return TrackNode(frame) end
+    return TrackRegions(nil, frame:GetRegions())
 end
 
 -- TrackFrame over frames[1..count] (a pooled row's subtree): the enable and

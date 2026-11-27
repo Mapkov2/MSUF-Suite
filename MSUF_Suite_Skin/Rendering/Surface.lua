@@ -524,6 +524,14 @@ function Surface.Ensure(target, spec, prepareShell)
     return Surface.Attach(target, spec)
 end
 
+-- Warm independent buttons have no native hierarchy or selection to recheck.
+function Surface.IsWarm(target, spec, active)
+    local state = NS.Registry.GetSurface(target)
+    return state ~= nil and state.kind == "button" and state.spec == spec and state.visible == true
+        and state.filledGlassAncestor == nil and state.paintGeneration == paintGeneration and (state.active == true) == active
+        and not state.syncNativeSelected and not state.pendingVisible and not state.pendingActive
+end
+
 local function AddButtonStateTextures(button, state)
     if state.kind == "button" then
         return

@@ -328,8 +328,10 @@ end
 local function SkinButtonSurface(button, state, active, reuseBagPaint, nativeSelection)
     if reuseBagPaint then
         local surface = NS.Registry.GetSurface(button)
+        -- The painted selection must be the requested one (nil counts as false).
         if surface and surface.kind == "button" and surface.spec == state.spec and surface.visible
-            and not surface.active and not surface.syncNativeSelected and not surface.pendingVisible and not surface.pendingActive then
+            and (surface.active == true) == (state.requestedActive == true)
+            and not surface.syncNativeSelected and not surface.pendingVisible and not surface.pendingActive then
             -- Both clients' UIPanelButton_OnShow resets three slice textures, never
             -- the material. Keep the native text repair and the generation check.
             NS.BlizzardYellow.TrackFrame(button)
@@ -365,9 +367,25 @@ end
 local fixedButtonSpecs = setmetatable({}, { __mode = "k" })
 
 -- The owner supplies an immutable spec; native assets and bindings still refresh.
-function ControlSkin.MarkFixedButtonSpec(spec, bagAction)
-    fixedButtonSpecs[spec] = bagAction and "bagAction" or true
+-- reusePaint: the owner verified that its template never rewrites the owned
+-- fill or the highlight/pushed/disabled slot art, so a warm re-apply of the
+-- same spec (also an active one) keeps the current material paint. Native art,
+-- slot bindings and faded slices are still repaired on every apply.
+function ControlSkin.MarkFixedButtonSpec(spec, reusePaint)
+    fixedButtonSpecs[spec] = reusePaint and "bagAction" or true
     return spec
+end
+
+-- True when button already shows a reusePaint spec for owner: applied (not as
+-- a window action), visible, painted for the current settings generation in
+-- the requested selection, with nothing deferred by combat. Owned state only,
+-- no native read: a caller that skips its apply on true keeps the native
+-- repairs (slot art, faded slices) its template needs.
+function ControlSkin.IsWarm(button, owner, spec)
+    local state = ControlSkin.states[button]
+    if not state or not state.enabled or state.windowAction or state.owner ~= owner
+        or spec == nil or state.fixedSpec ~= spec or fixedButtonSpecs[spec] ~= "bagAction" then return false end
+    return NS.Surface.IsWarm(button, state.spec, state.requestedActive == true)
 end
 
 local function ApplyButtonNow(button, owner, kind, spec)
@@ -527,6 +545,18 @@ end
 
 local function AllowsImplicit(state)
     return state.spec and state.spec.allowImplicitProtected
+end
+
+-- A selection repeated in the frame that painted it (TabMotion): repair only
+-- what native code rewrites per selection call, the gold text and the slot
+-- bindings with their blend and layers. False leaves the full refresh to the caller.
+function ControlSkin.RepairBindings(target)
+    local state = ControlSkin.states[target]
+    if not state or not state.enabled or state.windowAction or IsProtected(target, AllowsImplicit(state)) then
+        return false
+    end
+    if not state.spec.ownedArt then NS.BlizzardYellow.TrackFrame(target) end
+    return AssignOwnedButtonStates(target, true)
 end
 
 function ControlSkin.Refresh(target, active, nativeSelection)

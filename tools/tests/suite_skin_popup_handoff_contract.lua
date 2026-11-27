@@ -70,6 +70,7 @@ local NS = {
         Disable = function(button) released[button] = true; return true end,
         DisableOwner = Noop,
         GetOwner = function() return nil end,
+        IsWarm = Noop,
     },
     WindowActionSkin = {
         AdoptNativeVisual = function(button) adopted[button] = (adopted[button] or 0) + 1 end,

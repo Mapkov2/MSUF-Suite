@@ -60,18 +60,24 @@ local native = button.Left.SetAlpha
 function button.Left:SetAlpha(value) writes = writes + 1; native(self, value) end
 local foreignHighlight = Texture()
 button:SetHighlightTexture(foreignHighlight)
+-- A skinned bag action is warm: each bag show cascades UIPanelButton_OnShow
+-- to it, which needs no ControlSkin pass (UIPanelButtons WarmBagAction).
+local apply, applies = NS.ControlSkin.ApplyUIPanelButton, 0
+NS.ControlSkin.ApplyUIPanelButton = function(...) applies = applies + 1; return apply(...) end
 local instructions = 0
 debug.sethook(function() instructions = instructions + 100 end, "", 100)
 for i = 1, 10 do UIPanelButton_OnShow(button) end
 debug.sethook()
-print(("Ten shows: %d sampled Lua VM instructions, %d native slice writes"):format(instructions, writes))
+print(("Ten shows: %d sampled Lua VM instructions, %d native slice writes, %d applies"):format(instructions, writes, applies))
 print(("Ten shows: %d full surface paints"):format(paints))
 assert(paints == 0, "tagged bag actions repainted unchanged materials on warm OnShow")
-assert(instructions < 16000, "warm bag action exceeded the combined ten-show VM budget")
+assert(applies == 0 and writes == 0, "a warm bag action ran ControlSkin again: " .. applies .. " applies, " .. writes .. " writes")
+-- Measured 1,700 with the warm path; the reuse path took 10,000 or more.
+assert(instructions < 2500, "warm bag action exceeded the combined ten-show VM budget")
 NS.Registry.NotifyListeners("profile", "changed")
 UIPanelButton_OnShow(button)
-assert(paints == 1, "a changed profile did not repaint the visible bag action")
-assert(writes == 11, "warm actions faded the same native slice twice: " .. writes)
+assert(paints == 1 and applies == 1, "a changed profile did not repaint the visible bag action")
+assert(writes == 1, "the first show after a profile change did not fade the replaced slice once: " .. writes)
 assert(NS.ControlSkin.states[button].fixedSpec, "warm actions copied immutable skin metadata")
 assert(button.Left:GetAlpha() == 0 and button:GetHighlightTexture() == surface.highlight)
 assert(button:GetPushedTexture() == surface.pushed and button:GetDisabledTexture() == surface.disabled and button.surface == bagFill)
@@ -104,6 +110,20 @@ assert(otherPaints == 3, "the new bag action never entered its warm path")
 bag.Suite.BagActionButtons = nil
 UIPanelButton_OnShow(other)
 assert(otherPaints == 4, "a missing bags owner must retain the normal native path")
+bag.Suite.BagActionButtons = bag.BagAppearance.buttons
+UIPanelButton_OnShow(other)
+local warmApplies = applies
+UIPanelButton_OnShow(other)
+assert(applies == warmApplies, "a returned bags owner did not warm its action again")
+-- Refresh re-skins every tracked button with the panel spec. No static
+-- popup category is enabled in this fixture.
+NS.GenericWindows = NS.GenericWindows or { IsCategoryEnabled = function() return false end }
+NS.UIPanelButtons.Refresh()
+local refreshed = applies
+UIPanelButton_OnShow(other)
+assert(applies == refreshed + 1, "the first show after a skin refresh skipped the bag action skin")
+UIPanelButton_OnShow(other)
+assert(applies == refreshed + 1, "the refreshed bag action did not become warm again")
 print("Bags and Skin button lifecycle: warm paint budget, hover, profile, late adoption, native repair, disable/reopen passed")
 ]=]
 for _, flavor in ipairs({ "Mainline", "Forever" }) do

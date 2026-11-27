@@ -220,7 +220,8 @@ local NS = {
     DB = { enabled = true, skins = {} },
     IsCombatLocked = function() return locked end,
     GenericWindows = { IsCategoryEnabled = function() return true end },
-    ControlSkin = { DisableOwner = function() return true end, GetOwner = Noop, MarkFixedButtonSpec = function(spec) return spec end },
+    ControlSkin = { DisableOwner = function() return true end, GetOwner = Noop, IsWarm = Noop,
+        MarkFixedButtonSpec = function(spec) return spec end },
     WindowActionSkin = { GetOwner = Noop, IsApplied = function() return false end },
     Checkmarks = { TrackTexture = Noop, UntrackOwner = Noop, IsRedButtonArtKit = function() return false end },
 }

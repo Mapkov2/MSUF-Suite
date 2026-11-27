@@ -82,11 +82,11 @@ local function Paint(record)
     end
 end
 
-local function Record(target, readOnly)
+local function Record(target)
     local state = NS.Registry.GetSurface(target)
     local record = state and state.motion
     if record and record.enabled and Motion.Enabled(state.spec) and Enabled(target) then
-        if not readOnly and not record.channels then Motion.New(state, Paint, Safe, Motion.Restore, record) end
+        if not record.channels then Motion.New(state, Paint, Safe, Motion.Restore, record) end
         return record
     end
 end
@@ -163,10 +163,15 @@ local function Hide(target)
 end
 
 local function Show(target)
-    local record = Record(target, true)
-    if not record then return end
+    local state = NS.Registry.GetSurface(target)
+    local record = state and state.motion
+    if not record or not record.enabled then return end
+    -- A control's show only refreshes the baseline Click compares against;
+    -- Click asks for motion and the enabled state itself.
+    if not record.window then record.checked = Safety.Read(target, "GetChecked") return end
+    if not Motion.Enabled(state.spec) or not Enabled(target) then return end
     record.checked = Safety.Read(target, "GetChecked")
-    if not record.window or NS.IsCombatLocked() then return end
+    if NS.IsCombatLocked() then return end
     local content = NS.ContentMotion
     if content.InstantOpening(target) or content.IsWindow(target) and not Motion.WindowEnabled() then return end
     if not record.channels then Motion.New(record.state, Paint, Safe, Motion.Restore, record) end

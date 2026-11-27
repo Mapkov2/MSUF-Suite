@@ -5,11 +5,24 @@ NS.TabMotion = Tabs
 local Safety = NS.Safety
 local methods = { "SetTabSelected", "SetSelected" }
 local mailTabs = {}
+-- TabSystem broadcasts SetTabSelected to every sibling, several times per
+-- switch. GetTime() is frame-stable: a selection this frame already painted
+-- (and a surface that still shows it) only repairs what native code rewrites.
+-- A new frame, a flipped selection or a settings write paints again.
+local paintedAt = setmetatable({}, { __mode = "k" })
+local paintedSelected = setmetatable({}, { __mode = "k" })
 
 local function PaintSelection(tab, selected)
     local state = NS.ControlSkin.states[tab]
     if not state or not state.enabled or Safety.IsForbidden(tab) or Safety.GetProtection(tab) then return end
-    NS.ControlSkin.Refresh(tab, selected, true)
+    local now = GetTime()
+    if paintedAt[tab] == now and paintedSelected[tab] == selected then
+        local surface = NS.Registry.GetSurface(tab)
+        if surface and surface.active == selected and surface.visible ~= false
+            and NS.ControlSkin.RepairBindings(tab) then return end
+    end
+    paintedAt[tab] = NS.ControlSkin.Refresh(tab, selected, true) and now or nil
+    paintedSelected[tab] = selected
     if selected then NS.MenuMotion.SelectionChanged(tab) end
 end
 
@@ -47,6 +60,7 @@ function Tabs.Track(tab)
     end
 end
 NS.ControlSkin.SetTabMotionProvider(Tabs.Track)
+NS.Registry.AddListener(Tabs, function() wipe(paintedAt) end)
 -- SharedXML's legacy updater reaches these for mouse, keyboard and code paths.
 hooksecurefunc("PanelTemplates_SelectTab", Selected)
 hooksecurefunc("PanelTemplates_DeselectTab", Deselected)

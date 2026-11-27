@@ -9,6 +9,8 @@ local ConfigureDisclosure = NS.SuiteCore().ConfigureDisclosure
 -- Shown owners can rebuild after combat; only pending snapshots need a
 -- stop pass. Cached hidden views keep their reusable records outside both.
 local shownStates, pendingStates = {}, {}
+-- Shown driven lists whose reopen baseline waits for their native layout.
+local baselines = {}
 local abs = math.abs
 local Noop = function() end
 local Ghost = {
@@ -40,9 +42,27 @@ end
 
 local OnLayout
 
+-- A driven list (ResultMotion delivers its native layouts) is usually laid
+-- out again in its show frame: that layout takes the reopen baseline, in
+-- either order. Without one, the queued job takes it on the next frame; a
+-- collapse needs user input first, so no motion is lost.
+local function ShownBaseline(state)
+    if not baselines[state] then return end
+    baselines[state] = nil
+    if state.active and shownStates[state] then OnLayout(state) end
+end
+
+local function CancelBaseline(state)
+    if baselines[state] then
+        baselines[state] = nil
+        NS.Registry.CancelJob(state.baselineJob)
+    end
+end
+
 local function RootHidden(root)
     local state = AddonListMotion.states[root] or AddonListMotion.scrollStates[root]
     if state then
+        CancelBaseline(state)
         shownStates[state] = nil
         StopState(state)
     end
@@ -52,7 +72,13 @@ local function RootShown(root)
     local state = AddonListMotion.states[root] or AddonListMotion.scrollStates[root]
     if state and state.active then
         shownStates[state] = true
-        OnLayout(state)
+        -- Combat never delays the snapshot: queued jobs wait for its end.
+        if not state.driven or Motion.combat or NS.IsCombatLocked() then OnLayout(state)
+        -- A native layout after the hide (it resets the snapshot) already took it.
+        elseif not state.hadSnapshot and not baselines[state] then
+            baselines[state] = true
+            NS.Registry.QueueJob(state.baselineJob)
+        end
     end
 end
 
@@ -274,6 +300,8 @@ local function AnimateRow(state, record, changed, headerTop, stable, reflow)
 end
 
 OnLayout = function(state)
+    -- Any pass is the reopen baseline.
+    if baselines[state] then CancelBaseline(state) end
     if not state.active or not Motion.Enabled() or not Safety.CanCreateRegions(state.root)
         or not Safety.CanCreateRegions(state.scrollBox) then StopState(state) return end
     if Safety.Read(state.root, "IsVisible") ~= true then
@@ -357,6 +385,7 @@ local function CreateState(root, scrollBox)
         count = 0, owners = {}, parents = {}, headerStack = {}, changes = {}, currentCollapsed = {}, newParents = {},
         currentTops = {}, seenKeys = {} }
     AddonListMotion.states[root], AddonListMotion.scrollStates[scrollBox] = state, state
+    state.baselineJob = function() ShownBaseline(state) end
     root:HookScript("OnHide", RootHidden)
     root:HookScript("OnShow", RootShown)
     return state
@@ -442,6 +471,7 @@ function AddonListMotion.DisableOwner(owner)
         state.owners[owner] = nil
         if not next(state.owners) then
             state.active = false
+            CancelBaseline(state)
             shownStates[state] = nil
             StopState(state)
             Ghost.Release(state)
@@ -476,6 +506,9 @@ local function CombatChanged(_, event)
             end
         end
     end
+    -- Queued jobs wait for the end of combat: the edge takes a pending
+    -- reopen baseline now (OnLayout clears it).
+    for state in pairs(baselines) do OnLayout(state) end
     if event == "PLAYER_REGEN_ENABLED" then
         for state in pairs(shownStates) do
             if state.active and not state.hadSnapshot then OnLayout(state) end

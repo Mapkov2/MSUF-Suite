@@ -5,6 +5,9 @@ local fixture = input:read("*a")
 input:close()
 local stop = assert(fixture:find('local parent = Target(', 1, true))
 local scenario = [=[
+-- GetTime() is constant within a client frame; TabMotion dedupes per frame.
+local now = 1
+GetTime = function() return now end
 local selections = 0
 NS.MenuMotion = { SelectionChanged = function() selections = selections + 1 end }
 hooksecurefunc = function(target, method, callback)
@@ -144,7 +147,7 @@ local initialSelections = selections
 first:SetHighlightTexture(foreign)
 local instructions = 0
 debug.sethook(function() instructions = instructions + 100 end, "", 100)
-for i = 1, 10 do first:SetTabSelected(true); second:SetTabSelected(false) end
+for i = 1, 10 do now = now + 1; first:SetTabSelected(true); second:SetTabSelected(false) end
 debug.sethook()
 print(("Twenty repeated native tab states: %d material paints, %d sampled instructions"):format(materialPaints, instructions))
 assert(materialPaints == 0, "native repeat repainted the same PlayerSpells tab material")
@@ -160,6 +163,34 @@ first:SetTabSelected(false)
 assert(materialPaints == 3, "repeated selection retained an old profile")
 NS.ControlSkin.Refresh(first, false)
 assert(materialPaints == 4, "an explicit repair must repaint")
+-- 2026-11-26 trace: one PlayerSpells switch ran 20-26 tab refreshes in one
+-- frame. A repeated selection in the frame that painted it repairs bindings
+-- and gold text only; a flip, another path's selection and settings repaint.
+now = now + 1
+local refreshes, shown, paintsBefore, tracked = repairs, selections, materialPaints, 0
+local track = NS.BlizzardYellow.TrackFrame
+NS.BlizzardYellow.TrackFrame = function(...) tracked = tracked + 1 return track(...) end
+for i = 1, 10 do
+    if i == 10 then first:SetHighlightTexture(foreign) end
+    first:SetTabSelected(true)
+end
+NS.BlizzardYellow.TrackFrame = track
+print(("Ten same-frame selections of one tab: %d refreshes, %d text repairs, %d material paints")
+    :format(repairs - refreshes, tracked, materialPaints - paintsBefore))
+assert(repairs == refreshes + 1 and materialPaints == paintsBefore + 1 and selections == shown + 1,
+    "a selection repeated in the same frame refreshed the painted tab again")
+assert(tracked == 10 and first:GetHighlightTexture() ~= foreign and NS.Registry.GetSurface(first).active,
+    "a same-frame repeat skipped the native text or slot binding repair")
+first:SetTabSelected(false)
+first:SetTabSelected(false)
+assert(repairs == refreshes + 2 and not NS.Registry.GetSurface(first).active, "a same-frame selection flip was not refreshed once")
+NS.Registry.NotifyListeners("profile", "changed")
+first:SetTabSelected(false)
+assert(repairs == refreshes + 3, "a settings write inside the frame did not refresh the tab again")
+NS.Registry.GetSurface(first).active = true
+first:SetTabSelected(false)
+assert(repairs == refreshes + 4 and not NS.Registry.GetSurface(first).active,
+    "a selection another path painted in the same frame was not refreshed")
 local peer = Target("Button", spells)
 peer.isSelected = false
 peer.SetTabSelected = function(self, selected) self.isSelected = selected end
@@ -168,8 +199,11 @@ local peerSurface = NS.Registry.GetSurface(peer)
 local paintPeer, peerPaints = peerSurface.refresh, 0
 peerSurface.refresh = function(...) peerPaints = peerPaints + 1; return paintPeer(...) end
 peer:SetTabSelected(false)
+now = now + 1
 peer:SetTabSelected(false)
-assert(peerPaints == 2, "unmarked tabs in other windows must keep their complete selection refresh")
+assert(peerPaints == 2, "unmarked tabs in other windows must keep their complete selection refresh per frame")
+peer:SetTabSelected(false)
+assert(peerPaints == 2, "an unmarked tab repainted a selection already painted in the same frame")
 spells:Hide()
 local before = paints
 skin:QueueRefresh(spells)
