@@ -47,24 +47,38 @@ local function Spell(self, id)
     return saved
 end
 
+local function BindFill(self, bar, event)
+    local fill, reverse = bar:GetStatusBarTexture(), bar:GetReverseFill()
+    if not S.Public(fill) or not fill or not S.Public(reverse) then return false end
+    if fill == self.fill and reverse == self.reverse then return true end
+    if NS.InCombat(event) or not NS.Safety.CanAnchor(fill) then return false end
+    local edge = reverse and "LEFT" or "RIGHT"
+    self.shade:ClearAllPoints()
+    self.shade:SetPoint(edge, fill, edge)
+    self.fill, self.reverse = fill, reverse
+    return true
+end
+
 local shades = setmetatable({}, { __mode = "k" })
 local function Prepare(self)
     local bar = NS.HostBridge.TargetHealthAnchor()
-    if bar == self.bar then return end
-    if self.shade then self.shade:Hide() end
-    self.bar, self.fill, self.shade = nil, nil, nil
-    if not bar or not NS.Safety.CanAnchor(bar) then return end
-    self.bar = bar
-    local shade = shades[bar]
-    if not shade then
-        shade = bar:CreateTexture(nil, "OVERLAY", nil, 1)
-        shades[bar] = shade
+    if bar ~= self.bar then
+        if self.shade then self.shade:Hide() end
+        self.bar, self.fill, self.shade = nil, nil, nil
+        if not bar or not NS.Safety.CanAnchor(bar) then return end
+        local shade = shades[bar]
+        if not shade then
+            shade = bar:CreateTexture(nil, "OVERLAY", nil, 1)
+            shades[bar] = shade
+        end
+        self.bar, self.shade = bar, shade
+        shade:Hide()
     end
-    self.shade = shade
-    shade:Hide()
+    -- Bind while out of combat, before the first DoT can start the fight.
+    if bar then BindFill(self, bar) end
 end
 
-local function Paint(self)
+local function Paint(self, event)
     local shade, bar = self.shade, self.bar
     if not shade or self.count == 0 then return end
     local restricted = C_Secrets.ShouldAurasBeSecret()
@@ -77,8 +91,8 @@ local function Paint(self)
         shade:Hide()
         return
     end
-    local fill, width, height = bar:GetStatusBarTexture(), bar:GetWidth(), bar:GetHeight()
-    if not S.Public(fill) or not fill or not Finite(width) or width <= 0 or not Finite(height) or height <= 0 then
+    local width, height = bar:GetWidth(), bar:GetHeight()
+    if not Finite(width) or width <= 0 or not Finite(height) or height <= 0 then
         shade:Hide()
         return
     end
@@ -87,24 +101,9 @@ local function Paint(self)
         local effect = self.effects[index]
         estimate = estimate + effect.rate * math.max(0, math.min(effect.duration, effect.expires - now))
     end
-    if estimate <= 0 then
+    if estimate <= 0 or not BindFill(self, bar, event) then
         shade:Hide()
         return
-    end
-    local reverse = bar:GetReverseFill()
-    if not S.Public(reverse) then
-        shade:Hide()
-        return
-    end
-    if fill ~= self.fill or reverse ~= self.reverse then
-        if NS.InCombat() or not NS.Safety.CanAnchor(fill) then
-            shade:Hide()
-            return
-        end
-        local edge = reverse and "LEFT" or "RIGHT"
-        shade:ClearAllPoints()
-        shade:SetPoint(edge, fill, edge)
-        self.fill, self.reverse = fill, reverse
     end
     shade:SetSize(math.max(.5, width * math.min(health, estimate) / maximum), height)
     local opacity = self.config.opacity / 100
@@ -129,9 +128,9 @@ local function AddEffect(self, aura)
     effect.rate, effect.duration, effect.expires = info.rate, duration, expires
 end
 
-local function Update(self)
+local function Update(self, event)
     self.count = 0
-    if not NS.InCombat() then Prepare(self) end
+    if not NS.InCombat(event) then Prepare(self) end
     local secret = C_Secrets.ShouldAurasBeSecret()
     local hostile = UnitCanAttack("player", "target")
     if S.Public(secret) and secret == false and S.Public(hostile) and hostile == true then
@@ -140,7 +139,7 @@ local function Update(self)
             for index = 1, math.min(MAX_AURAS, #auras) do AddEffect(self, auras[index]) end
         end
     end
-    if self.count > 0 then Paint(self) else Clear(self) end
+    if self.count > 0 then Paint(self, event) else Clear(self) end
 end
 
 local function SpellsChanged(self)
@@ -158,7 +157,7 @@ function Module:Enable()
     self.context:Event("UNIT_AURA", Update, IN_COMBAT, "target")
     self.context:Event("UNIT_HEALTH", Paint, IN_COMBAT, "target")
     self.context:Event("PLAYER_TARGET_CHANGED", Update, IN_COMBAT)
-    self.context:Event("PLAYER_REGEN_DISABLED", Clear, IN_COMBAT)
+    self.context:Event("PLAYER_REGEN_DISABLED", Update, IN_COMBAT)
     self.context:Event("PLAYER_REGEN_ENABLED", Update, IN_COMBAT)
     self.context:Event("PLAYER_ENTERING_WORLD", Update, IN_COMBAT)
     self.context:Event("SPELLS_CHANGED", SpellsChanged, IN_COMBAT)
