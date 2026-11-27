@@ -29,8 +29,9 @@ local lastMessage
 -- PLAYER_ENTERING_WORLD settles the chat colours an off skin left behind.
 local settled = 0
 local function Settle() settled = settled + 1 end
-local function Scenario(stored, legacy, loggedIn, oldRunning, combat, legacyOnDemand, reloading, failing, combatBeforeDeferred, hostPending)
+local function Scenario(stored, legacy, loggedIn, oldRunning, combat, legacyOnDemand, reloading, failing, combatBeforeDeferred, hostPending, staleRegenFlag)
     local frame, loginFrame, starts, messages = nil, nil, 0, 0
+    local cdmRepairs = 0
     local afterWorldEntry, opened, fighting, tooltipRepairs, minimapRepairs = {}, 0, false, 0, 0
     C_Timer = { After = function(delay, callback)
         assert(delay == 0, "first login must defer once to the next frame")
@@ -51,7 +52,7 @@ local function Scenario(stored, legacy, loggedIn, oldRunning, combat, legacyOnDe
     MSUF_NS.FirstLoad6 = hostPending and { IsFirstRunPending = function() return true end } or nil
     MapkoSkin = oldRunning and { Suite = { started = true } } or nil
     local owner = {
-        Client = { isForever = false, IsAddOnLoaded = function() return false end },
+        Client = { isForever = staleRegenFlag == true, IsAddOnLoaded = function() return false end },
         Host = { build = hostPending and "Classic" or "Main" },
         IsCombatLocked = function() return combat == true end,
         InCombat = function() return combat == true or fighting end,
@@ -77,6 +78,10 @@ local function Scenario(stored, legacy, loggedIn, oldRunning, combat, legacyOnDe
             EnsureModernDarkMinimap = function()
                 assert(starts == 1, "minimap repair ran before module startup")
                 minimapRepairs = minimapRepairs + 1
+            end,
+            EnsurePreMidnightCooldownVisibility = function()
+                assert(starts == 1 and not fighting, "Pre-Midnight repair ran before startup or while in combat")
+                cdmRepairs = cdmRepairs + 1
             end,
             EnsureRetailForeverCooldownLayout = Noop, EnsureModernPanelLayout = Noop, EnsureRetailResourceStack = Noop },
         Menu = { Watch = Noop },
@@ -147,8 +152,14 @@ local function Scenario(stored, legacy, loggedIn, oldRunning, combat, legacyOnDe
     if combat then
         assert(starts == 0 and frame.events.PLAYER_REGEN_ENABLED, "combat load started modules prematurely")
         combat = false
+        fighting = staleRegenFlag == true
         frame:callback("PLAYER_REGEN_ENABLED")
         FlushTimers()
+        if staleRegenFlag then
+            assert(cdmRepairs == 0, "Pre-Midnight repair did not defer for a stale combat flag")
+            fighting = false
+            FlushTimers()
+        end
     end
     assert(loginFrame and loginFrame.events.PLAYER_ENTERING_WORLD,
         "login kind listener was not registered")
@@ -172,10 +183,12 @@ local function Scenario(stored, legacy, loggedIn, oldRunning, combat, legacyOnDe
     assert(#afterWorldEntry == 0, "startup queued repeated automatic setup attempts")
     assert(tooltipRepairs == starts, "tooltip repair did not run exactly once after module startup")
     assert(minimapRepairs == starts, "minimap repair did not run exactly once after module startup")
+    assert(cdmRepairs == starts, "Pre-Midnight repair did not run exactly once after module startup")
     owner.autoOpened = opened
     assert(not next(frame.events), "startup left idle events registered")
     return owner, starts, messages
 end
+Scenario(nil, nil, true, false, true, nil, true, false, false, false, true)
 local coldHost = Scenario(nil, nil, false, false, false, nil, false, false, false, true)
 assert(coldHost.autoOpened == 1, "an unseen MSUF welcome blocked fresh automatic Suite setup")
 local coldReload = Scenario(coldHost.RootDB, nil, false, false, false, nil, true, false, false, true)

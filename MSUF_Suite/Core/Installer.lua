@@ -14,7 +14,7 @@ local scale = 1
 local scalePreset = "custom"
 local page = 1
 local frame, backToUnitFrames
-local moduleOverrides = { suite = {}, classic = {}, forever = {}, modernDark = {}, blizzard = {}, darkRaid = {}, wayfarer = {} }
+local moduleOverrides = { suite = {}, classic = {}, forever = {}, modernDark = {}, blizzard = {}, darkRaid = {}, wayfarer = {}, preMidnight = {} }
 -- Above MSUF menu popups (DIALOG level 400); see CreateWindow.
 local INSTALLER_FRAME_LEVEL = 500
 
@@ -72,7 +72,8 @@ end
 
 local function SkinPreset()
     if selected == "wayfarer" then return Suite.WayfarerSkinCompact end
-    if selected == "darkRaid" then return Suite.DarkRaidSkinCompact end
+    if selected == "preMidnight" and Suite.Client.isForever then return Suite.PreMidnightForeverSkinCompact end
+    if selected == "darkRaid" or selected == "preMidnight" then return Suite.DarkRaidSkinCompact end
     if selected == "blizzard" then return Suite.BlizzardSkinCompact end
     if selected == "modernDark" then return Suite.ModernDarkSkinCompact end
     if selected == "classic" then return Suite.RetailProfileSkinCompact end
@@ -93,6 +94,9 @@ local function FactoryProfile(layout, authored)
     if layout == "modernDark" then compact = Suite.ModernDarkModuleCompact end
     if layout == "blizzard" then compact = Suite.BlizzardModuleCompact end
     if layout == "darkRaid" then compact = Suite.DarkRaidModuleCompact end
+    if layout == "preMidnight" then
+        compact = Suite.Client.isForever and Suite.PreMidnightForeverModuleCompact or Suite.PreMidnightModuleCompact
+    end
     if layout == "wayfarer" then compact = Suite.WayfarerModuleCompact end
     if type(compact) ~= "string" then return nil, "Suite factory profile unavailable" end
     local cacheKey = layout .. (look or "authored") .. compact
@@ -162,11 +166,13 @@ local function PreparedProfile()
         local active = DB.GetProfile(DB.GetActiveProfileName())
         local old = active and active.suite and active.suite.modules
             and active.suite.modules.cooldownManager
-        if (selected ~= "classic" and selected ~= "blizzard" and selected ~= "darkRaid" or keepFrames) and old and type(old.listsData) == "string"
+        local retainCooldowns = keepFrames or (selected ~= "classic" and selected ~= "blizzard"
+            and selected ~= "darkRaid" and selected ~= "preMidnight")
+        if retainCooldowns and old and type(old.listsData) == "string"
             and (selected ~= "forever" or old.listsData ~= "") then
             cooldowns.listsData = old.listsData
         end
-        if (selected ~= "classic" and selected ~= "blizzard" and selected ~= "darkRaid" or keepFrames) and old and type(old.spellsData) == "string"
+        if retainCooldowns and old and type(old.spellsData) == "string"
             and (selected ~= "forever" or old.spellsData ~= "") then
             cooldowns.spellsData = old.spellsData
         end
@@ -235,11 +241,8 @@ local function ApplyForever(profile, finish)
 end
 
 local function ApplyFullFactory(profile, finish)
-    local frames = Suite.WayfarerFramesCompact
-    if selected == "modernDark" then frames = Suite.HostBridge.ModernDarkFrameCompact() end
-    if selected == "blizzard" then frames = Suite.BlizzardFramesCompact end
-    if selected == "darkRaid" then frames = Suite.DarkRaidFramesCompact end
-    return Suite.SuiteProfiles.InstallFactory(NextFactoryName(Picker.LayoutName(selected)), frames, profile,
+    return Suite.SuiteProfiles.InstallFactory(NextFactoryName(Picker.LayoutName(selected)),
+        Suite.HostBridge.LayoutFrameCompact(selected), profile,
         Suite.Client.AddOnEnabled("MSUF_Suite_Skin") and SkinPreset() or nil,
         AppliedLook(), finish, { screenHeight = false, preserveSkinLayout = true,
             frameColors = Suite.InstallerFrameColors.Choices() })
@@ -274,7 +277,8 @@ function Installer.Apply()
     end
     local profile, reason = PreparedProfile()
     if not profile then return false, reason end
-    local enableSkin = selected == "blizzard" and Suite.Client.AddOnEnabled("MSUF_Suite_Skin")
+    local enableSkin = (selected == "blizzard" or selected == "preMidnight")
+        and Suite.Client.AddOnEnabled("MSUF_Suite_Skin")
     if enableSkin then
         local loaded, skinReason = Suite.Skin.EnsureEngine()
         if not loaded then return false, skinReason end
@@ -287,7 +291,7 @@ function Installer.Apply()
     local ok
     if keepFrames then
         ok, reason = ApplySuiteOnly(profile, ApplyScale, frameColors)
-    elseif selected == "modernDark" or selected == "blizzard" or selected == "darkRaid" or selected == "wayfarer" then
+    elseif Picker.IsFullLayout(selected) then
         ok, reason = ApplyFullFactory(profile, ApplyScale)
     elseif selected == "forever" then
         ok, reason = ApplyForever(profile, ApplyScale)
@@ -306,8 +310,7 @@ function Installer.Apply()
         frameColors = frameColors,
         modernMeterMenuRevision = selected ~= "suite" and 2 or nil,
         modernPanelAnchorRevision = selected ~= "forever" and 1 or nil,
-        resourceStackRevision = (keepFrames or selected == "classic" or selected == "modernDark"
-            or selected == "darkRaid" or selected == "wayfarer") and 1 or nil,
+        resourceStackRevision = (keepFrames or selected == "classic" or Picker.IsFullLayout(selected) and selected ~= "blizzard") and 1 or nil,
         frameProfileName = FrameProfileName(),
         moduleOverrides = moduleOverrides[selected],
         raidEssentials = RetailCooldowns() and useRaidEssentials,
@@ -760,7 +763,7 @@ function Installer.Open(onBack, preserveFrames)
         and active.suite.modules.cooldownManager
     useScale, scale, scalePreset, page = false, 1, "custom", 1
     useRaidEssentials = not (current and current.raidEssentials == false)
-    moduleOverrides = { suite = {}, classic = {}, forever = {}, modernDark = {}, blizzard = {}, darkRaid = {}, wayfarer = {} }
+    moduleOverrides = { suite = {}, classic = {}, forever = {}, modernDark = {}, blizzard = {}, darkRaid = {}, wayfarer = {}, preMidnight = {} }
     Build().moduleTab = "modules"
     frame.existingProfilesOpen = false
     frame.moduleFocus, frame.moduleFocusPending, frame.layoutPreview.selectedModule = nil, nil, nil

@@ -31,6 +31,8 @@ Core\RetailProfile.lua
 Core\ModernDarkFactory.lua
 Core\BlizzardFactory.lua
 Core\DarkRaidFactory.lua
+Core\PreMidnightFactory.lua
+Core\PreMidnightForeverFactory.lua
 Core\WayfarerFactory.lua
 Core\ProfileStorage.lua
 Core\Database.lua

@@ -876,6 +876,42 @@ Suite.RootDB.installation = { status = "complete", profile = "forever" }
 assert(not P.EnsureRetailForeverCooldownLayout() and foreverCooldowns.ext_anchor == 3,
     "actual Forever client received a Retail-only CDM anchor migration")
 do
+    local default = { suite = { schema = 1, revision = Suite.Suite.MigrationRevision,
+        modules = { hudVisibility = { enabled = true } } } }
+    Suite.Suite.Normalize(default)
+    local newHUD = default.suite.modules.hudVisibility
+    assert(not newHUD.cooldownManager and newHUD.actionBars and newHUD.dataTexts,
+        "enabling HUD visibility dims the CDM without opting in")
+    newHUD.cooldownManager = true
+    Suite.Suite.Normalize(default)
+    assert(newHUD.cooldownManager, "normalization removed an explicit CDM dimming opt-in")
+    local name = DB.GetActiveProfileName()
+    local hud = Suite.DB.suite.modules.hudVisibility
+    hud.enabled, hud.cooldownManager = true, true
+    hud.mode, hud.opacity, hud.delay = 3, 25, 2
+    hud.worldOnly, hud.onTaxi, hud.hover = true, false, true
+    hud.actionBars, hud.dataTexts, hud.procAlerts = true, true, false
+    local receipt = { status = "complete", profile = "preMidnight", frameProfileName = "other profile" }
+    Suite.RootDB.installation = receipt
+    assert(not P.EnsurePreMidnightCooldownVisibility() and hud.cooldownManager,
+        "Pre-Midnight repair touched a different active profile")
+    receipt.frameProfileName = name
+    combat = true
+    assert(not P.EnsurePreMidnightCooldownVisibility() and hud.cooldownManager
+        and receipt.preMidnightCooldownVisibilityRevision == nil, "Pre-Midnight repair did not defer in combat")
+    combat = false
+    assert(P.EnsurePreMidnightCooldownVisibility() and not hud.cooldownManager,
+        "old Pre-Midnight still dims the Cooldown Manager")
+    assert(hud.enabled and hud.actionBars and hud.dataTexts and hud.opacity == 25 and hud.delay == 2,
+        "Pre-Midnight repair changed other HUD behavior")
+    hud.cooldownManager = true
+    assert(not P.EnsurePreMidnightCooldownVisibility() and hud.cooldownManager,
+        "a later CDM dimming opt-in was overwritten")
+    receipt.preMidnightCooldownVisibilityRevision, hud.opacity = nil, 45
+    assert(not P.EnsurePreMidnightCooldownVisibility() and hud.cooldownManager and hud.opacity == 45,
+        "custom HUD dimming was overwritten")
+end
+do
     Suite.Client.isForever = false
     local source = Suite.DB.suite.modules.nameplates
     source.look, source.protectImport, source.enemyNameOffsetX = 3, false, 44

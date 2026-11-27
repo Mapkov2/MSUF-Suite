@@ -684,17 +684,19 @@ function HostBridge.StyleFrameFactory(compact, modes)
     return type(encoded) == "string" and encoded:match("^MSUF3:") and encoded or nil
 end
 
-function HostBridge.FactoryFramePreview(layout)
-    local compact
-    if layout == "wayfarer" then
-        compact = Suite.WayfarerFramesCompact
-    elseif layout == "darkRaid" or layout == "blizzard" then
-        compact = layout == "darkRaid" and Suite.DarkRaidFramesCompact or Suite.BlizzardFramesCompact
-    elseif layout == "modernDark" then
-        compact = HostBridge.ModernDarkFrameCompact()
-    else
-        compact = HostBridge.FactoryFrameCompact(layout == "forever")
+function HostBridge.LayoutFrameCompact(layout)
+    if layout == "wayfarer" then return Suite.WayfarerFramesCompact end
+    if layout == "preMidnight" then
+        return Suite.Client.isForever and Suite.PreMidnightForeverFramesCompact or Suite.PreMidnightFramesCompact
     end
+    if layout == "darkRaid" then return Suite.DarkRaidFramesCompact end
+    if layout == "blizzard" then return Suite.BlizzardFramesCompact end
+    if layout == "modernDark" then return HostBridge.ModernDarkFrameCompact() end
+    return HostBridge.FactoryFrameCompact(layout == "forever")
+end
+
+function HostBridge.FactoryFramePreview(layout)
+    local compact = HostBridge.LayoutFrameCompact(layout)
     if type(compact) ~= "string" then return nil end
     if framePreviews[compact] then return framePreviews[compact] end
     local envelope = FrameEnvelope(compact)

@@ -237,6 +237,34 @@ function P.EnsureModernDarkPetBar()
     return ok
 end
 
+local function OriginalPreMidnightCooldownVisibility(profile)
+    local modules = profile and profile.suite and profile.suite.modules
+    local hud = modules and modules.hudVisibility
+    return hud and hud.enabled == true and hud.cooldownManager == true and hud.mode == 3
+        and hud.opacity == 25 and hud.delay == 2 and hud.worldOnly == true and hud.onTaxi == false
+        and hud.hover == true and hud.actionBars == true and hud.dataTexts == true and hud.procAlerts == false
+end
+
+function P.EnsurePreMidnightCooldownVisibility()
+    local receipt, name = Suite.RootDB and Suite.RootDB.installation, DB.GetActiveProfileName()
+    if not Suite.Client.isForever or Suite.InCombat() or not receipt or receipt.status ~= "complete"
+        or receipt.profile ~= "preMidnight" or receipt.frameProfileName ~= name
+        or receipt.preMidnightCooldownVisibilityRevision == 1 then return false end
+    local variants = Suite.ProfileVariants
+    local base = variants.BaseProfile(name)
+    if not base then return false end
+    if not OriginalPreMidnightCooldownVisibility(base) then
+        receipt.preMidnightCooldownVisibilityRevision = 1
+        return false
+    end
+    if not variants.BeforeMutation(name) then return false end
+    local original = OriginalPreMidnightCooldownVisibility(DB.GetProfile(name))
+    local ok = original and Suite.Suite.Set("hudVisibility", "cooldownManager", false) == true or false
+    variants.AfterMutation(name)
+    if ok or not original then receipt.preMidnightCooldownVisibilityRevision = 1 end
+    return ok
+end
+
 -- A deliberate account default counts as setup only after both profile
 -- owners actually use it. An old automatic Suite default is not consent.
 function P.NewCharacterDefault()

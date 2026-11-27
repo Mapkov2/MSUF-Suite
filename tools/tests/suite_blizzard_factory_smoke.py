@@ -562,7 +562,8 @@ def main():
         ('ModernDarkFactory.lua', ['ModernDarkFramesCompact', 'ModernDarkModuleCompact']),
         ('BlizzardFactory.lua', ['BlizzardFramesCompact', 'BlizzardModuleCompact']),
         ('WayfarerFactory.lua', ['WayfarerFramesCompact', 'WayfarerModuleCompact']),
-        ('DarkRaidFactory.lua', ['DarkRaidModuleCompact'])):
+        ('DarkRaidFactory.lua', ['DarkRaidModuleCompact']),
+        ('PreMidnightFactory.lua', ['PreMidnightFramesCompact', 'PreMidnightModuleCompact'])):
         for name in names:
             text = literal(core / filename, 'Suite.' + name)
             module = 'Module' in name

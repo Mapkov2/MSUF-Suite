@@ -32,13 +32,13 @@ def put(target, **values):
         target[key.encode()] = value.encode() if isinstance(value, str) else value
 
 
-def canonical_auras(classic):
-    """Materialize current lane owners through the shipped defaults, not legacy exports."""
+def read_host_defaults(classic, expression, flavor="Mainline"):
+    """Read current profile data from the enabled client's Core load graph."""
     lua = os.environ.get("MSUF_LUA51") or shutil.which("lua") or (
         r"C:\Users\Marco\AppData\Local\Temp\msuf-lua51\portable\lua.exe")
     source = r'''
 local root = arg[1]
-local world = assert(loadfile(root .. "/tools/tests/client_world.lua"))().New(root, "Mainline")
+local world = assert(loadfile(root .. "/tools/tests/client_world.lua"))().New(root, arg[2])
 world:Boot()
 local failure = world:FirstFailure()
 assert(not failure, failure and failure.message)
@@ -63,9 +63,8 @@ local function JSON(value)
     end end
     return (array and "[" or "{") .. table.concat(out, ",") .. (array and "]" or "}")
 end
-io.write(JSON(world.env.MSUF_CreateCanonicalUnitAuras()))
-'''
-    result = subprocess.run([lua, "-", str(classic)], input=source, text=True,
+''' + f"\nio.write(JSON({expression}))\n"
+    result = subprocess.run([lua, "-", str(classic), flavor], input=source, text=True,
                             capture_output=True, check=True)
     def byte_strings(value):
         if isinstance(value, str): return value.encode()
@@ -75,6 +74,10 @@ io.write(JSON(world.env.MSUF_CreateCanonicalUnitAuras()))
         if isinstance(value, list): return [byte_strings(v) for v in value]
         return value
     return byte_strings(json.loads(result.stdout))
+
+
+def canonical_auras(classic):
+    return read_host_defaults(classic, "world.env.MSUF_CreateCanonicalUnitAuras()")
 
 
 def frames(classic):

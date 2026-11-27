@@ -158,6 +158,10 @@ local function PrepareProfiles(transition)
     return true
 end
 
+local function RepairPreMidnightCooldownVisibility()
+    Step(Suite.SuiteProfiles, "EnsurePreMidnightCooldownVisibility")
+end
+
 function Start(transition)
     if startupFinished or Suite.startupError then return end
     if not PrepareProfiles(transition) then
@@ -193,6 +197,12 @@ function Start(transition)
     Step(profiles, "EnsureModernDarkTooltips")
     Step(profiles, "EnsureModernDarkMinimap")
     Step(profiles, "EnsureModernDarkPetBar")
+    if Suite.Client.isForever and transition == "PLAYER_REGEN_ENABLED" and Suite.InCombat() then
+        -- The unit combat flag can outlast the first deferred startup pass.
+        C_Timer.After(0, RepairPreMidnightCooldownVisibility)
+    else
+        RepairPreMidnightCooldownVisibility()
+    end
     Step(profiles, "EnsureRetailResourceStack", false)
     ShowInstaller()
     -- A restored combat force flag must never gate the Suite's own startup.

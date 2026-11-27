@@ -97,6 +97,8 @@ def main():
         ("ModernDarkFactory.lua", "ModernDarkModuleCompact"),
         ("BlizzardFactory.lua", "BlizzardModuleCompact"),
         ("DarkRaidFactory.lua", "DarkRaidModuleCompact"),
+        ("WayfarerFactory.lua", "WayfarerModuleCompact"),
+        ("PreMidnightFactory.lua", "PreMidnightModuleCompact"),
     ):
         text = literal(core / filename, "Suite." + name)
         module = "Module" in name

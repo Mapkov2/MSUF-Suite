@@ -50,6 +50,7 @@ function API.GetSetupFramePresets()
         { name = "MSUF Blizzard", compact = Suite.BlizzardFramesCompact },
         { name = "Dark Raid", compact = Suite.DarkRaidFramesCompact },
         { name = "Wayfarer", compact = Suite.WayfarerFramesCompact },
+        { name = "Pre-Midnight", compact = host.LayoutFrameCompact("preMidnight") },
     }
 end
 function API.MaybeShowInstaller(reason) return Suite.Installer.MaybeShow(reason) end

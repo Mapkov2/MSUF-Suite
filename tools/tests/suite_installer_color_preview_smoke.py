@@ -22,18 +22,21 @@ MSUF_TryDecodeCompactString = function(text)
     return Copy(text == Suite.RetailProfileModuleCompact:sub(8) and MODERN
         or text == Suite.ModernDarkModuleCompact:sub(8) and DARK or text == Suite.BlizzardModuleCompact:sub(8) and BLIZZARD
         or text == Suite.DarkRaidModuleCompact:sub(8) and RAID
-        or text == Suite.WayfarerModuleCompact:sub(8) and WAYFARER or FOREVER)
+        or text == Suite.WayfarerModuleCompact:sub(8) and WAYFARER
+        or text == Suite.PreMidnightModuleCompact:sub(8) and PRE_MIDNIGHT or FOREVER)
 end
 Suite.ModernDarkModuleCompact = "MSUFM1:MSUF3:dark"
 Suite.BlizzardModuleCompact = "MSUFM1:MSUF3:blizzard"
 Suite.DarkRaidModuleCompact = "MSUFM1:MSUF3:raid"
 Suite.WayfarerModuleCompact = "MSUFM1:MSUF3:wayfarer"
+Suite.PreMidnightModuleCompact = "MSUFM1:MSUF3:pre-midnight"
 profiles.classic = assert(Suite.ProfileIO.PrepareProfile(Suite.RetailProfileModuleCompact, false))
 profiles.forever = assert(Suite.ProfileIO.PrepareProfile(Suite.ForeverFactoryModuleCompact, false))
 profiles.modernDark = assert(Suite.ProfileIO.PrepareProfile(Suite.ModernDarkModuleCompact, false))
 profiles.blizzard = assert(Suite.ProfileIO.PrepareProfile(Suite.BlizzardModuleCompact, false))
 profiles.darkRaid = assert(Suite.ProfileIO.PrepareProfile(Suite.DarkRaidModuleCompact, false))
 profiles.wayfarer = assert(Suite.ProfileIO.PrepareProfile(Suite.WayfarerModuleCompact, false))
+profiles.preMidnight = assert(Suite.ProfileIO.PrepareProfile(Suite.PreMidnightModuleCompact, false))
 local originals = Copy(profiles)
 local function Equal(a, b)
     if type(a) ~= type(b) then return false end
@@ -89,7 +92,7 @@ assert(loadfile(root .. "/MSUF_Suite/Core/InstallerProfiles.lua"))("MSUF_Suite",
 Suite.InstallerProfiles.Build(window, Label, Card, Button, Style,
     function(layout) choices.layout = layout end, function(look) choices.look = look end, Preview)
 local function Expected(layout, look)
-    if layout == "blizzard" or layout == "wayfarer" then look = "authored" end
+    if layout == "blizzard" or layout == "wayfarer" or layout == "preMidnight" then look = "authored" end
     local copy = Copy(profiles[layout])
     if look ~= "authored" then assert(Suite.Suite.StyleProfile(copy, look)) end
     return copy.suite.modules.damageMeter
@@ -114,16 +117,13 @@ end
 local looks = { "authored", "midnight", "midnightDark", "foreverGlass", "cleanModern", "classColor" }
 local slots = { "bgColor", "borderColor", "barColor", "leftColor" }
 local paints = 0
-for _, layout in ipairs({ "classic", "forever", "modernDark", "blizzard", "darkRaid", "wayfarer" }) do
+local layouts = { "classic", "forever", "modernDark", "blizzard", "darkRaid", "wayfarer", "preMidnight" }
+for _, layout in ipairs(layouts) do
     for _, look in ipairs(looks) do
         Suite.InstallerProfiles.Show(window, true, layout, look)
-        CheckCard("classic", look)
-        CheckCard("forever", look)
-        CheckCard("modernDark", look)
-        CheckCard("blizzard", look)
-        CheckCard("wayfarer", look)
+        for _, card in ipairs(layouts) do CheckCard(card, look) end
         assert(window[layout].selected, "layout highlight lost")
-        local palettes = layout ~= "blizzard" and layout ~= "wayfarer"
+        local palettes = layout ~= "blizzard" and layout ~= "wayfarer" and layout ~= "preMidnight"
         for index, control in ipairs(window.colors) do
             local expected = Expected(layout, looks[index])
             assert(control.selected == (looks[index] == look), "palette highlight lost")
@@ -146,8 +146,8 @@ for _, layout in ipairs({ "classic", "forever", "modernDark", "blizzard", "darkR
             "preview visible outside the profile page")
     end
 end
-assert(reads == paints * 6, "hidden pages or palettes request extra factory profiles")
-assert(decodes == 6, "painting redecoded full profiles")
+assert(reads == paints * #layouts, "hidden pages or palettes request extra factory profiles")
+assert(decodes == #layouts, "painting redecoded full profiles")
 assert(Equal(originals, profiles), "preview modified the authored profiles")
 assert(Suite.DB == nil and MSUF_DB == nil and MSUFSuiteDB == nil, "preview initialized saved settings")
 assert(#reported == 0, tostring(reported[1]))
@@ -175,6 +175,7 @@ def main():
     setup = SETUP.split("local S, defaults")[0].replace("ENVELOPE", lua_literal(modern), 1)
     raid = decode(literal(core / "DarkRaidFactory.lua", "Suite.DarkRaidModuleCompact"), "MSUFM1:MSUF3:")
     wayfarer = decode(literal(core / "WayfarerFactory.lua", "Suite.WayfarerModuleCompact"), "MSUFM1:MSUF3:")
+    video = decode(literal(core / "PreMidnightFactory.lua", "Suite.PreMidnightModuleCompact"), "MSUFM1:MSUF3:")
     for client in ("retail", "forever"):
         for character in ("WARLOCK", "PALADIN"):
             color = "r = 0.58, g = 0.51, b = 0.79" if character == "WARLOCK" else "r = 0.96, g = 0.55, b = 0.73"
@@ -187,6 +188,7 @@ def main():
             script = script.replace("BLIZZARD", lua_literal(blizzard), 1)
             script = script.replace("RAID", lua_literal(raid), 1)
             script = script.replace("and WAYFARER", "and " + lua_literal(wayfarer), 1)
+            script = script.replace("PRE_MIDNIGHT", lua_literal(video), 1)
             run = subprocess.run([LUA, "-", str(root), client, "RetailProfile.lua"], input=script,
                 text=True, capture_output=True, errors="replace", cwd=root)
             if run.returncode:

@@ -20,6 +20,7 @@ local LAYOUTS = {
     { "blizzard", "MSUF Blizzard", "Gold portraits, centered cooldowns and a familiar Blizzard layout." },
     { "darkRaid", "Dark Raid", "Compact dark frames, a corner raid grid and centered cooldowns." },
     { "wayfarer", "Wayfarer", "Brass frames, three action rows and a quest tracker below the map." },
+    { "preMidnight", "Pre-Midnight", "Dark Rogue HUD, compact side panels and narrow action bars." },
 }
 
 function Picker.LayoutName(layout)
@@ -30,7 +31,12 @@ function Picker.LayoutName(layout)
 end
 
 function Picker.HasPaletteChoice(layout)
-    return layout ~= "blizzard" and layout ~= "wayfarer"
+    return layout ~= "blizzard" and layout ~= "wayfarer" and layout ~= "preMidnight"
+end
+
+function Picker.IsFullLayout(layout)
+    return layout == "modernDark" or layout == "blizzard" or layout == "darkRaid"
+        or layout == "wayfarer" or layout == "preMidnight"
 end
 
 local function ExistingRows(window, button, choose)
@@ -106,7 +112,7 @@ end
 local function Sample(parent)
     local frame = CreateFrame("Frame", nil, parent)
     frame:SetSize(104, 10)
-    frame:SetPoint("TOPLEFT", parent, "TOPLEFT", 388, -17)
+    frame:SetPoint("TOPLEFT", parent, "TOPLEFT", 388, -12)
     frame.edge = frame:CreateTexture(nil, "BACKGROUND")
     frame.edge:SetTexture("Interface\\Buttons\\WHITE8X8")
     frame.edge:SetAllPoints(frame)
@@ -175,13 +181,14 @@ function Picker.Build(window, label, card, button, style, chooseLayout, chooseLo
         control.layout = layout
         control.title:SetText(Text(name))
         control.detail:SetText(Text(description))
-        control:SetHeight(28)
+        control:SetHeight(23)
         control.mark:SetPoint("TOPLEFT", control, "TOPLEFT", 388, -1)
-        control.mark:SetHeight(13)
+        control.mark:SetHeight(11)
+        control.title:SetFontObject("GameFontNormalSmall")
         control.title:SetPoint("TOPLEFT", control, "TOPLEFT", 16, -1)
-        control.title:SetHeight(13)
-        control.detail:SetPoint("TOPLEFT", control, "TOPLEFT", 16, -14)
-        control.detail:SetHeight(13)
+        control.title:SetHeight(11)
+        control.detail:SetPoint("TOPLEFT", control, "TOPLEFT", 16, -12)
+        control.detail:SetHeight(11)
         control.preview = Sample(control)
         cards[index], window[layout] = control, control
     end
@@ -209,7 +216,7 @@ function Picker.Show(window, shown, layout, look)
         local selected = card.layout == layout
         local slot = Suite.Client.isForever and index <= 2 and 3 - index or index
         card:ClearAllPoints()
-        card:SetPoint("BOTTOMLEFT", window, "BOTTOMLEFT", 36, 309 - (slot - 1) * 29)
+        card:SetPoint("BOTTOMLEFT", window, "BOTTOMLEFT", 36, 309 - (slot - 1) * 24)
         card:SetShown(shown)
         window.colorStyle(card, selected)
         card.mark:SetText(Text(selected and "SELECTED" or "CHOOSE"))

@@ -35,8 +35,12 @@ local function Add(scene, key, label, x, y, width, height, kind, config)
     scene[key] = scene[#scene]
     local module = key:match("^bar%d") and "actionbars" or key:match("^data%d") and "dataTexts"
         or key:match("^w%d") and "damageMeter" or key == "quests" and "objectives"
-        or key == "cooldowns" and "cooldownManager" or key == "minimap" and "minimap"
+        or (key == "cooldowns" or key == "utilityCooldowns" or key == "defensiveCooldowns"
+            or key == "externalCooldowns") and "cooldownManager"
+        or key == "minimap" and "minimap"
         or key == "compass" and "navigationHUD"
+        or key == "actions" and "actionTracker" or key == "battleRes" and "battleRes"
+        or key == "raidControl" and "groupRaidShortcuts"
         or key == "chat" and "chat" or key == "experience" and "xpBar" or "frames"
     scene[#scene].module = module
     return scene[#scene]
@@ -64,24 +68,29 @@ end
 
 local function Frames(scene, frames)
     if not frames then return end
+    local general = frames.general
     local playerRect
     for _, entry in ipairs(FRAMES) do
         local config = frames[entry[1]]
         local cooldown = scene.cooldowns
+        local mainFrame = entry[1] == "player" or entry[1] == "target"
+        local sharedCooldownAnchor = config and mainFrame and not scene.keepFrames and general
+            and general.anchorToCooldown == true and general.cooldownAnchorPosition == "CENTER"
+            and (not config.anchorFrameName or config.anchorFrameName == "")
+            and (not config.anchorToUnitframe or config.anchorToUnitframe == "GLOBAL")
         local cooldownAnchor = config and not scene.keepFrames and cooldown
-            and config.anchorFrameName == "EssentialCooldownViewer"
-            and (entry[1] == "player" or entry[1] == "target")
+            and config.anchorFrameName == "EssentialCooldownViewer" and mainFrame
         local owner = config and scene[config.anchorToUnitframe]
         local unitAnchor = type(owner) == "table" and not scene.keepFrames
             and (not config.anchorFrameName or config.anchorFrameName == "")
-        if config and config.enabled ~= false and (cooldownAnchor or unitAnchor or ScreenAnchor(config, frames.general)) then
+        if config and config.enabled ~= false and (sharedCooldownAnchor or cooldownAnchor or unitAnchor or ScreenAnchor(config, general)) then
             local reference = Number(config.screenPositionHeight, 0)
             local factor = config.screenPositionMode == "relativeHeight" and not config.anchorToUnitframe
                 and reference >= 400 and reference <= 10000 and scene.height >= 400 and scene.height <= 10000
                 and math.abs(scene.height - reference) > .01 and scene.height / reference or 1
             local width, height = Number(config.width or config.frameWidth, 275), Number(config.height or config.frameHeight, 40)
             local point, relative = POINT_INDEX[config.point] or 5, POINT_INDEX[config.relativePoint or config.point] or 5
-            local originX, originY, originWidth, originHeight, dx = 0, 0, scene.width, scene.height, 0
+            local originX, originY, originWidth, originHeight, dx, dy = 0, 0, scene.width, scene.height, 0, 0
             if cooldownAnchor then
                 -- UF_Config.CooldownAnchorRule: an explicitly named Essential
                 -- anchor uses the physical RIGHT/LEFT edge and 20-unit gap.
@@ -91,13 +100,17 @@ local function Frames(scene, frames)
                 end
                 dx = entry[1] == "player" and -20 or 20
                 originX, originY, originWidth, originHeight = cooldown.x, cooldown.y, cooldown.width, cooldown.height
+            elseif sharedCooldownAnchor and cooldown then
+                point, relative = 5, 5
+                dy = -Number(general.cooldownAnchorLayoutY, -180)
+                originX, originY, originWidth, originHeight = cooldown.x, cooldown.y, cooldown.width, cooldown.height
             elseif unitAnchor then
                 originX, originY, originWidth, originHeight = owner.x, owner.y, owner.width, owner.height
             end
             local anchor, origin = POINTS[point], POINTS[relative]
             local rect = Add(scene, entry[1], entry[2], originX + origin[1] * originWidth - anchor[1] * width
                 + (Number(config.offsetX or config.x, 0) + dx) * factor,
-                originY + origin[2] * originHeight - anchor[2] * height - Number(config.offsetY or config.y, 0) * factor,
+                originY + origin[2] * originHeight - anchor[2] * height - (Number(config.offsetY or config.y, 0) + dy) * factor,
                 width, height, "bar", config)
             local reaction = scene.layout == "wayfarer" and not scene.keepFrames
                 and (entry[1] == "target" or entry[1] == "boss") and "enemy"
@@ -278,6 +291,13 @@ local function DockBelow(scene, key, label, anchor, gap, width, height, kind, co
         anchor.y + anchor.height + gap, width, height, kind, config)
 end
 
+local function ChatTop(config)
+    if config.tabPanel then
+        return Number(config.tabHeight, 24) + Number(config.tabPanelGap, 0)
+    end
+    return config.hideTabArt and 0 or Number(config.padding, 0)
+end
+
 local function Panels(scene, modules)
     local tail
     local map, meter, texts, tracker = modules.minimap, modules.damageMeter, modules.dataTexts, modules.objectives
@@ -299,7 +319,7 @@ local function Panels(scene, modules)
     local chat = modules.chat
     if chat and chat.enabled ~= false and chat.lockWindowPosition and chat.lockWindowSize then
         local padding = Number(chat.padding, 0)
-        local top = chat.tabPanel == false and not chat.hideTabArt and padding or 0
+        local top = ChatTop(chat)
         Place(scene, "chat", "Chat", 7, Number(chat.windowX, 12) - padding, Number(chat.windowY, 12) - padding,
             Number(chat.windowWidth, 420) + padding * 2, Number(chat.windowHeight, 180) + padding + top, "list", chat)
     end
@@ -311,7 +331,8 @@ local function Panels(scene, modules)
         end
     end
     if meter and meter.enabled ~= false then
-        for index = 1, min(2, Number(meter.windowCount, 2)) do
+        local limit = scene.layout == "preMidnight" and 3 or 2
+        for index = 1, min(limit, Number(meter.windowCount, 2)) do
             local p = "w" .. index
             Place(scene, p, "Damage meters", 9, Number(meter[p .. "X"], 0), Number(meter[p .. "Y"], 0),
                 Number(meter[p .. "Width"], 260), Number(meter[p .. "Height"], 170), "meter", meter)
@@ -345,6 +366,124 @@ local function Panels(scene, modules)
     end
 end
 
+local function DefensiveRows(scene, frames, cooldowns)
+    local player = scene.player
+    if not player or scene.keepFrames then return end
+    local auras = frames and frames.auras3
+    local custom = auras and auras.customContainers
+    local perUnit = custom and custom.perUnit
+    local items = perUnit and perUnit.player and perUnit.player.items
+    local defensive = items and items[4]
+    local placed = defensive and defensive.placed
+    if defensive and defensive.enabled and placed and not defensive.portraitIcon then
+        local size, gap = Number(placed.size, 21), Number(placed.spacing, 1)
+        local iconHeight = max(1, math.floor(size * Number(placed.iconHeightPercent, 100) / 100 + .5))
+        local columns = max(1, min(Number(placed.perRow, 2), Number(placed.max, 2)))
+        local hostWidth = columns * size + (columns - 1) * gap
+        local anchor = POINTS[POINT_INDEX[placed.anchor] or 1]
+        local count = min(2, columns)
+        local width = count * size + (count - 1) * gap
+        local x = player.x + anchor[1] * (player.width - hostWidth) + Number(placed.x, 0)
+        if placed.growth == "LEFTDOWN" or placed.growth == "LEFTUP" then x = x + hostWidth - width end
+        local y = player.y + anchor[2] * (player.height - iconHeight) - Number(placed.y, 0)
+        local row = Add(scene, "playerDefensives", "Defensive Buffs", x, y, width, iconHeight, "icons", placed)
+        row.count, row.columns, row.iconWidth, row.iconHeight, row.gap = count, count, size, iconHeight, gap
+    end
+    if cooldowns and cooldowns.enabled and cooldowns.def_on then
+        local size, gap = Number(cooldowns.def_size, 24), Number(cooldowns.def_spacing, 1)
+        local width = size * 3 + gap * 2
+        local row = Add(scene, "defensiveCooldowns", "Defensives", player.x + player.width - width + Number(cooldowns.def_x, 0),
+            player.y - size - Number(cooldowns.def_gap, 0) - Number(cooldowns.def_y, 0), width, size, "icons", cooldowns)
+        row.count, row.columns, row.iconWidth, row.iconHeight, row.gap = 3, 3, size, size, gap
+    end
+    if cooldowns and cooldowns.enabled and cooldowns.ext_on then
+        local size, gap = Number(cooldowns.ext_size, 25), Number(cooldowns.ext_spacing, 1)
+        local height = math.floor(size * Number(cooldowns.ext_height, 100) / 100 + .5)
+        local row = Add(scene, "externalCooldowns", "Potions and racials", player.x + Number(cooldowns.ext_x, 0),
+            player.y + player.height + Number(cooldowns.ext_gap, 0) - Number(cooldowns.ext_y, 0),
+            2 * size + gap, height, "icons", cooldowns)
+        row.count, row.columns, row.iconWidth, row.iconHeight, row.gap = 2, 2, size, height, gap
+    end
+end
+
+local function PreMidnightUtility(scene, frames, config)
+    local essential = scene.cooldowns
+    if not essential or not config.uti_on then return end
+    local size, spacing = Number(config.uti_size, 28), Number(config.uti_spacing, 1)
+    local count = max(1, min(Number(config.uti_perRow, 5), Number(config.uti_maxIcons, 5)))
+    local width = count * size + (count - 1) * spacing
+    local height = math.floor(size * Number(config.uti_height, 100) / 100 + .5)
+    local x = essential.x + (essential.width - width) / 2 + Number(config.uti_x, 0)
+    local y = essential.y + essential.height + Number(config.uti_gap, 1) - Number(config.uti_y, 0)
+    local utility = Add(scene, "utilityCooldowns", "Utility cooldowns", x, y, width, height, "icons", config)
+    utility.columns, utility.rows, utility.count = count, 1, count
+    utility.iconWidth, utility.iconHeight, utility.gap = size, height, spacing
+
+    local general = frames and frames.general
+    if scene.keepFrames or not general or not general.enablePlayerCastbar or not general.castbarPlayerAnchorToUtility then return end
+    local castWidth = general.castbarPlayerMatchWidth == "utility" and width or Number(general.castbarPlayerBarWidth, width)
+    local cast = Add(scene, "playerCast", "Player", x + (width - castWidth) / 2 + Number(general.castbarPlayerOffsetX, 0),
+        y + height - Number(general.castbarPlayerOffsetY, 0), castWidth, Number(general.castbarPlayerBarHeight, 18), "bar", general)
+    cast.fillColor = ColorHex(Number(general.castbarInterruptibleR, .78),
+        Number(general.castbarInterruptibleG, .53), Number(general.castbarInterruptibleB, .24))
+end
+
+local function PreMidnightExtras(scene, frames, modules)
+    PreMidnightUtility(scene, frames, modules.cooldownManager)
+    DefensiveRows(scene, frames, modules.cooldownManager)
+    local party = frames and frames.gf_party
+    if party and party.enabled ~= false and not scene.keepFrames then
+        local anchor = party.anchorToFrame == "MSUF_player" and scene.player
+        local x = party.offsetX + (anchor and anchor.x or 0)
+        local y = (anchor and anchor.y or 0) - party.offsetY
+        for index = 1, 4 do
+            Add(scene, "party" .. index, "Party", x, y + (index - 1) * (party.height + party.spacing),
+                party.width, party.height, "bar", party)
+        end
+    end
+    local tracker = modules.actionTracker
+    if tracker and tracker.enabled and tracker.displayPreset == 2 and tracker.growth == 3 then
+        local size, count, gap = tracker.rowHeight, tracker.rows, tracker.rowGap
+        local width = size * count + gap * (count - 1)
+        local meter = tracker.anchorTarget == 2 and scene.w1
+        local rect
+        if meter then
+            local header = meter.config.headerOutside and Number(meter.config.headerHeight, 15) or 0
+            rect = Add(scene, "actions", "Action tracker", meter.x - 1, meter.y - header - size, width, size, "icons", tracker)
+        else
+            rect = Place(scene, "actions", "Action tracker", tracker.point, tracker.x, tracker.y, width, size, "icons", tracker)
+        end
+        rect.columns, rect.rows, rect.count = count, 1, count
+        rect.iconWidth, rect.iconHeight, rect.gap = size - 2, size - 2, gap + 2
+    end
+    local chat, combatRes = scene.chat, modules.battleRes
+    if combatRes and combatRes.enabled and not Suite.Client.isForever then
+        if chat and combatRes.anchorTarget == 2 then
+            local tabX = Number(chat.config.padding, 0) + Number(chat.config.tabX, 0)
+            local tabY = chat.y - Number(chat.config.tabY, 0)
+            Add(scene, "battleRes", "Battle resurrection", chat.x + tabX, tabY - 2 - combatRes.height,
+                combatRes.width, combatRes.height, "bar", combatRes)
+        else
+            Place(scene, "battleRes", "Battle resurrection", combatRes.point, combatRes.x, combatRes.y,
+                combatRes.width, combatRes.height, "bar", combatRes)
+        end
+    end
+    local timer = frames and frames.gameplay
+    if chat and timer and timer.enableCombatTimer and timer.combatTimerAnchor == "chat" then
+        local padding = Number(chat.config.padding, 0)
+        local top = ChatTop(chat.config)
+        local height = Number(timer.combatFontSize, 11)
+        local width = height * 4
+        Add(scene, "combatTime", "Combat timer", chat.x + chat.width - padding - width + timer.combatOffsetX,
+            chat.y + top - timer.combatOffsetY - height / 2, width, height, "bar", timer)
+    end
+    local panel = modules.groupRaidShortcuts
+    if panel and panel.enabled and panel.showPanel then
+        Place(scene, "raidControl", "Raid Control", panel.panelPoint or 2, panel.panelX, panel.panelY,
+            106, 18, "bar", panel)
+    end
+end
+
 -- Native cooldown layouts contain class/spec-dependent rows. The overview
 -- deliberately uses sample icons, without loading or simulating the CDM.
 local function Cooldowns(scene, modules)
@@ -353,7 +492,8 @@ local function Cooldowns(scene, modules)
     if config.ess_on == false then return end
     local size, gap = Number(config.ess_size, 40), Number(config.ess_spacing, 0)
     local compact = scene.layout == "modernDark" or scene.layout == "blizzard" or scene.layout == "darkRaid"
-    local count = min(compact and 8 or 6, max(1, Number(config.ess_perRow, 6)))
+    local limit = scene.layout == "preMidnight" and 9 or compact and 8 or 6
+    local count = min(limit, max(1, Number(config.ess_perRow, 6)))
     local width, height = count * size + (count - 1) * gap, size
     local x, y = scene.width / 2 - width / 2, scene.height / 2
     local attach = scene.bar3 and config.ess_anchor == Suite.CDM.OTHER_ANCHOR
@@ -374,7 +514,7 @@ local function PreviewModules(profile, layout, overrides)
     if not source then return nil end
     local modules = {}
     for _, id in ipairs({ "minimap", "damageMeter", "dataTexts", "objectives", "actionbars", "cooldownManager",
-        "chat", "xpBar", "navigationHUD" }) do
+        "chat", "xpBar", "navigationHUD", "actionTracker", "battleRes", "groupRaidShortcuts" }) do
         local config = source[id]
         if config then
             if id == "actionbars" or id == "dataTexts" or overrides and overrides[id] ~= nil then
@@ -399,7 +539,8 @@ function Model.Build(profile, frames, layout, overrides, viewport)
     scene.frameSettingsAvailable = frames ~= nil and (frames.player ~= nil or frames.target ~= nil or frames.focus ~= nil)
     local modules = PreviewModules(profile, layout, overrides)
     if not modules then return scene end
-    if layout == "modernDark" or layout == "blizzard" or layout == "darkRaid" then Cooldowns(scene, modules) end
+    local cooldownFirst = layout == "modernDark" or layout == "blizzard" or layout == "darkRaid" or layout == "preMidnight"
+    if cooldownFirst then Cooldowns(scene, modules) end
     Frames(scene, frames)
     PresetCastbars(scene, frames)
     ModernAuraRows(scene, frames)
@@ -407,7 +548,8 @@ function Model.Build(profile, frames, layout, overrides, viewport)
     WayfarerShapes(scene, frames)
     ActionBars(scene, modules.actionbars)
     Panels(scene, modules)
-    if layout ~= "modernDark" and layout ~= "blizzard" and layout ~= "darkRaid" then Cooldowns(scene, modules) end
+    if layout == "preMidnight" then PreMidnightExtras(scene, frames, modules) end
+    if not cooldownFirst then Cooldowns(scene, modules) end
     local resource, cooldown = scene.resource, scene.cooldowns
     if resource and cooldown and layout == "blizzard" and not scene.keepFrames then
         local player = frames.player
@@ -423,18 +565,24 @@ function Model.Build(profile, frames, layout, overrides, viewport)
             rect.y + rect.height - Number(player.detachedPowerBarOffsetY, 0),
             cooldown.width, powerHeight, "resource", player)
     end
-    local resourceLayout = layout == "modernDark" or layout == "darkRaid" or layout == "forever" and not Suite.Client.isForever
+    local resourceLayout = layout == "modernDark" or layout == "darkRaid" or layout == "preMidnight"
+        or layout == "forever" and not Suite.Client.isForever
     if resource and cooldown and resourceLayout then
         -- Profiles.EnsureRetailResourceStack(true) is the installer's final
         -- Retail step. CP_AboveCooldownGap reserves attached power + 4 and
         -- a four-unit gap above Essential. Resolve this on the sample only.
         local player = frames.player
         local powerHeight = Number(player.detachedPowerBarHeight, 6)
-        resource.width = (layout == "modernDark" or layout == "darkRaid") and frames.bars.classPowerWidthMode == "custom"
+        resource.width = frames.bars.classPowerWidthMode == "custom" and layout ~= "forever"
             and Number(frames.bars.classPowerWidth, cooldown.width) or cooldown.width
         resource.x = cooldown.x + (cooldown.width - resource.width) / 2
         resource.y = cooldown.y - 8 - powerHeight - resource.height
-        Add(scene, "playerPower", "Resources", resource.x, resource.y + resource.height + 4,
+        local powerGap = 4
+        if layout == "preMidnight" then
+            resource.y = resource.y - Number(frames.bars.classPowerOffsetY, 0)
+            powerGap = -Number(player.detachedPowerBarOffsetY, -4)
+        end
+        Add(scene, "playerPower", "Resources", resource.x, resource.y + resource.height + powerGap,
             resource.width, powerHeight, "resource", player)
     end
     return scene
