@@ -550,8 +550,25 @@ local function FoodFlyout(S, AB, forever)
     Check(not AB.bars[2].buttons[1].flyoutMarker, "a regular action received a flyout marker")
     local readMacro = GetMacroInfo
     GetMacroInfo = function() error("redrawing a slot re-read macro data") end
-    AB.Flyouts.SlotMarkers({ rec }, GetActionInfo(62))
+    local slot, calls, marker = {rec}, 0, AB.FlyoutFrames.Marker
+    AB.FlyoutFrames.Marker = function(...)
+        calls = calls + 1
+        return marker(...)
+    end
+    for _ = 1, 114 do AB.Flyouts.SlotMarkers(slot, GetActionInfo(62)) end
+    Check(calls == 1, "unchanged slot events replayed the flyout marker")
+    AB.Flyouts.SlotMarkers(slot, "spell", 8676)
+    Check(calls == 2 and not rec.flyoutMarkerShown, "a changed slot kept its old flyout marker")
+    AB.Flyouts.BarMarkers(AB.bars[2])
+    AB.Flyouts.SlotMarkers(slot, "spell", 8676)
+    Check(not rec.flyoutMarkerShown, "a full marker refresh left the slot cache stale")
+    AB.FlyoutFrames.Marker = function() error("test: marker paint failed") end
+    Check(not pcall(AB.Flyouts.SlotMarkers, slot, GetActionInfo(62)), "fixture did not fail a marker paint")
+    AB.FlyoutFrames.Marker = marker
+    AB.Flyouts.SlotMarkers(slot, GetActionInfo(62))
+    Check(rec.flyoutMarkerShown, "a failed marker paint blocked the next event's retry")
     GetMacroInfo = readMacro
+    AB.Flyouts.BarMarkers(AB.bars[2])
     return id, box
 end
 

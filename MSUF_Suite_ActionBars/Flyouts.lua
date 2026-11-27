@@ -26,6 +26,7 @@ local OPEN_EVENTS = { "SPELLS_CHANGED", "SPELL_FLYOUT_UPDATE", "NEW_TOY_ADDED", 
 local store, active, scheduled, built, listener, openID, listeningBags
 local pendingFull, pendingBags, listeningSeason
 local pendingMacros
+local markerGeneration = 0
 local macroOf, flyoutOfMacro, flyoutOfName = {}, {}, {}
 local indexFlyout, shownCount, bagDependencies, seasonDependencies = {}, {}, {}, {}
 
@@ -65,14 +66,20 @@ end
 
 function Flyouts.SlotMarkers(records, kind, index, subtype)
     local shown = HasMarker(kind, index, subtype)
+    local generation = markerGeneration
+    if shown ~= nil and records.markerGeneration == generation and records.markerShown == shown then return end
+    records.markerGeneration = -1
     for i = 1, #records do
         local rec = records[i]
         if rec.bar.owned and not rec.virtual then PaintMarker(rec, shown) end
     end
+    records.markerGeneration, records.markerShown = generation, shown
 end
 
 function Flyouts.BarMarkers(bar)
     if not bar.owned then return end
+    -- Full refreshes may have changed an arrow since its last slot event.
+    markerGeneration = markerGeneration + 1
     for _, rec in ipairs(bar.buttons) do
         local shown = false
         if AB.flyoutMarkers then
