@@ -5,6 +5,10 @@ local COMMANDS = { raid = "MSUFSUITERAID", pull = "MSUFSUITEPULL", mark = "MSUFS
 local PARTY_UNITS = { "player", "party1", "party2", "party3", "party4" }
 local AUTO_ROLES = { { "autoMarkTank", "TANK", "tankMarker" },
     { "autoMarkHealer", "HEALER", "healerMarker" } }
+local MARKER_COUNT = 8
+local PANEL_BUTTON_WIDTH, PANEL_BUTTON_HEIGHT, PANEL_COLUMN, PANEL_ROW = 106, 25, 110, 29
+local COMPACT_HEIGHT, COMPACT_WIDTH = 18, 106
+local MARKER_SIZE, MARKER_STEP, MARKER_ROW_HEIGHT = 22, 25, 26
 
 local function Permitted()
     local grouped, leader, assistant = IsInGroup(), UnitIsGroupLeader("player"), UnitIsGroupAssistant("player")
@@ -23,7 +27,7 @@ end
 -- Countdowns, raid markers and ready checks are restricted actions; a
 -- blocked call cannot be caught, so the shortcut refuses it beforehand.
 local function Allowed()
-    if not NS.GroupActionsRestricted() then return true end
+    if not NS.InCombat() and not NS.GroupActionsRestricted() then return true end
     S.Print(NS.RestrictedNotice())
     return false
 end
@@ -37,8 +41,13 @@ local function OpenRaidManager()
         return
     end
     -- Blizzard's own expand moves the manager; keep that out of combat.
-    if NS.IsCombatLocked() then
+    if NS.InCombat() then
         S.Print(NS.RestrictedNotice())
+        return
+    end
+    -- Forever's Gamepad UI opens this manager through its own binding.
+    if S.GamepadUI() then
+        S.Print(S.Text("Raid Manager could not be opened by the client."))
         return
     end
     if not S.Dispatch(NS.Finish, CompactRaidFrameManager_Expand) then
@@ -46,23 +55,32 @@ local function OpenRaidManager()
     end
 end
 
-local function StartPull(message)
-    if not Available() or not S.Public(message) or type(message) ~= "string" then return end
+local function CanLead()
+    if not Available() then return false end
     if not Permitted() then
         S.Print(S.Text("Group leader or assistant required"))
-        return
+        return false
     end
+    return true
+end
+
+local function RunPull(seconds)
+    if not Allowed() then return end
+    local started = C_PartyInfo.DoCountdown(seconds)
+    if not S.Public(started) or started ~= true then
+        S.Print(S.Text("Countdown could not be started"))
+    end
+end
+
+local function StartPull(message)
+    if not S.Public(message) or type(message) ~= "string" or not CanLead() then return end
     local seconds = message:match("^%s*(%d*)%s*$")
     seconds = seconds == "" and 10 or tonumber(seconds)
     if not S.Finite(seconds) or seconds < 1 or seconds > 60 then
         S.Print(S.Text("Usage: /msufpull [1-60]"))
         return
     end
-    if not Allowed() then return end
-    local started = C_PartyInfo.DoCountdown(seconds)
-    if not S.Public(started) or started ~= true then
-        S.Print(S.Text("Countdown could not be started"))
-    end
+    RunPull(seconds)
 end
 
 local function UniqueRole(role)
@@ -186,34 +204,43 @@ local function AutoMark(self)
     end
 end
 
+local function DarkButton(button)
+    local back = S.CreateTexture(button, nil, "BACKGROUND")
+    back:SetAllPoints(button)
+    back:SetColorTexture(.12, .15, .2, .95)
+    local hover = S.CreateTexture(button, nil, "HIGHLIGHT")
+    hover:SetAllPoints(button)
+    hover:SetColorTexture(1, 1, 1, .12)
+    return back, hover
+end
+
+local function PanelLabel(parent, label, size, point, x, y)
+    local text = S.CreateFontString(parent, nil, "OVERLAY")
+    text:SetPoint(point, x, y)
+    S.SetStyledFont(text, S.GlobalFontPath(), size, "OUTLINE", 1, true, 70, 1)
+    text:SetText(S.Text(label))
+    return text
+end
+
 local function PanelButton(self, label, secure, action)
     local button = S.CreateFrame("Button", nil, self.panelBody,
         secure and "SecureActionButtonTemplate" or "UIPanelButtonTemplate")
-    button:SetSize(106, 25)
+    button:SetSize(PANEL_BUTTON_WIDTH, PANEL_BUTTON_HEIGHT)
     if secure then
-        -- The secure template has no artwork of its own.
-        local back = S.CreateTexture(button, nil, "BACKGROUND")
-        back:SetAllPoints(button)
-        back:SetColorTexture(.12, .15, .2, .95)
-        local hover = S.CreateTexture(button, nil, "HIGHLIGHT")
-        hover:SetAllPoints(button)
-        hover:SetColorTexture(1, 1, 1, .12)
+        DarkButton(button)
+        button:SetAttribute("useOnKeyDown", false)
     end
-    local text = S.CreateFontString(button, nil, "OVERLAY")
-    text:SetPoint("CENTER", 0, 0)
-    S.SetStyledFont(text, S.GlobalFontPath(), 11, "OUTLINE", 1, true, 70, 1)
-    text:SetText(S.Text(label))
-    if secure then button:SetAttribute("useOnKeyDown", false) end
+    local text = PanelLabel(button, label, 11, "CENTER", 0, 0)
     if action then button:SetScript("OnClick", action) end
     self.panelButtons[#self.panelButtons + 1] = button
-    return button
+    return button, text
 end
 
 local MARK_HELP = "Canceled placement still advances the sequence. Right-click Next worldmark to rewind without clearing a marker. Clear previous mark removes the last requested marker, not a confirmed placement."
-local function MarkerHelp(button)
+local function AttachHelp(button, label)
     button:SetScript("OnEnter", function()
         GameTooltip:SetOwner(button, "ANCHOR_RIGHT")
-        GameTooltip:SetText(S.Text(MARK_HELP), 1, 1, 1, nil, true)
+        GameTooltip:SetText(S.Text(label), 1, 1, 1, nil, true)
         GameTooltip:Show()
     end)
     button:SetScript("OnLeave", function(owner)
@@ -221,31 +248,9 @@ local function MarkerHelp(button)
     end)
 end
 
-local function CreatePanel(self)
-    if self.panel then return end
-    local host = S.CreateFrame("Frame", "MSUFSuiteRaidTools", UIParent, "SecureHandlerBaseTemplate")
-    local body = S.CreateFrame("Frame", nil, host, "SecureHandlerBaseTemplate")
-    body:SetPoint("TOPLEFT", 0, -28)
-    local back = S.CreateTexture(body, nil, "BACKGROUND")
-    back:SetAllPoints(body)
-    back:SetColorTexture(.04, .05, .07, .95)
-    self.panel, self.panelBody, self.panelButtons = host, body, {}
-    local toggle = S.CreateFrame("Button", nil, host, "SecureHandlerClickTemplate")
-    toggle:SetSize(106, 25)
-    toggle:SetPoint("TOPLEFT", 0, 0)
-    toggle:SetFrameRef("body", body)
-    toggle:SetAttribute("_onclick", [[local body = self:GetFrameRef("body"); if body:IsShown() then body:Hide() else body:Show() end]])
-    local title = S.CreateFontString(toggle, nil, "OVERLAY")
-    title:SetPoint("CENTER", 0, 0)
-    S.SetStyledFont(title, S.GlobalFontPath(), 12, "OUTLINE", 1, true, 70, 1)
-    title:SetText(S.Text("Raid tools +/-"))
-    PanelButton(self, "Raid Manager", false, OpenRaidManager)
-    PanelButton(self, "Pull 10", false, function() StartPull("10") end)
-    PanelButton(self, "Ready check", false, function()
-        if Available() and Permitted() and Allowed() then C_PartyInfo.DoReadyCheck() end
-    end)
+local function AddWorldmarkSequence(self, host)
     local nextMark = PanelButton(self, "Next worldmark", true)
-    MarkerHelp(nextMark)
+    AttachHelp(nextMark, MARK_HELP)
     nextMark:RegisterForClicks("LeftButtonUp", "RightButtonUp")
     nextMark:SetAttribute("type", "worldmarker")
     nextMark:SetAttribute("action", "set")
@@ -267,7 +272,7 @@ local function CreatePanel(self)
         control:SetAttribute("count", math.min(8, (control:GetAttribute("count") or 0) + 1))
     ]])
     local undo = PanelButton(self, "Clear previous mark", true)
-    MarkerHelp(undo)
+    AttachHelp(undo, MARK_HELP)
     undo:RegisterForClicks("AnyUp")
     undo:SetAttribute("action", "clear")
     SecureHandlerWrapScript(undo, "PreClick", host, [[
@@ -286,11 +291,127 @@ local function CreatePanel(self)
     clear:SetAttribute("type", "worldmarker")
     clear:SetAttribute("action", "clear")
     SecureHandlerWrapScript(clear, "PreClick", host, [[control:SetAttribute("next", 1); control:SetAttribute("count", 0)]])
+end
+
+-- The two native marker types use different IDs. The world marker order and
+-- atlases follow Blizzard's Mainline CompactRaidFrameManager on both clients.
+local WORLD_MARKER_ORDER = { 8, 4, 1, 7, 2, 3, 6, 5 }
+
+local function CreateMarkerRow(parent, world)
+    local row = S.CreateFrame("Frame", nil, parent, "SecureHandlerBaseTemplate")
+    PanelLabel(row, world and "World marker" or "Target marker", 10, "LEFT", 4, 0)
+    local help = world and "Left-click to place this world marker. Right-click to clear it."
+        or "Left-click to mark the target. Right-click to remove its marker."
+    for index = 1, MARKER_COUNT do
+        local button = S.CreateFrame("Button", nil, row, "SecureActionButtonTemplate")
+        button:SetSize(MARKER_SIZE, MARKER_SIZE)
+        button:SetPoint("RIGHT", row, "RIGHT", -4 - (MARKER_COUNT - index) * MARKER_STEP, 0)
+        DarkButton(button)
+        local icon = S.CreateTexture(button, nil, "ARTWORK")
+        icon:SetSize(16, 16)
+        icon:SetPoint("CENTER", 0, 0)
+        if world then
+            icon:SetAtlas("GM-raidMarker" .. index)
+        else
+            icon:SetTexture("Interface\\TargetingFrame\\UI-RaidTargetingIcon_" .. index)
+            button:SetAttribute("unit", "target")
+        end
+        button:RegisterForClicks("LeftButtonUp", "RightButtonUp")
+        button:SetAttribute("useOnKeyDown", false)
+        button:SetAttribute("type", world and "worldmarker" or "raidtarget")
+        button:SetAttribute("marker", world and WORLD_MARKER_ORDER[index] or index)
+        button:SetAttribute("action1", "set")
+        button:SetAttribute("action2", "clear")
+        AttachHelp(button, help)
+    end
+    return row
+end
+
+local function CreatePanel(self)
+    if self.panel then return end
+    local host = S.CreateFrame("Frame", "MSUFSuiteRaidTools", UIParent, "SecureHandlerBaseTemplate")
+    local body = S.CreateFrame("Frame", nil, host, "SecureHandlerBaseTemplate")
+    local back = S.CreateTexture(body, nil, "BACKGROUND")
+    back:SetAllPoints(body)
+    back:SetColorTexture(.04, .05, .07, .95)
+    self.panel, self.panelBody, self.panelButtons = host, body, {}
+    local toggle = S.CreateFrame("Button", nil, host, "SecureHandlerClickTemplate")
+    toggle:RegisterForClicks("LeftButtonUp")
+    toggle:SetFrameRef("body", body)
+    toggle:SetAttribute("_onclick", [[
+        local body = self:GetFrameRef("body")
+        if body:IsShown() then body:Hide() else body:Show() end
+    ]])
+    self.panelToggle = toggle
+    self.panelTabBack, self.panelTabHover = DarkButton(toggle)
+    self.panelTitle = PanelLabel(toggle, "Raid tools +/-", 12, "CENTER", 0, 0)
+    PanelButton(self, "Raid Manager", false, OpenRaidManager)
+    local _, pullText = PanelButton(self, "Pull 10", false, function()
+        if CanLead() then RunPull(self.config.panelPullSeconds or 10) end
+    end)
+    self.panelPullText = pullText
+    PanelButton(self, "Ready check", false, function()
+        if CanLead() and Allowed() then C_PartyInfo.DoReadyCheck() end
+    end)
+    AddWorldmarkSequence(self, host)
     host:Hide()
 end
 
+local function PanelPoint(self)
+    return NS.AnchorPoints[self.config.panelPoint or 5] or "CENTER"
+end
+
+local function LayoutMarkerRows(self, width, controlsHeight, compact)
+    if compact and not self.panelTargetMarkers then
+        self.panelTargetMarkers = CreateMarkerRow(self.panelBody, false)
+        self.panelWorldMarkers = CreateMarkerRow(self.panelBody, true)
+    end
+    if not self.panelTargetMarkers then return end
+    local target, world = self.panelTargetMarkers, self.panelWorldMarkers
+    target:SetShown(compact)
+    world:SetShown(compact)
+    if not compact then return end
+    target:SetSize(width, MARKER_ROW_HEIGHT)
+    target:ClearAllPoints()
+    target:SetPoint("TOPLEFT", self.panelBody, "TOPLEFT", 0, -controlsHeight)
+    world:SetSize(width, MARKER_ROW_HEIGHT)
+    world:ClearAllPoints()
+    world:SetPoint("TOPLEFT", target, "BOTTOMLEFT", 0, 0)
+end
+
+local function LayoutPanelTab(self, compact, point, width, height)
+    local panel, body, toggle = self.panel, self.panelBody, self.panelToggle
+    local tabHeight = compact and COMPACT_HEIGHT or PANEL_BUTTON_HEIGHT
+    toggle:SetSize(compact and COMPACT_WIDTH or PANEL_BUTTON_WIDTH, tabHeight)
+    toggle:ClearAllPoints()
+    toggle:SetPoint("TOPLEFT", panel, "TOPLEFT", 0, 0)
+    self.panelTabBack:SetShown(compact)
+    self.panelTabHover:SetShown(compact)
+    self.panelTitle:SetText(compact and S.Text("Raid Control") or S.Text("Raid tools +/-"))
+    body:SetSize(width, height)
+    body:ClearAllPoints()
+    if compact then
+        local side = point:find("LEFT", 1, true) and "LEFT" or point:find("RIGHT", 1, true) and "RIGHT" or ""
+        if point:find("BOTTOM", 1, true) then
+            body:SetPoint("BOTTOM" .. side, toggle, "TOP" .. side, 0, 3)
+        else
+            body:SetPoint("TOP" .. side, toggle, "BOTTOM" .. side, 0, -3)
+        end
+    else
+        body:SetPoint("TOPLEFT", toggle, "BOTTOMLEFT", 0, -3)
+    end
+    if self.panelCompact ~= compact then
+        body:SetShown(not compact)
+        self.panelCompact = compact
+    end
+    panel:SetSize(compact and COMPACT_WIDTH or width, compact and tabHeight or height + tabHeight + 3)
+end
+
 local function RefreshPanel(self)
-    if NS.IsCombatLocked() then return end
+    if NS.InCombat() then
+        if self.config.showPanel or self.panel then S.Queue("groupRaidShortcuts") end
+        return
+    end
     if not self.config.showPanel then
         if self.panel then
             UnregisterStateDriver(self.panel, "visibility")
@@ -299,16 +420,22 @@ local function RefreshPanel(self)
         return
     end
     CreatePanel(self)
-    local columns = self.config.panelColumns or 3
-    local width, height = columns * 110, math.ceil(#self.panelButtons / columns) * 29
-    self.panel:SetSize(width, height + 28)
-    self.panelBody:SetSize(width, height)
+    local config = self.config
+    local columns, compact = config.panelColumns or 3, config.panelCompact == true
+    local point = PanelPoint(self)
+    local controlsHeight = math.ceil(#self.panelButtons / columns) * PANEL_ROW
+    local width = columns * PANEL_COLUMN
+    if compact then width = math.max(width, 300) end
+    LayoutMarkerRows(self, width, controlsHeight, compact)
+    LayoutPanelTab(self, compact, point, width, controlsHeight + (compact and MARKER_ROW_HEIGHT * 2 or 0))
     self.panel:ClearAllPoints()
-    self.panel:SetPoint("CENTER", UIParent, "CENTER", self.config.panelX or 0, self.config.panelY or 160)
-    self.panel:SetScale((self.config.panelScale or 100) / 100)
+    self.panel:SetPoint(point, UIParent, point, config.panelX or 0, config.panelY or 160)
+    self.panel:SetScale((config.panelScale or 100) / 100)
+    local pullSeconds = config.panelPullSeconds or 10
+    self.panelPullText:SetText(pullSeconds == 10 and S.Text("Pull 10") or S.Text("Pull %d"):format(pullSeconds))
     for i, button in ipairs(self.panelButtons) do
         button:ClearAllPoints()
-        button:SetPoint("TOPLEFT", (i - 1) % columns * 110 + 2, -math.floor((i - 1) / columns) * 29 - 2)
+        button:SetPoint("TOPLEFT", (i - 1) % columns * PANEL_COLUMN + 2, -math.floor((i - 1) / columns) * PANEL_ROW - 2)
     end
     RegisterStateDriver(self.panel, "visibility", S.editMode and "show" or "[group] show; hide")
 end
@@ -319,7 +446,8 @@ end
 function M:RegisterMovers()
     S.RegisterOwnedMover("groupRaidShortcuts", "tools", {
         label = "Raid tools", order = 650, getFrame = function() return self.panel end,
-        xKey = "panelX", yKey = "panelY", point = function() return "CENTER" end, quickPosition = true,
+        xKey = "panelX", yKey = "panelY", pointKey = "panelPoint", point = function() return PanelPoint(self) end,
+        quickPosition = true,
         isEnabled = function() return self.config.showPanel == true end,
     })
 end

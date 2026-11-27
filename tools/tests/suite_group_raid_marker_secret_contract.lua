@@ -38,7 +38,7 @@ local suite = {
 }
 local ns = {
     GroupActionsRestricted = function() return false end,
-    IsCombatLocked = function() return false end,
+    InCombat = function() return false end,
     RestrictedNotice = function() return "restricted" end,
 }
 

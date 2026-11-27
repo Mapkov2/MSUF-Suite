@@ -50,7 +50,7 @@ finder.active = true
 finder:Enable()
 
 local grouped, leader, assistant, raid = true, true, false, false
-local combat = false
+local combat, combatStarting, gamepad = false, false, false
 -- The real client: a restricted action called by an addon raises
 -- ADDON_ACTION_BLOCKED (counted here) and does nothing; Lua sees no error.
 Enum = { AddOnRestrictionType = { Combat = 0, Encounter = 1, ChallengeMode = 2, PvPMatch = 3, Map = 4, Chat = 5 } }
@@ -62,6 +62,11 @@ local support = assert(loadfile(root .. "/tools/tests/suite_test_support.lua"))(
 local ns = support.Platform(root, { InCombatLockdown = function() return combat end,
     C_RestrictedActions = C_RestrictedActions, Enum = Enum })
 ns.IsCombatLocked = function() return combat end
+ns.InCombat = function() return combat or combatStarting end
+ns.AnchorPoints = { "TOPLEFT", "TOP", "TOPRIGHT", "LEFT", "CENTER", "RIGHT", "BOTTOMLEFT", "BOTTOM", "BOTTOMRIGHT" }
+suite.GamepadUI = function() return gamepad end
+local queued
+suite.Queue = function(id) queued = id end
 ns.Finish = function(callback, ...) return true, callback(...) end
 -- securecallfunction: an error is reported and the call returns nothing.
 suite.Dispatch = function(fn, ...)
@@ -137,6 +142,11 @@ combat = true
 SlashCmdList.MSUFSUITERAID("")
 assert(expanded == 1 and notices[#notices] == blockedText, "Raid Manager was moved from addon code in combat")
 combat = false
+gamepad = true
+SlashCmdList.MSUFSUITERAID("")
+assert(expanded == 1 and notices[#notices] == "Raid Manager could not be opened by the client.",
+    "the native gamepad manager was opened through addon code")
+gamepad = false
 SlashCmdList.MSUFSUITEPULL("")
 assert(countdown == 10, "default pull countdown was not started")
 -- A keystone keeps its restriction between pulls, outside combat.
@@ -254,17 +264,31 @@ raidTools.active = true
 print("Suite group finder exit, raid shortcuts and optional role markers passed")
 
 -- Exercise authored secure snippets independently; this is not a live secure-handler test.
-local function PanelWidget()
-    local w = { attributes = {}, shown = true }
-    for _, name in ipairs({ "SetSize", "SetPoint", "ClearAllPoints", "SetScale", "SetAllPoints", "SetColorTexture",
-        "SetText", "RegisterForClicks", "SetFrameRef" }) do w[name] = function() end end
+local function PanelWidget(_, _, parent)
+    local w = { attributes = {}, shown = true, children = {}, refs = {} }
+    if parent then parent.children[#parent.children + 1] = w end
+    for _, name in ipairs({ "ClearAllPoints", "SetScale", "SetAllPoints", "SetColorTexture", "RegisterForClicks" }) do
+        w[name] = function() end
+    end
+    function w:SetSize(...) self.size = { ... } end
+    function w:SetPoint(...) self.point = { ... } end
+    function w:SetText(text) self.text = text end
+    function w:SetAtlas(atlas) self.atlas = atlas end
+    function w:SetTexture(texture) self.texture = texture end
+    function w:SetFrameRef(key, frame) self.refs[key] = frame end
+    function w:GetFrameRef(key) return self.refs[key] end
     function w:SetScript(name, fn) self[name] = fn end
     function w:SetAttribute(key, value) self.attributes[key] = value end
     function w:GetAttribute(key) return self.attributes[key] end
+    function w:SetShown(shown) self.shown = shown end
+    function w:IsShown() return self.shown end
+    function w:Show() self.shown = true end
     function w:Hide() self.shown = false end
     return w
 end
-suite.CreateFrame, suite.CreateFontString, suite.CreateTexture = PanelWidget, PanelWidget, PanelWidget
+suite.CreateFrame = PanelWidget
+suite.CreateFontString = function() return PanelWidget() end
+suite.CreateTexture = function() return PanelWidget() end
 suite.SetStyledFont, suite.RegisterOwnedMover = function() end, function() end
 suite.GlobalFontPath = function() return "font" end
 UIParent = PanelWidget()
@@ -305,6 +329,10 @@ readyButton.OnClick()
 assert(readyChecks == 1 and blockedCalls == 0 and notices[#notices] == blockedText,
     "ready check was started under an addon restriction")
 restriction = nil
+combatStarting = true
+readyButton.OnClick()
+assert(readyChecks == 1 and notices[#notices] == blockedText, "ready check bypassed the combat entry guard")
+combatStarting = false
 raidTools.config.showPanel = false; raidTools:Refresh()
 assert(not raidTools.panel.driver and not raidTools.panel.shown)
 -- The controller registers the mover after Enable and Refresh
@@ -322,6 +350,52 @@ local tools = assert(toolMovers.tools, "the raid tools mover is missing")
 assert(tools.getFrame() == raidTools.panel and not tools.isEnabled(), "a hidden raid tools panel offered its mover")
 raidTools.config.showPanel = true; raidTools:Refresh()
 assert(tools.isEnabled(), "the shown raid tools panel lost its mover")
+
+local config = raidTools.config
+config.panelCompact, config.panelPoint, config.panelPullSeconds = true, 2, 6
+config.panelX, config.panelY = -240, 0
+raidTools:Refresh()
+local panel, body, toggle = raidTools.panel, raidTools.panelBody, raidTools.panelToggle
+assert(panel.point[1] == "TOP" and panel.point[3] == "TOP" and panel.point[4] == -240 and panel.point[5] == 0,
+    "the panel did not use the profile's top anchor")
+assert(panel.size[1] == 106 and panel.size[2] == 18 and tools.point() == "TOP" and tools.pointKey == "panelPoint",
+    "the panel mover did not use the compact tab bounds and anchor")
+assert(not body.shown and body.point[1] == "TOP" and body.point[2] == toggle and body.point[3] == "BOTTOM",
+    "the compact tray did not start collapsed below the tab")
+local clickTab = assert(loadstring(toggle.attributes._onclick))
+setfenv(clickTab, { self = toggle })
+clickTab()
+assert(body.shown, "the secure tab did not open the tray")
+raidTools:Refresh()
+assert(body.shown, "refresh unexpectedly closed the open tray")
+clickTab()
+assert(not body.shown, "the secure tab did not close the tray")
+assert(raidTools.panelTitle.text == "Raid Control" and raidTools.panelPullText.text == "Pull 6")
+raidTools.panelButtons[2].OnClick()
+assert(countdown == 6, "the panel pull ignored the configured duration")
+local targetMarkers, worldMarkers = raidTools.panelTargetMarkers.children, raidTools.panelWorldMarkers.children
+local worldIDs = { 8, 4, 1, 7, 2, 3, 6, 5 }
+assert(#targetMarkers == 8 and #worldMarkers == 8)
+for i, targetMarker in ipairs(targetMarkers) do
+    local target = targetMarker.attributes
+    local world = worldMarkers[i].attributes
+    assert(target.type == "raidtarget" and target.marker == i and target.unit == "target"
+        and target.action1 == "set" and target.action2 == "clear", "target marker did not route to the native secure action")
+    assert(world.type == "worldmarker" and world.marker == worldIDs[i] and world.action1 == "set" and world.action2 == "clear",
+        "world marker used an incorrect secure action or native marker ID")
+end
+config.panelPoint = 8
+combatStarting = true
+raidTools:Refresh()
+assert(queued == "groupRaidShortcuts" and panel.point[1] == "TOP", "panel placement was not deferred at combat entry")
+combatStarting = false
+raidTools:Refresh()
+assert(body.point[1] == "BOTTOM" and body.point[3] == "TOP", "a bottom anchored tray opened off the screen")
+config.panelCompact = false
+raidTools:Refresh()
+assert(body.shown and not raidTools.panelTargetMarkers.shown and not raidTools.panelWorldMarkers.shown,
+    "switching to the original panel left compact markers visible")
+
 raidTools.config.showPanel = false; raidTools:Refresh()
 assert(not tools.isEnabled(), "turning the panel off kept its mover")
 print("Raid tools panel and authored worldmark sequence/undo/clear snippets passed")

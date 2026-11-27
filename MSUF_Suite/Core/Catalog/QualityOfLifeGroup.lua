@@ -143,10 +143,6 @@ B.Module("groupRaidShortcuts", {
     title = "Raid shortcuts",
     description = "Open Blizzard's raid tools, start a pull countdown, or mark one party tank or healer by command or opt-in automation.",
     optIn = true, defaultEnabled = false, page = "suite_qualityOfLife",
-    available = function()
-        if NS.Client.isForever then return false, "Raid shortcuts are available only in Retail" end
-        return true
-    end,
     editElement = "tools",
 })
 local function RaidMarker(key, label, default)
@@ -160,8 +156,11 @@ local function RaidMarker(key, label, default)
 end
 B.Section("groupRaidShortcuts", "raid_shortcuts", "Raid shortcuts", {
     Bool("showPanel", "Show the collapsible raid tools panel"),
+    Bool("panelCompact", "Compact raid control tab"),
+    Number("panelPullSeconds", "Pull countdown (seconds)", 10, 1, 60, 1),
     Number("panelColumns", "Panel columns", 3, 1, 3, 1),
     Number("panelScale", "Raid tools scale (percent)", 100, 60, 160, 5),
+    Choice("panelPoint", "Screen anchor", 5, NS.AnchorLabels),
     Number("panelX", "Raid tools horizontal position", 0, -4000, 4000),
     Number("panelY", "Raid tools vertical position", 160, -3000, 3000),
     RaidMarker("tankMarker", "Tank raid marker", 4),
@@ -169,6 +168,12 @@ B.Section("groupRaidShortcuts", "raid_shortcuts", "Raid shortcuts", {
     B.Automation(Bool("autoMarkTank", "Automatically mark the party tank")),
     B.Automation(Bool("autoMarkHealer", "Automatically mark the party healer")),
 })
+do
+    local rules = NS.SuiteCatalog.groupRaidShortcuts.rules
+    for _, key in ipairs({ "panelCompact", "panelPullSeconds", "panelColumns", "panelScale", "panelPoint", "panelX", "panelY" }) do
+        rules[key].enableKey = "showPanel"
+    end
+end
 
 B.Module("keystoneReadyCheck", {
     title = "Keystone ready check and countdown",

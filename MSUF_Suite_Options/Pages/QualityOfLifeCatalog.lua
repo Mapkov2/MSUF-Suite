@@ -116,7 +116,7 @@ local GROUPS = {
         aliases = { "world quest tab", "world quest rewards", "weltquest", "weltquestbelohnungen" } },
     { id = "quietPopups", title = "Quiet Blizzard popups", switch = "enabled", sections = { "quiet_popups" } },
     { id = "uiErrorFilter", title = "Quiet repeated errors", switch = "enabled", sections = { "ui_error_filter" } },
-    { id = "groupRaidShortcuts", title = "Raid shortcuts (Retail)", switch = "enabled",
+    { id = "groupRaidShortcuts", title = "Raid shortcuts", switch = "enabled",
         sections = { "raid_shortcuts" } },
     { id = "combatPetStatus", title = "Pet status warning", switch = "enabled", sections = { "pet_status" } },
     { id = "professionAppearance", title = "Profession appearance remover (Retail)", switch = "enabled",
