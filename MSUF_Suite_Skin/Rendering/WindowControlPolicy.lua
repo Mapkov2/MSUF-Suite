@@ -125,9 +125,9 @@ function Policy.PlaceExtraCaption(button, frame)
     local top, height = Safety.Read(frame, "GetTop"), UIParent:GetHeight()
     local ratio = Policy.ScreenRatio(frame)
     if type(top) == "number" and ratio and PublicNumber(height) and (top + 24) * ratio <= height then
-        button:SetPoint("BOTTOMRIGHT", frame, "TOPRIGHT", -2, 2)
+        Policy.Anchor(button, "BOTTOMRIGHT", frame, "TOPRIGHT", -2, 2)
     else
-        button:SetPoint("TOPRIGHT", frame, "TOPRIGHT", -2, -36)
+        Policy.Anchor(button, "TOPRIGHT", frame, "TOPRIGHT", -2, -36)
     end
 end
 
@@ -175,13 +175,61 @@ function Policy.CaptureNativePoints(frame)
     return points
 end
 
-local function AtPosition(frame, x, y)
-    if Safety.Read(frame, "GetNumPoints") ~= 1 then return false end
-    local point, parent, relative, dx, dy = frame:GetPoint(1)
+local function HasPoint(region, index, point, relative, relativePoint, x, y)
+    local p, target, other, dx, dy = region:GetPoint(index)
     local public = Safety.Public
-    return public(point) and public(parent) and public(relative) and PublicNumber(dx) and PublicNumber(dy)
-        and point == "TOPLEFT" and parent == UIParent and relative == "TOPLEFT"
+    return public(p) and public(target) and public(other) and PublicNumber(dx) and PublicNumber(dy)
+        and p == point and target == relative and other == relativePoint
         and math.abs(dx - x) < 0.001 and math.abs(dy - y) < 0.001
+end
+
+local function AtPosition(frame, x, y)
+    return Safety.Read(frame, "GetNumPoints") == 1 and HasPoint(frame, 1, "TOPLEFT", UIParent, "TOPLEFT", x, y)
+end
+
+-- Our grip, title strip and cells are re-placed on every panel pass and show; focus
+-- observes them. Matching readable anchors are kept, restricted or secret ones written.
+local function Anchored(region, count)
+    local restricted = Safety.Call(region, "IsAnchoringRestricted")
+    if not Safety.Public(restricted) or restricted or not region.GetNumPoints or not region.GetPoint then return false end
+    local points = region:GetNumPoints()
+    return Safety.Public(points) and points == count
+end
+
+function Policy.Anchor(region, point, relative, relativePoint, x, y)
+    if Anchored(region, 1) and HasPoint(region, 1, point, relative, relativePoint, x, y) then return end
+    region:ClearAllPoints()
+    region:SetPoint(point, relative, relativePoint, x, y)
+end
+-- The client need not report two points in the order they were set.
+local function HasEither(region, point, relative, relativePoint, x, y)
+    return HasPoint(region, 1, point, relative, relativePoint, x, y) or HasPoint(region, 2, point, relative, relativePoint, x, y)
+end
+function Policy.AnchorPair(region, p1, r1, rp1, x1, y1, p2, r2, rp2, x2, y2)
+    if Anchored(region, 2) and HasEither(region, p1, r1, rp1, x1, y1) and HasEither(region, p2, r2, rp2, x2, y2) then return end
+    region:ClearAllPoints()
+    region:SetPoint(p1, r1, rp1, x1, y1)
+    region:SetPoint(p2, r2, rp2, x2, y2)
+end
+
+function Policy.SetLevel(frame, level)
+    if Safety.Read(frame, "GetFrameLevel") ~= level then frame:SetFrameLevel(level) end
+end
+
+-- What a panel pass can change about a laid out caption, recorded in key: true
+-- when the window's place, size, scale, native buttons, mode, level and title stayed.
+function Policy.Placement(state, key, level, title)
+    local frame = state.frame
+    local left, top = Safety.Read(frame, "GetLeft"), Safety.Read(frame, "GetTop")
+    local width, scale = Safety.Read(frame, "GetWidth"), Safety.Read(frame, "GetEffectiveScale")
+    local close, toggle = Safety.Read(state.close, "IsShown"), Safety.Read(state.sizeToggle, "IsShown")
+    local gamepad = NS.Client.IsGamepadUI() == true
+    local same = key.left == left and key.top == top and key.width == width and key.scale == scale and key.close == close
+        and key.toggle == toggle and key.gamepad == gamepad and key.level == level and key.title == title
+    key.left, key.top, key.width, key.scale, key.close = left, top, width, scale, close
+    key.toggle, key.gamepad, key.level, key.title = toggle, gamepad, level, title
+    key.valid = type(left) == "number" and type(top) == "number" and type(width) == "number" and type(scale) == "number" and title ~= nil
+    return NS.WindowControlNativeArt.CaptionPartsMatch(state, key) and same and key.valid
 end
 
 function Policy.PlaceWindow(state, point, onlyIfOutside)
@@ -280,7 +328,7 @@ function Policy.CanNativeClick(button)
     if kind ~= "Button" and kind ~= "CheckButton" then return false end
     local constrained = Safety.Call(button, "HasAccessConstraints")
     if not Safety.Public(constrained) or constrained then return false end
-    local aspect = Enum and Enum.ForbiddenAspect and Enum.ForbiddenAspect.ScriptedInput
+    local aspect = Enum.ForbiddenAspect and Enum.ForbiddenAspect.ScriptedInput
     if not aspect then return true end
     local forbidden = Safety.Call(button, "HasAnyForbiddenAspects", aspect)
     return Safety.Public(forbidden) and not forbidden

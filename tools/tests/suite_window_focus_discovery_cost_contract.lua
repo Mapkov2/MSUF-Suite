@@ -36,11 +36,12 @@ local body = [======[
         child.parent, child.kind = parent, kind
         return child
     end
-    -- Five nodes: two at depth 1, two at depth 2, one raised at depth 3.
+    -- Five nodes: two at depth 1, two at depth 2 (one raised) and one at depth 3.
+    -- Focus walks the root's children and grandchildren only (WindowFocusChrome).
     local page = Child(professions, "Frame", 600, 200, 700, 658)
     local card = Child(page, "Frame", 650, 400, 300, 100)
+    card.strata, card.frameLevel = "HIGH", 100
     local bar = Child(card, "Frame", 650, 400, 300, 20)
-    bar.strata, bar.frameLevel = "HIGH", 100
     local tabs = Child(professions, "Frame", 620, 174, 400, 28)
     local tab = Child(tabs, "Button", 620, 174, 140, 28)
     Children(professions, { page, tabs })
@@ -58,8 +59,10 @@ local body = [======[
 
     professions:Hide()
     scans, hostReads, typeReads, scriptReads = 0, 0, 0, 0
-    professions:Show()
-    Check(scans == 3, "active window must read only the three parents of potential exterior pieces")
+    -- The opening stack still rescales the root after its OnShow; the show
+    -- settles once in the frame's geometry pass.
+    professions:Show(); professions:SetScale(1.1); professions:SetScale(1); Tick()
+    Check(scans == 3, "an opening walked the window before its stack finished, or more than its three parents")
     Check(hostReads == 1, "one discovery resolved the root's artwork host " .. hostReads .. " times (once per node)")
     Check(typeReads == 0, "active window traversed a deep native layer with no veil to paint")
     Check(scriptReads == 0, "a node too deep to extend the shell had its mouse script read " .. scriptReads .. " times")
@@ -67,8 +70,8 @@ local body = [======[
     -- The same walk still finds what it found before.
     Click(character)
     local state = F.records[professions]
-    Check(typeReads == 1, "focus reversal must inspect the deep layer exactly once before dimming")
-    Check(state.strata == "HIGH" and state.level > bar.frameLevel, "deep raised native content escaped its dim veil")
+    Check(typeReads == 0, "focus reversal walked below the root's grandchildren")
+    Check(state.strata == "HIGH" and state.level > card.frameLevel, "raised native grandchild escaped its dim veil")
     local function Covered(rect)
         for _, veil in ipairs(state.veils) do
             if veil.dim and Intersects(veil.rect, rect) then return true end
@@ -77,21 +80,21 @@ local body = [======[
     end
     Check(Covered({ left = 620, bottom = 174, width = 140, height = 24 }), "native tab below the root lost its dimming")
 
-    -- Demotion discovers a hidden deep branch for the first time. Its later
+    -- Demotion discovers a hidden branch for the first time. Its later
     -- show must lift the veil above newly visible content without any click.
-    local branch = Child(card, "Frame", 655, 405, 200, 60)
+    local branch = Child(professions, "Frame", 655, 405, 200, 60)
     local raised = Child(branch, "Frame", 660, 410, 100, 30)
     raised.strata, raised.frameLevel = "TOOLTIP", 950
     branch:Hide()
-    Children(card, { bar, branch })
+    Children(professions, { page, tabs, branch })
     Children(branch, { raised })
     Click(professions); Tick()
     Click(character); Tick()
     branch:Show(); Tick()
     Check(state.level > raised.frameLevel and state.strata == "TOOLTIP",
-        "showing a previously hidden deep branch left its child above the veil")
+        "showing a previously hidden branch left its child above the veil")
     branch:Hide(); Tick()
-    Children(card, { bar })
+    Children(professions, { page, tabs })
 
     -- Nothing is kept across walks: a host and a region created while the
     -- window was closed are both seen by its next show.
@@ -106,7 +109,7 @@ local body = [======[
     professions.PortraitContainer = portrait
     Children(professions, { page, tabs, portrait, sideTab })
     hostReads = 0
-    professions:Show()
+    professions:Show(); Tick()
     Check(hostReads == 1, "the reopened window resolved its artwork host " .. hostReads .. " times")
     Click(character)
     Check(Covered({ left = 562, bottom = 832, width = 30, height = 20 }), "late native portrait host was not rediscovered on show")
@@ -235,17 +238,17 @@ local body = [======[
     function bag:IsIgnoringChildrenForBounds() return false end
     function bag:GetBoundsRect() return 1000, 100, boundRight - 1000, 400 end
     local reserve = rowReads
-    bag:Hide(); bag:Show()
+    bag:Hide(); bag:Show(); Tick()
     Check(rowReads == reserve, "warm interior bag measured its 100 slot rectangles")
     rows[102] = Child(bag, "Button", 955, 205, 20, 20)
     function bag:GetBoundsRect() return 950, 100, 450, 400 end
-    bag:Hide(); bag:Show()
+    bag:Hide(); bag:Show(); Tick()
     Check(not CharacterVeil(963) and rowReads > reserve, "late exterior child escaped the warm bag broad phase")
     rows[102]:Hide(); Tick()
     function bag:IsIgnoringChildrenForBounds() return true end
     function bag:GetBoundsRect() return 1000, 100, 400, 400 end
     reserve = rowReads
-    bag:Hide(); bag:Show()
+    bag:Hide(); bag:Show(); Tick()
     Check(rowReads > reserve, "ignored native children were classified using the parent bound")
     Check(CharacterVeil(965), "a discovered tab's native hide failed to restore the underlying veil")
 
@@ -262,6 +265,7 @@ local body = [======[
     W.TrackFocus(spells, "cover"); W.TrackFocus(front, "cover")
     local page = Child(spells, "Frame", 310, 210, 350, 260)
     local holder = Child(page, "Frame", 315, 220, 330, 240)
+    holder.strata = "BACKGROUND"
     local leaves, topLevel = {}, { page }
     local deepReads, lowReads, lowLevels, visibilityReads, childReads = 0, 0, 0, 0, 0
     for i = 1, 100 do
@@ -278,20 +282,22 @@ local body = [======[
     Children(spells, topLevel); Children(page, { holder })
     local holderScans = 0
     function holder:GetChildren() holderScans = holderScans + 1; return unpack(leaves) end
+    function holder:GetFrameLevel() lowLevels = lowLevels + 1; return self.frameLevel or 1 end
     spells:Show(); front:Show()
     for i = 1, 3 do F.RefreshChrome(spells); Tick() end
     print(("Equal bounds, 100 deep rows, four layouts: %d visits, %d native row reads"):format(deepReads,
         deepReads + lowReads + lowLevels + visibilityReads + childReads))
     Check(deepReads == 0 and holderScans == 0 and not Dimmed(spells),
         "fully covered native pages enumerated or inspected their deep rows for a veil")
-    -- Newly acquired deep content must be discovered on the first exposed layout.
-    local raised = Child(holder, "Frame", 340, 240, 60, 30)
+    -- Newly acquired content must be discovered on the first exposed layout.
+    local raised = Child(page, "Frame", 340, 240, 60, 30)
     raised.strata, raised.frameLevel = "FULLSCREEN", 900
-    leaves[101] = raised
+    Children(page, { holder, raised })
     front.left = 440; F.RefreshChrome(front); Tick()
-    Check(Dimmed(spells) and deepReads == 100 and F.records[spells].level > 900,
+    Check(Dimmed(spells) and F.records[spells].level > 900,
         "exposing a formerly covered window missed its new native raised descendant")
-    Check(lowReads == 100 and lowLevels == 0, "a lower stratum queried levels that cannot contribute to painting")
+    Check(deepReads == 0 and holderScans == 0 and lowReads == 0, "the walk enumerated rows below the root's grandchildren")
+    Check(lowLevels == 0, "a lower stratum queried levels that cannot contribute to painting")
     -- A small native tab above the equal root still needs real dimming.
     front.left = 300
     topLevel[2] = Child(spells, "Button", 460, 495, 40, 25)
@@ -342,12 +348,34 @@ local body = [======[
     FocusClick(leftWindow); FocusClick(rightWindow)
     Check(fullScans == 0 and rowRects == 0 and Dimmed(leftWindow) and F.active.frame == rightWindow,
         "a pure focus switch between visible stable windows rediscovered their descendants")
+    -- A caption layout that kept its faded set (WindowControlChrome) only
+    -- checks the walked topology. A child native layout added is still walked.
+    local counts, countChildren = 0, leftWindow.GetNumChildren
+    function leftWindow:GetNumChildren() counts = counts + 1; return countChildren(self) end
+    for _ = 1, 100 do F.RefreshChrome(leftWindow, false) end
+    Tick()
+    print(("100 caption layouts with an unchanged faded set: %d walks, %d child counts"):format(fullScans, counts))
+    Check(fullScans == 0 and rowRects == 0 and counts > 0 and Dimmed(leftWindow),
+        "a caption layout with an unchanged faded set walked the window again")
+    leftWindow.GetNumChildren = countChildren
+    local added = Child(leftWindow, "Button", 70, 200, 25, 30)
+    NativeChildren(added, {})
+    lchildren[#lchildren + 1] = added
+    F.RefreshChrome(leftWindow, false); Tick()
+    local addedCovered = false
+    for _, veil in ipairs(F.records[leftWindow].veils) do
+        if veil.dim and Intersects(veil.rect, { left = 72, bottom = 205, width = 5, height = 5 }) then addedCovered = true end
+    end
+    Check(fullScans > 0 and addedCovered, "a child native layout added before a caption layout was not walked")
+    lchildren[#lchildren] = nil
+    F.RefreshChrome(leftWindow, false); Tick()
+    Check(F.records[leftWindow].extentCount == 0, "a removed child kept its exterior cutout")
     local boundReads = 0
     function leftWindow:GetBoundsRect() boundReads = boundReads + 1; return self:GetRect() end
     function leftWindow:IsIgnoringChildrenForBounds() return false end
     lchildren[1].IsIgnoringChildrenForBounds = function() return false end
     rowRects = 0
-    leftWindow:Hide(); leftWindow:Show()
+    leftWindow:Hide(); leftWindow:Show(); Tick()
     Check(boundReads > 0 and rowRects == 0, "an interior native window remeasured its 40 buttons on reopen")
     leftWindow.GetBoundsRect, leftWindow.IsIgnoringChildrenForBounds, lchildren[1].IsIgnoringChildrenForBounds = nil, nil, nil
     FocusClick(rightWindow)
@@ -357,17 +385,16 @@ local body = [======[
     FocusClick(leftWindow); FocusClick(rightWindow)
     Check(fullScans > 0 and F.records[leftWindow].extentCount > 0, "late native child was lost across pure focus switches")
     local first = Child(leftWindow, "Frame", 130, 130, 100, 100)
-    local middle = Child(first, "Frame", 140, 140, 80, 80)
-    local inner = Child(middle, "Frame", 145, 145, 60, 60)
+    local inner = Child(first, "Frame", 145, 145, 60, 60)
     inner.strata, inner.frameLevel = "BACKGROUND", 1
-    NativeChildren(first, {middle}); NativeChildren(middle,{inner}); NativeChildren(inner,{})
+    NativeChildren(first, {inner}); NativeChildren(inner,{})
     lchildren[#lchildren + 1] = first
     F.RefreshChrome(leftWindow); Tick()
     FocusClick(leftWindow); FocusClick(rightWindow)
     inner:SetFrameStrata("TOOLTIP"); inner:SetFrameLevel(1500)
     FocusClick(leftWindow); FocusClick(rightWindow)
     Check(F.records[leftWindow].strata == "TOOLTIP" and F.records[leftWindow].level > 1500,
-        "warm membership cache missed a newly raised previously low deep native child")
+        "warm membership cache missed a newly raised previously low native grandchild")
     -- An existing unbound side tab can become interactive while showing.
     local scripted = Child(leftWindow, "Frame", 70, 276, 45, 28)
     NativeChildren(scripted,{})
@@ -383,11 +410,11 @@ local body = [======[
         if window == leftWindow and result == F.records[leftWindow].anchors then coldDiscoveries = coldDiscoveries + 1 end
         return anchors(window, result)
     end
-    leftWindow:Hide(); leftWindow:Show()
+    leftWindow:Hide(); leftWindow:Show(); Tick()
     Check(coldDiscoveries == 0, "a stable reopened window repeated full contour discovery")
     leftWindow:Hide()
     fresh.left = 141
-    leftWindow:Show()
+    leftWindow:Show(); Tick()
     Check(coldDiscoveries > 0 and F.records[leftWindow].extentCount == 1,
         "a tab moved inside the hidden root but kept its old exterior cutout")
     local discoveredBefore = coldDiscoveries
@@ -395,7 +422,7 @@ local body = [======[
     lchildren[#lchildren] = Child(leftWindow, "Button", 60, 280, 45, 28)
     NativeChildren(lchildren[#lchildren],{})
     scripted.parent = rightWindow
-    leftWindow:Show()
+    leftWindow:Show(); Tick()
     Check(coldDiscoveries > discoveredBefore, "a same-count reparent while closed reused stale membership")
     -- Parent visibility propagates OnHide/OnShow for individually shown
     -- descendants, but a locally hidden tab receives neither native signal.

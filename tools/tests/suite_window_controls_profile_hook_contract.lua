@@ -90,6 +90,8 @@ end
 CreateFrame = function(kind, _, parent) return Frame(nil, parent, kind) end
 UIParent = Frame("UIParent")
 UIParent.width, UIParent.height = 1920, 1080
+-- Every client defines Enum; this one has no ForbiddenAspect (WindowControlPolicy.CanNativeClick).
+Enum = Enum or {}
 
 local NATIVE_X, NATIVE_Y = 16, -116
 local character, hookInstalls, fitInstalls
@@ -171,6 +173,8 @@ local function NewSession(forever, look)
     assert(loadfile(root .. "/MSUF_Suite/Core/WindowCaption.lua"))("MSUF_Suite", core)
     core.WindowCaption.PixelFactor = function() return nil end
     NS.WindowActionSkin = NS.WindowActionSkin or { Yield = function() end }
+    -- CaptionTitles.lua loads before the chrome; these windows have no native title container.
+    NS.CaptionTitles = { Restore = function() end, Fit = function() end }
     assert(loadfile(root .. "/MSUF_Suite/Core/HostBridgeMenu.lua"))("MSUF_Suite", core)
     NS.SuiteCore = function() return core end
     assert(loadfile(root .. "/MSUF_Suite/Appearance/Safety.lua"))("MSUF_Suite_Skin", NS)

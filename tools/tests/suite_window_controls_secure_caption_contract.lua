@@ -423,9 +423,11 @@ for _, flavor in ipairs({ "Mainline", "Forever" }) do
     -- window (MSUF_Suite_CharacterPanel): no HideUIPanel from addon code, the
     -- same secure delegate over that cell instead.
     local suiteCell = Frame(nil, UIParent, "Button")
-    Check(W.SuiteAction(character, {}, "minimize") == false and character.shown and #skinCalls == 0,
+    -- The panel's layout plan always carries its size (GearGeometry.lua).
+    local plan = { width = character:GetWidth(), height = character:GetHeight() }
+    Check(W.SuiteAction(character, plan, "minimize") == false and character.shown and #skinCalls == 0,
         flavor .. ": the Suite minimize hid the Character window from addon code")
-    Check(W.SuiteAction(character, {}, "bindMinimize", suiteCell) == true,
+    Check(W.SuiteAction(character, plan, "bindMinimize", suiteCell) == true,
         flavor .. ": the Suite minimize cell got no secure delegate")
     Hover(suiteCell)
     Check(delegate.shown and delegate.owner == suiteCell

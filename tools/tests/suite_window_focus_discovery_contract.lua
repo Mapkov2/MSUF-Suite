@@ -65,7 +65,7 @@ local body = [======[
         "Battle.net toast stole window focus after combat startup")
     toast:Hide()
     W.DisableOwner("blizzardWindows:social-ui")
-    social:Hide(); social:Show()
+    social:Hide(); social:Show(); Tick()
     Check(F.active.frame ~= social, "normal Social owner release retained cold discovery ownership")
     NS.Adapters.ApplyAll()
     local professions = Native("ProfessionsFrame", 350, 300, 450, 500)
@@ -93,11 +93,11 @@ local body = [======[
     W.DisableOwner("playerSpells")
     NS.DB.skinCategories.social = false
     NS.Adapters.Apply("blizzardWindows")
-    friend:Hide(); friend:Show()
+    friend:Hide(); friend:Show(); Tick()
     Check(F.active.frame ~= friend, "category disable left ghost focus ownership")
     NS.DB.skins.blizzardWindows = false
     NS.Adapters.ApplyAll()
-    character:Hide(); character:Show()
+    character:Hide(); character:Show(); Tick()
     Check(not F.active and not driver.events.GLOBAL_MOUSE_DOWN and not loader.events.ADDON_LOADED,
         "disable before combat end retained focus or pending discovery")
     -- A pending load after disable cannot resurrect the owner's focus.
@@ -111,7 +111,7 @@ local body = [======[
     _G.ProfessionsFrame = professions
     loaded.Blizzard_Professions = true
     loader.scripts.OnEvent(loader, "ADDON_LOADED", "Blizzard_Professions")
-    professions:Hide(); professions:Show()
+    professions:Hide(); professions:Show(); Tick()
     Check(not F.active and not loader.events.ADDON_LOADED, "late addon resurrected a disabled focus owner")
     -- The normal adapter's painting callbacks stand in for heavy skin work;
     -- actual ApplyAll retains focus discovery independently of skin ownership.
@@ -146,7 +146,7 @@ local body = [======[
     loader.scripts.OnEvent(loader, "ADDON_LOADED", "Blizzard_Professions")
     Check(F.records[later] and not loader.events.ADDON_LOADED, "normal LoD lost focus-only discovery")
     later.width = 700
-    later:Show()
+    later:Show(); Tick()
     Check(F.active.frame == later, "delayed native layout did not join normal focus")
     later:Hide()
     Click(character)

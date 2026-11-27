@@ -8,16 +8,49 @@ NS.WindowControlNativeArt = Art
 local nativeAlphas = setmetatable({}, { __mode = "k" })
 local fadeOwners = setmetatable({}, { __mode = "k" }) -- false after release while the hook remains
 function Art.IsFaded(region) return nativeAlphas[region] ~= nil end
+-- Focus discovery skips faded regions (IsFaded). Count the changes of that set.
+local fadeRevision = 0
+local function SetNativeAlpha(region, alpha)
+    if (nativeAlphas[region] == nil) ~= (alpha == nil) then fadeRevision = fadeRevision + 1 end
+    nativeAlphas[region] = alpha
+end
+-- True once for each window after the faded set changed since it last asked.
+function Art.FadeChanged(state)
+    if state.fadeRevision == fadeRevision then return false end
+    state.fadeRevision = fadeRevision
+    return true
+end
+
+-- Native panel layout can move just its X or change the caption controls' layer.
+function Art.CaptionPartsMatch(state, key)
+    local close, toggle = state.close, state.sizeToggle
+    local nine = Safety.Field(state.frame, "NineSlice")
+    local corner = Safety.Field(nine, "TopRightCorner")
+    if not Safety.Public(nine) or not Safety.Public(corner) then return false end
+    local left, top = Safety.Read(close, "GetLeft"), Safety.Read(close, "GetTop")
+    local width, height = Safety.Read(close, "GetWidth"), Safety.Read(close, "GetHeight")
+    local scale, level = Safety.Read(close, "GetEffectiveScale"), Safety.Read(close, "GetFrameLevel")
+    local parent = Safety.Read(close, "GetParent")
+    local toggleLevel = Safety.Read(toggle, "GetFrameLevel")
+    local maximize = Safety.Read(Safety.Field(toggle, "MaximizeButton"), "IsShown")
+    local same = key.closeLeft == left and key.closeTop == top and key.closeWidth == width and key.closeHeight == height
+        and key.closeScale == scale and key.closeLevel == level and key.closeParent == parent
+        and key.toggleLevel == toggleLevel and key.maximize == maximize and key.rootCorner == corner
+    key.closeLeft, key.closeTop, key.closeWidth, key.closeHeight = left, top, width, height
+    key.closeScale, key.closeLevel, key.closeParent, key.toggleLevel, key.maximize = scale, level, parent, toggleLevel, maximize
+    key.rootCorner = corner
+    return same and left ~= nil and top ~= nil and width ~= nil and height ~= nil and scale ~= nil and level ~= nil
+end
 
 local function FadePublicAlpha(region)
     local alpha = Safety.Read(region, "GetAlpha")
-    if alpha == nil then nativeAlphas[region] = nil return end
-    nativeAlphas[region] = nativeAlphas[region] or alpha
+    if alpha == nil then SetNativeAlpha(region, nil) return end
+    if nativeAlphas[region] == nil then SetNativeAlpha(region, alpha) end
     if alpha ~= 0 then region:SetAlpha(0) end
 end
 local function KeepFaded(region, alpha)
     if not fadeOwners[region] then return end
-    if not Safety.Public(alpha) then nativeAlphas[region] = nil
+    if not Safety.Public(alpha) then SetNativeAlpha(region, nil)
     elseif alpha ~= 0 or nativeAlphas[region] == nil then FadePublicAlpha(region) end
 end
 
@@ -40,7 +73,8 @@ end
 local function ReleasePart(parts, region)
     if fadeOwners[region] ~= parts then return end
     local alpha = nativeAlphas[region]
-    fadeOwners[region], nativeAlphas[region] = false, nil
+    fadeOwners[region] = false
+    SetNativeAlpha(region, nil)
     if alpha ~= nil and Safety.Read(region, "GetAlpha") == 0 then region:SetAlpha(alpha) end
 end
 

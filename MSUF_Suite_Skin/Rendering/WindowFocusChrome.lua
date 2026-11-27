@@ -395,6 +395,9 @@ local function Discover(state, uiScale)
     end
     state.tabScriptCount = 0
     state.layerAtDiscovery, state.levelAtDiscovery = state.rank, state.level
+    -- Root writes that keep these reuse the walk (WindowFocus ScaleChanged, LayerChanged).
+    state.scaleAtDiscovery, state.rootLevel = Safety.Read(state.frame, "GetScale"), Safety.Read(state.frame, "GetFrameLevel")
+    state.rootStrata = Safety.Read(state.frame, "GetFrameStrata")
     state.topologyCount, state.partialTopology = 0, false
     state.queue, state.depths = state.queue or {}, state.depths or {}
     state.extents, state.chromeScratch = state.extents or {}, state.chromeScratch or {}

@@ -3,7 +3,7 @@ local _, NS = ...
 -- Use Suite material and hover/pressed states for the owned map grip.
 local Chrome = {}
 NS.WindowControlChrome = Chrome
-local Safety = NS.Safety
+local Safety, Policy = NS.Safety, NS.WindowControlPolicy
 local function PublicNumber(value) return Safety.Public(value) and type(value) == "number" end
 local fills = setmetatable({}, { __mode = "k" })
 
@@ -52,20 +52,20 @@ local function ExteriorGrip(grip, state)
     local right, bottom = Safety.Read(frame, "GetRight"), Safety.Read(frame, "GetBottom")
     local topSide = ratio and type(bottom) == "number" and (bottom - 21) * ratio < 0
     if state.name == "HelpFrame" and not topSide then
-        grip:SetPoint("TOPRIGHT", frame, "BOTTOMRIGHT", 0, 0)
+        Policy.Anchor(grip, "TOPRIGHT", frame, "BOTTOMRIGHT", 0, 0)
         return
     end
     if NS.Client.isForever and state.name == "ProfessionsFrame" and not topSide then
         -- Dock under the lower border. Camelot's Create button starts at y=7,
         -- and the profession tabs sit beyond the right edge.
-        grip:SetPoint("TOPRIGHT", frame, "BOTTOMRIGHT", 0, 3)
+        Policy.Anchor(grip, "TOPRIGHT", frame, "BOTTOMRIGHT", 0, 3)
         return
     end
     local uiWidth = UIParent:GetWidth()
     local leftSide = ratio and type(right) == "number" and PublicNumber(uiWidth) and (right + 21) * ratio > uiWidth
     local corner = (topSide and "TOP" or "BOTTOM") .. (leftSide and "LEFT" or "RIGHT")
     local point = (topSide and "BOTTOM" or "TOP") .. (leftSide and "RIGHT" or "LEFT")
-    grip:SetPoint(point, frame, corner, leftSide and -1 or 1, topSide and 1 or -1)
+    Policy.Anchor(grip, point, frame, corner, leftSide and -1 or 1, topSide and 1 or -1)
 end
 
 local function BagHandleEdge(state)
@@ -87,46 +87,44 @@ local function BankGrip(grip, frame)
         x = math.min(width / ratio - right, math.max(x, grip:GetWidth() - right))
         y = math.max(-bottom, math.min(y, height / ratio - bottom - grip:GetHeight()))
     end
-    grip:SetPoint("BOTTOMRIGHT", panel, "BOTTOMRIGHT", x, y)
+    Policy.Anchor(grip, "BOTTOMRIGHT", panel, "BOTTOMRIGHT", x, y)
 end
 
+-- Every placement below writes only a changed anchor (Policy.Anchor).
 function Chrome.PlaceGrip(grip, state)
-    grip:ClearAllPoints()
     if state.inventory and state.name ~= "BankFrame" then
         local edge, offset = BagHandleEdge(state)
         grip:SetSize(20, 6)
-        grip:SetPoint("BOTTOMRIGHT", state.frame, edge .. "RIGHT", -8, offset)
+        Policy.Anchor(grip, "BOTTOMRIGHT", state.frame, edge .. "RIGHT", -8, offset)
     elseif state.name == "BankFrame" then
         BankGrip(grip, state.frame)
     elseif state.name == "WorldMapFrame" then
         -- Clear quest scrolling and keep the grip above a maximized map's bottom edge.
-        grip:SetPoint("BOTTOMLEFT", state.frame, "BOTTOMRIGHT", 1, 3)
+        Policy.Anchor(grip, "BOTTOMLEFT", state.frame, "BOTTOMRIGHT", 1, 3)
         grip:SetClampedToScreen(true)
     elseif outsideGrips[state.name] or state.inventory then
         -- Flip the exterior corner at screen edges; never clamp onto native input.
         ExteriorGrip(grip, state)
     else
-        grip:SetPoint("BOTTOMRIGHT", state.frame, "BOTTOMRIGHT", -3, 3)
+        Policy.Anchor(grip, "BOTTOMRIGHT", state.frame, "BOTTOMRIGHT", -3, 3)
     end
 end
 
 function Chrome.PlaceTitleDrag(strip, state)
-    strip:ClearAllPoints()
+    local frame = state.frame
     if state.inventory and state.name ~= "BankFrame" then
         -- Native bag titles route portrait-menu clicks over their entire area.
         local edge, offset = BagHandleEdge(state)
-        strip:SetPoint("BOTTOMLEFT", state.frame, edge .. "LEFT", 50, offset)
-        strip:SetPoint("BOTTOMRIGHT", state.frame, edge .. "RIGHT", -34, offset)
+        Policy.AnchorPair(strip, "BOTTOMLEFT", frame, edge .. "LEFT", 50, offset, "BOTTOMRIGHT", frame, edge .. "RIGHT", -34, offset)
         strip:SetHeight(6)
         if not fills[strip] then Chrome.PaintControl(strip, "buttonFill") end
     elseif state.name == "OpacityFrame" then
         -- This native popup is only 80 wide; its slider starts 35 below the top.
-        strip:SetPoint("TOPLEFT", state.frame, "TOPLEFT", 4, -3)
-        strip:SetPoint("TOPRIGHT", state.frame, "TOPRIGHT", -4, -3)
+        Policy.AnchorPair(strip, "TOPLEFT", frame, "TOPLEFT", 4, -3, "TOPRIGHT", frame, "TOPRIGHT", -4, -3)
         strip:SetHeight(20)
     else
-        strip:SetPoint("TOPLEFT", state.frame, "TOPLEFT", 50, -1)
-        strip:SetPoint("TOPRIGHT", state.frame, "TOPRIGHT", -math.max(110, state.captionInset or 0), -1)
+        local inset = -math.max(110, state.captionInset or 0)
+        Policy.AnchorPair(strip, "TOPLEFT", frame, "TOPLEFT", 50, -1, "TOPRIGHT", frame, "TOPRIGHT", inset, -1)
         strip:SetHeight(24)
     end
 end
@@ -179,6 +177,13 @@ local function TitleRegion(frame)
     local title = Safety.Call(frame, "GetTitleText")
     if Safety.Public(title) and title then return title end
     return Safety.Field(Safety.Field(frame, "TitleContainer"), "TitleText")
+end
+-- The text a caption fits around (true without a title, nil while unreadable).
+local function CaptionTitle(frame)
+    local region = TitleRegion(frame)
+    if not Safety.Public(region) then return nil end
+    if region == nil then return true end
+    return Safety.Read(region, "GetText")
 end
 
 function Chrome.Title(state)
@@ -412,37 +417,33 @@ Chrome.IsFaded = NativeArt.IsFaded
 local RefreshFocus = function() end
 function Chrome.SetFocusRefresh(callback) RefreshFocus = callback end
 
+-- Blizzard's panel pass re-places every open window as any one opens or closes:
+-- relayout only on a changed key (shows, settles and refreshes always lay out).
+function Chrome.FollowPanels(state, level)
+    local key = state.captionKey
+    if not key or not key.valid or not Policy.Placement(state, key, level, CaptionTitle(state.frame)) then
+        return Chrome.ShowCaption(state, level)
+    end
+    Chrome.SyncMinimize(state)
+    RefreshFocus(state.frame, NativeArt.FadeChanged(state))
+end
+
 local CELLS = { "closeCell", "toggleCell", "maximize", "minimize" }
 function Chrome.HideCaption(state, keepMinimize)
-    if NS.CaptionTitles then NS.CaptionTitles.Restore(state) end
+    if state.captionKey then state.captionKey.valid = false end
+    NS.CaptionTitles.Restore(state)
     for _, key in ipairs(CELLS) do
         if state[key] and (key ~= "minimize" or not keepMinimize) then state[key]:Hide() end
     end
     for target in pairs(state.nativeRoots or {}) do RestoreNative(state, target) end
-    RefreshFocus(state.frame)
-end
-
--- These Suite cells are explicitly anchored to one public sibling or parent.
--- A hidden/recycled cell with a second or unreadable anchor is placed afresh.
-local function AnchorCell(cell, point, parent, other, x, y)
-    local restricted = cell.IsAnchoringRestricted and cell:IsAnchoringRestricted()
-    if Safety.Public(restricted) and not restricted and cell.GetNumPoints and cell.GetPoint then
-        local count = cell:GetNumPoints()
-        if Safety.Public(count) and count == 1 then
-            local p, target, relative, dx, dy = cell:GetPoint(1)
-            if Safety.Public(p) and Safety.Public(target) and Safety.Public(relative) and Safety.Public(dx) and Safety.Public(dy)
-                and p == point and target == parent and relative == other and dx == x and dy == y then return end
-        end
-    end
-    cell:ClearAllPoints()
-    cell:SetPoint(point, parent, other, x, y)
+    RefreshFocus(state.frame, NativeArt.FadeChanged(state))
 end
 
 local function PlaceCell(cell, anchor, width, height, level, kind)
     local w, h, actualLevel = cell:GetWidth(), cell:GetHeight(), cell:GetFrameLevel()
     if not Safety.Public(w) or not Safety.Public(h) or w ~= width or h ~= height then cell:SetSize(width, height) end
     if not Safety.Public(actualLevel) or actualLevel ~= level then cell:SetFrameLevel(level) end
-    if anchor then AnchorCell(cell, "RIGHT", anchor, "LEFT", 0, 0) end
+    if anchor then Policy.Anchor(cell, "RIGHT", anchor, "LEFT", 0, 0) end
     LayoutCaption(cell, kind)
     cell:Show()
     if kind == "minimize" then NS.WindowControlDelegate.Refresh(cell) end
@@ -464,26 +465,25 @@ end
 
 local function ShowStandaloneMinimize(state, level, besideClose)
     local button, frame = state.minimize, state.frame
-    button:ClearAllPoints()
     if besideClose then
         PlaceMinimize(button, state, state.close)
     else
-        NS.WindowControlPolicy.PlaceExtraCaption(button, frame)
+        Policy.PlaceExtraCaption(button, frame)
     end
     return PlaceCell(button, nil, 22, 22, level, "minimize")
 end
 
 local function PlaceCloseCell(state, width, height, level)
     local close = DrawnCell(state, "closeCell")
-    AnchorCell(close, "TOPRIGHT", state.frame, "TOPRIGHT", state.captionX, state.captionY)
+    Policy.Anchor(close, "TOPRIGHT", state.frame, "TOPRIGHT", state.captionX, state.captionY)
     PlaceCell(close, nil, width, height, level, "close")
     Drive(state.close, close)
     FadeSockets(state)
-    RefreshFocus(state.frame)
     return close
 end
 
 function Chrome.ShowCaption(state, level)
+    if state.captionKey then state.captionKey.valid = false end
     Chrome.SyncMinimize(state)
     local width, height, room, inset, limit, right, scale = Chrome.CaptionSize(state)
     local gamepad = NS.Client.IsGamepadUI()
@@ -513,7 +513,7 @@ function Chrome.ShowCaption(state, level)
         if not showMinimize then return end
         return ShowStandaloneMinimize(state, level, state.close and room == nil and not state.nativeCaption)
     end
-    if NS.CaptionTitles then NS.CaptionTitles.Fit(state, limit, right, scale) end
+    NS.CaptionTitles.Fit(state, limit, right, scale)
     state.captionInset, state.captionPath = inset, "cells"
     for _, native in ipairs({ state.close, state.sizeToggle }) do
         local nativeLevel = Safety.Read(native, "GetFrameLevel")
@@ -542,6 +542,10 @@ function Chrome.ShowCaption(state, level)
     elseif minimize then
         ShowStandaloneMinimize(state, level, false)
     end
+    -- After all fades: a changed faded set walks again, else focus checks topology.
+    RefreshFocus(state.frame, NativeArt.FadeChanged(state))
+    state.captionKey = state.captionKey or {}
+    Policy.Placement(state, state.captionKey, state.captionLevel, CaptionTitle(state.frame))
 end
 
 -- Ordinary windows need only their native hooks, next-frame layout and one late settle.
@@ -719,9 +723,9 @@ end
 PlaceMinimize = function(button, state, close)
     local anchor = close and Safety.Read(close, "GetPoint", 1)
     if type(anchor) == "string" and anchor:find("TOP", 1, true) then
-        button:SetPoint("RIGHT", close, "LEFT", -3, 0)
+        Policy.Anchor(button, "RIGHT", close, "LEFT", -3, 0)
     else
-        button:SetPoint("TOPRIGHT", state.frame, "TOPRIGHT", -36, -4)
+        Policy.Anchor(button, "TOPRIGHT", state.frame, "TOPRIGHT", -36, -4)
     end
 end
 

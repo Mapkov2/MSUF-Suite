@@ -191,9 +191,26 @@ end
 -- pointer, a red close cell with a white cross. colors(role) answers
 -- "text" with the window's own text colour.
 
-local function Paint(cell)
+-- The cell's own fill and base keep a readable colour until it changes. A
+-- secret colour is written every time and never stored.
+local function SetFill(art, key, texture, r, g, b, a)
+    local last = art[key]
+    if HasSecret(r, g, b, a) then
+        art[key] = nil
+    elseif last and last[1] == r and last[2] == g and last[3] == b and last[4] == a then
+        return
+    else
+        last = last or {}
+        last[1], last[2], last[3], last[4] = r, g, b, a
+        art[key] = last
+    end
+    texture:SetColorTexture(r, g, b, a)
+end
+
+-- laidOut: the caller just laid the glyph out (SetKind).
+local function Paint(cell, laidOut)
     local art = cell.caption
-    Caption.UpdateGlyph(cell, art)
+    if not laidOut then Caption.UpdateGlyph(cell, art) end
     local active = art.hover or art.down
     local close = art.kind == "close"
     local r, g, b, a = art.colors("text")
@@ -201,13 +218,13 @@ local function Paint(cell)
     if not IsSecret(a) then a = a or 1 end
     Caption.PaintGlyph(art.bars, r, g, b, a)
     if close then
-        art.fill:SetColorTexture(DANGER[1], DANGER[2], DANGER[3], active and (art.down and 1 or .9) or 0)
+        SetFill(art, "fillColor", art.fill, DANGER[1], DANGER[2], DANGER[3], active and (art.down and 1 or .9) or 0)
     else
-        art.fill:SetColorTexture(1, 1, 1, active and (art.down and .17 or .1) or 0)
+        SetFill(art, "fillColor", art.fill, 1, 1, 1, active and (art.down and .17 or .1) or 0)
     end
-    if art.base then art.base:SetColorTexture(art.colors("base")) end
+    if art.base then SetFill(art, "baseColor", art.base, art.colors("base")) end
 end
-Caption.Paint = Paint
+function Caption.Paint(cell) Paint(cell) end
 
 function Caption.SetHover(cell, hover)
     cell.caption.hover = hover or nil
@@ -220,12 +237,14 @@ local function Leave(cell) Caption.SetHover(cell, false) end
 local function Down(cell) cell.caption.down = true Paint(cell) end
 local function Up(cell) cell.caption.down = nil Paint(cell) end
 
+-- Also the relayout after a move or resize (bag Snap, Dress's OnSizeChanged):
+-- Layout keeps its bars when the cell stays on the same pixel grid.
 function Caption.SetKind(cell, kind)
     if IsSecret(kind) then return end
     local art = cell.caption
     art.kind = kind
     Caption.UpdateGlyph(cell, art, true)
-    Paint(cell)
+    Paint(cell, true)
 end
 
 -- opaque: an unhovered fill in colors("base") that hides what lies beneath.

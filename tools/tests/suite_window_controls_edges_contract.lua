@@ -124,6 +124,8 @@ end
 
 UIParent = Frame("UIParent")
 UIParent.width, UIParent.height, UIParent.shown = 1920, 1080, true
+-- Every client defines Enum; this one has no ForbiddenAspect (WindowControlPolicy.CanNativeClick).
+Enum = Enum or {}
 GetCursorPosition = function() return 0, 0 end
 InCombatLockdown = function() return combat end
 IsMouseButtonDown = function() return true end
@@ -242,6 +244,8 @@ core.Suite = {}
 assert(loadfile(root .. "/MSUF_Suite/Core/WindowCaption.lua"))("MSUF_Suite", core)
 core.WindowCaption.PixelFactor = function() return nil end
 NS.WindowActionSkin = NS.WindowActionSkin or { Yield = function() end }
+-- CaptionTitles.lua loads before the chrome; these windows have no native title container.
+NS.CaptionTitles = { Restore = function() end, Fit = function() end }
 assert(loadfile(root .. "/MSUF_Suite/Core/HostBridgeMenu.lua"))("MSUF_Suite", core)
 NS.SuiteCore = function() return core end
 for _, file in ipairs({ "../MSUF_Suite/Appearance/Safety.lua", "Core/Defaults.lua", "Core/DefaultsLooks.lua",

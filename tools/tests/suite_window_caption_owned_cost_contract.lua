@@ -6,10 +6,11 @@ issecretvalue = function(value, ...)
     assert(select("#", ...) == 0)
     return rawequal(secret, value)
 end
-local ns = { Suite = {}, Skin = { GetWindowCaptionMode = function() return mode end } }
+local modeReads = 0
+local ns = { Suite = {}, Skin = { GetWindowCaptionMode = function() modeReads = modeReads + 1; return mode end } }
 PixelUtil = { GetPixelToUIUnitFactor = function() return factor end }
 local caption = assert(loadfile(root .. "/MSUF_Suite/Core/WindowCaption.lua"))("Suite", ns)
-local geometry, paint = 0, 0
+local geometry, paint, fills = 0, 0, 0
 local texture = {}
 local function Noop() end
 texture.SetAllPoints, texture.SetSnapToPixelGrid, texture.SetTexelSnappingBias = Noop, Noop, Noop
@@ -22,7 +23,7 @@ function texture:SetSize(w, h) geometry = geometry + 1; self.w, self.h = w, h en
 function texture:Show() geometry = geometry + 1; self.shown = true end
 function texture:Hide() geometry = geometry + 1; self.shown = false end
 function texture:SetColorTexture(r, g, b, a)
-    if self.glyph then paint = paint + 1 end
+    if self.glyph then paint = paint + 1 else fills = fills + 1 end
     self.r, self.g, self.b, self.a = r, g, b, a
 end
 local function Cell()
@@ -43,14 +44,17 @@ end
 local cell = caption.Dress(Cell(), "close", Colors, true)
 local bars = cell.caption.bars
 assert(#bars == 16 and bars[1].x == 6 and bars[1].w == 1 and bars[1].r == r)
-geometry, paint = 0, 0
+geometry, paint, fills, modeReads = 0, 0, 0, 0
 local instructions = 0
 debug.sethook(function() instructions = instructions + 100 end, "", 100)
 for i = 1, 50 do caption.SetKind(cell, "close") end
 debug.sethook()
-print(("50 equal close layouts: %d native geometry, %d glyph color writes, ~%d Lua instructions")
-    :format(geometry, paint, instructions))
+print(("50 equal close layouts: %d native geometry, %d glyph and %d fill/base color writes, %d mode reads, ~%d Lua instructions")
+    :format(geometry, paint, fills, modeReads, instructions))
 assert(geometry == 0 and paint == 0, "repeated equal owned caption performed native writes")
+-- Bags re-snap their cells after each window move (BagCaption Snap): the
+-- cell's own fill and base keep their colour, the glyph mode is read once.
+assert(fills == 0 and modeReads == 50, "repeated equal owned caption rewrote its fill or base or reread its mode")
 
 -- Subpixel position changes affect alignment, whole-pixel movement does not.
 cell.left, cell.top = .25, 20.25
@@ -93,6 +97,23 @@ assert(bars[1].r == .65 and bars[1].a == 0)
 a = nil
 caption.Paint(cell)
 assert(bars[1].a == 1 and cell.caption.base.r == .12)
+-- A changed base colour and a secret one are written; a secret is never kept.
+local base, baseColor = cell.caption.base, Colors
+Colors = function(role) if role == "base" then return .2, .15, .18, 1 end return baseColor(role) end
+cell.caption.colors = Colors
+caption.Paint(cell)
+assert(base.r == .2, "a changed caption base colour was not written")
+Colors = function(role) if role == "base" then return secret, .15, .18, 1 end return baseColor(role) end
+cell.caption.colors = Colors
+caption.Paint(cell)
+assert(rawequal(base.r, secret) and cell.caption.baseColor == nil, "a secret caption base colour was skipped or stored")
+Colors = function(role) if role == "base" then return .2, .15, .18, 1 end return baseColor(role) end
+cell.caption.colors = Colors
+caption.Paint(cell)
+assert(base.r == .2, "the readable base colour after a secret one was not written")
+Colors = baseColor
+cell.caption.colors = Colors
+caption.Paint(cell)
 
 -- A public caller's plain array and native art may have been changed since the
 -- previous layout. Its next call still repairs geometry, visibility and color.

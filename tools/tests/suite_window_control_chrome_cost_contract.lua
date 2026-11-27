@@ -165,10 +165,13 @@ local function TestStableCaption()
     function fixed:GetObjectType() classifications = classifications + 1; return "Frame" end
     function host:GetChildren() return fixed, native end
     local owner = { frame = host, close = native, name = "CharacterFrame" }
-    local refreshes = 0
-    chrome.SetFocusRefresh(function(rootFrame)
+    -- faded ~= false: the caption changed the faded natives focus skips, so
+    -- focus walks the window again (WindowControlNativeArt.FadeChanged).
+    local refreshes, walks = 0, 0
+    chrome.SetFocusRefresh(function(rootFrame, faded)
         assert(rootFrame == host)
         refreshes = refreshes + 1
+        if faded ~= false then walks = walks + 1 end
     end)
     chrome.ShowCaption(owner, 8)
     local cell = assert(owner.closeCell, "missing close cell")
@@ -178,11 +181,12 @@ local function TestStableCaption()
     function cell:SetSize(...) writes = writes + 1; return size(self, ...) end
     function cell:SetFrameLevel(...) writes = writes + 1; return level(self, ...) end
     function cell:SetPoint(...) writes = writes + 1; return point(self, ...) end
-    refreshes, classifications = 0, 0
+    refreshes, classifications, walks = 0, 0, 0
     for _ = 1, 100 do chrome.ShowCaption(owner, 8) end
-    print(("100 stable window captions: %d native cell writes, %d focus notifications, %d static type queries"):format(
-        writes, refreshes, classifications))
+    print(("100 stable window captions: %d native cell writes, %d focus notifications (%d focus walks), %d static type queries")
+        :format(writes, refreshes, walks, classifications))
     assert(writes == 0 and classifications == 0, "unchanged captions rewrote geometry or reclassified a static child")
+    assert(refreshes == 100 and walks == 0, "an unchanged caption made focus walk the window again")
 
     assert(refreshes > 0, "native layout did not invalidate focus for undiscovered children")
     cell:SetPoint("CENTER", host, "CENTER", 0, 0)
@@ -200,15 +204,16 @@ local function TestStableCaption()
     cell.IsAnchoringRestricted, cell.GetPoint = nil, getPoint
     local newCorner = Region(.8)
     host.NineSlice = { TopRightCorner = newCorner }
+    local walked = walks
     chrome.ShowCaption(owner, 8)
-    assert(newCorner.alpha == 0 and refreshes > 0, "newly faded corner did not notify focus")
+    assert(newCorner.alpha == 0 and walks == walked + 1, "newly faded corner did not notify focus")
     local afterCorner = refreshes
     host.NineSlice.TopRightCorner = Region(.5)
     chrome.ShowCaption(owner, 8)
-    assert(newCorner.alpha == .8 and refreshes > afterCorner, "replaced native corner did not restore and notify")
+    assert(newCorner.alpha == .8 and refreshes > afterCorner and walks == walked + 2, "replaced native corner did not restore and notify")
     local afterSwap = refreshes
     chrome.HideCaption(owner)
-    assert(refreshes > afterSwap and not cell:IsShown(), "hiding caption did not notify")
+    assert(refreshes > afterSwap and walks == walked + 3 and not cell:IsShown(), "hiding caption did not notify")
     chrome.ShowCaption(owner, 8)
     assert(cell:IsShown(), "reopened caption stayed hidden")
 end

@@ -298,13 +298,17 @@ UpdateListeners = function()
     if not listen then StopDriver() end
 end
 
-local function Promote(state, opening)
+local function Promote(state)
+    -- A show takes the newest order at once and paints in the geometry pass,
+    -- so the order, not the last painted active window, decides.
+    if state.order == serial then
+        if state ~= Focus.active then Reconcile() end
+        return
+    end
     -- Raising focus changes the order. Native layout notifications separately
     -- invalidate contours; an unannounced new or reparented child is checked
     -- against the last discovery before its geometry is reused.
-    if not opening then
-        for _, window in pairs(visible) do window.verifyTopology = true end
-    end
+    for _, window in pairs(visible) do window.verifyTopology = true end
     serial = serial + 1
     state.order = serial
     Reconcile()
@@ -322,7 +326,7 @@ end
 GamepadChanged = function()
     local manager = Safety.Field(Safety.Field(_G, "GamepadMode"), "FrameControlsManager")
     local state = FindMouseWindow(Safety.Read(manager, "GetActiveFrame"))
-    if state and state ~= Focus.active then Promote(state) end
+    if state then Promote(state) end
 end
 
 local function MouseDown()
@@ -335,7 +339,7 @@ local function MouseDown()
         -- Every walked child and grandchild reports its own layout and
         -- visibility. A click only needs the check for added children.
         state.verifyTopology = true
-        if state ~= Focus.active then Promote(state) end
+        Promote(state)
         driver:RegisterEvent("GLOBAL_MOUSE_UP")
         QueueGeometry()
     end
@@ -373,7 +377,15 @@ local function Shown(frame)
     end
     state.focusVisible = true
     UpdateOpeningOutline(state)
-    Promote(state, true)
+    serial = serial + 1
+    state.order = serial
+    if batchDepth > 0 or count < 2 or not Enabled() then return Reconcile() end
+    -- The rest of the opening stack (WindowControls' OnShow, native layout) still
+    -- moves this root; the geometry pass settles it after them in this frame.
+    -- Input before that pass already finds the listeners (Forever's mailbox
+    -- waits for SettleMailFocus, as before).
+    if not mailFocusQueued then UpdateListeners() end
+    QueueGeometry()
 end
 
 local function Hidden(frame)
@@ -415,18 +427,34 @@ local function Moved(frame)
     GeometryChanged(frame)
 end
 
+-- A rescaled root walks again: children can keep their own scale. A call
+-- that keeps the scale of the last walk only moves the window.
+local function ScaleChanged(frame, scale)
+    local state = visible[frame]
+    if state and Safety.Public(scale) and scale == state.scaleAtDiscovery then GeometryChanged(frame)
+    else LayoutChanged(frame) end
+end
+
+-- A root raised or moved to another strata walks again: its descendants'
+-- levels follow it. A call that keeps the root's layer only checks topology.
+local function LayerChanged(frame)
+    local state = visible[frame]
+    if not state or state.rootLevel == nil or state.rootStrata == nil or Safety.Read(frame, "GetFrameLevel") ~= state.rootLevel
+        or Safety.Read(frame, "GetFrameStrata") ~= state.rootStrata then return LayoutChanged(frame) end
+    state.verifyTopology = true
+    GeometryChanged(frame)
+end
+
 local geometryMethods = { "SetPoint", "ClearAllPoints", "SetScale", "SetFrameLevel", "SetFrameStrata", "Raise" }
+local geometryHooks = { SetPoint = GeometryChanged, ClearAllPoints = GeometryChanged, SetScale = ScaleChanged,
+    SetFrameLevel = LayerChanged, SetFrameStrata = LayerChanged, Raise = LayerChanged }
 local function Observe(frame)
     frame:HookScript("OnShow", Shown)
     frame:HookScript("OnHide", Hidden)
     frame:HookScript("OnSizeChanged", LayoutChanged)
     for index = 1, #geometryMethods do
         local method = geometryMethods[index]
-        if Safety.HasMethod(frame, method) then
-            local layout = method == "SetFrameLevel" or method == "SetFrameStrata" or method == "Raise" or method == "SetScale"
-            local callback = layout and LayoutChanged or GeometryChanged
-            hooksecurefunc(frame, method, callback)
-        end
+        if Safety.HasMethod(frame, method) then hooksecurefunc(frame, method, geometryHooks[method]) end
     end
     if Safety.HasMethod(frame, "StartMoving") then hooksecurefunc(frame, "StartMoving", Moving) end
     if Safety.HasMethod(frame, "StartSizing") then hooksecurefunc(frame, "StartSizing", Moving) end
@@ -454,11 +482,10 @@ function Focus.Track(frame, owner)
         Focus.records[frame] = state
         Observe(frame)
     end
-    -- A bag shell Bags paints is a plain rectangle: it still takes part in
-    -- focus, veils and cutouts, but nothing below its root is walked. The
+    -- A Bags-owned shell still takes part in focus, veils and cutouts, but
+    -- nothing below its root is walked. The
     -- skin rebuilds its owners when that ownership changes hands.
-    local ownership = NS.SuiteOwnership
-    local static = ownership ~= nil and ownership.IsBagShell(frame) and ownership.Owns("bagWindows") == true
+    local static = NS.SuiteOwnership.IsBagShell(frame) and NS.SuiteOwnership.Owns("bagWindows") == true
     if state.static ~= static then
         state.static = static
         -- Only a walked window has observed descendants to release.
@@ -510,7 +537,17 @@ NS.WindowFocusPopups.Initialize(QueueGeometry)
 NS.Registry.AddListener(Focus, SettingsChanged)
 -- Our caption fades Blizzard's caption buttons outside the observed geometry
 -- hooks: the window's chrome is discovered again, without those buttons.
-function Focus.RefreshChrome(frame) LayoutChanged(frame) end
+-- faded == false: the faded set is unchanged, so a caption layout only checks
+-- for children that native layout added (WindowControlNativeArt.FadeChanged).
+function Focus.RefreshChrome(frame, faded)
+    local state = visible[frame]
+    if faded == false and state then
+        state.verifyTopology = true
+        QueueGeometry()
+    else
+        LayoutChanged(frame)
+    end
+end
 NS.WindowFocusChrome.SetHidden(NS.WindowControlChrome.IsFaded)
 NS.WindowControlChrome.SetFocusRefresh(Focus.RefreshChrome)
 NS.WindowControls.SetFocusProvider(Focus.Track, Focus.ReleaseOwner)

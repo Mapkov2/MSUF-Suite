@@ -173,7 +173,7 @@ local function OnPanelPositionsUpdated(currentFrame)
             ApplyStoredPosition(state)
             if state.name == "BankFrame" and SafeControls(state) then Chrome.PlaceGrip(state.grip, state) end
             if HasCaption(state) and SafeControls(state) then
-                Chrome.ShowCaption(state, Chrome.Level(state) + CONTROL_LEVEL_OFFSET)
+                Chrome.FollowPanels(state, Chrome.Level(state) + CONTROL_LEVEL_OFFSET)
             end
         end
     end
@@ -498,8 +498,8 @@ local function ShowControls(state)
     end
     Chrome.PlaceGrip(state.grip, state)
     Chrome.PlaceTitleDrag(state.titleDrag, state)
-    state.titleDrag:SetFrameLevel(level + CONTROL_LEVEL_OFFSET)
-    state.grip:SetFrameLevel(level + GRIP_LEVEL_OFFSET)
+    Policy.SetLevel(state.titleDrag, level + CONTROL_LEVEL_OFFSET)
+    Policy.SetLevel(state.grip, level + GRIP_LEVEL_OFFSET)
     if state.fit then
         state.titleDrag:Hide()
         state.grip:Hide()

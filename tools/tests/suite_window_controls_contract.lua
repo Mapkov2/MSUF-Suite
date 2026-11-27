@@ -153,6 +153,8 @@ end
 
 UIParent = Frame("UIParent")
 UIParent.width, UIParent.height = 1920, 1080
+-- Every client defines Enum; this one has no ForbiddenAspect (WindowControlPolicy.CanNativeClick).
+Enum = Enum or {}
 GetCursorPosition = function() return _G.cursorX or 0, _G.cursorY or 0 end
 InCombatLockdown = function() return _G.combat or false end
 -- Retail and Forever always have this; the left button stays held unless a
@@ -277,6 +279,8 @@ core.Suite = {}
 assert(loadfile(root .. "/MSUF_Suite/Core/WindowCaption.lua"))("MSUF_Suite", core)
 core.WindowCaption.PixelFactor = function() return nil end
 NS.WindowActionSkin = NS.WindowActionSkin or { Yield = function() end }
+-- CaptionTitles.lua loads before the chrome; these windows have no native title container.
+NS.CaptionTitles = NS.CaptionTitles or { Restore = function() end, Fit = function() end }
 assert(loadfile(root .. "/MSUF_Suite/Core/HostBridgeMenu.lua"))("MSUF_Suite", core)
 NS.SuiteCore = function() return core end
 local bridgeHistoryCalls, withHistory = 0, core.HostBridge.WithMenuHistory
@@ -639,6 +643,104 @@ NextFrame()
 UpdateUIPanelPositions(character)
 Check(character.point[4] == 150 / character.scale,
     "the panel layout hook stayed suspended after a failed reset")
+
+-- Panel passes and shows re-place the grip and title strip of every open
+-- window. Focus observes both, so an unchanged anchor or level is kept.
+do
+    local writes = 0
+    local function Track(control)
+        local points = {}
+        function control:ClearAllPoints() writes = writes + 1; points = {} end
+        function control:SetPoint(point, relative, relativePoint, x, y)
+            writes = writes + 1
+            for index, entry in ipairs(points) do
+                if entry[1] == point then table.remove(points, index) break end
+            end
+            points[#points + 1] = { point, relative, relativePoint, x, y }
+            self.point = points[#points]
+        end
+        function control:GetNumPoints() return #points end
+        function control:GetPoint(index) if points[index] then return unpack(points[index]) end end
+        local setLevel = control.SetFrameLevel
+        function control:SetFrameLevel(value) writes = writes + 1; setLevel(self, value) end
+    end
+    Track(state.grip); Track(state.titleDrag)
+    NS.WindowControls.Refresh()
+    writes = 0
+    for _ = 1, 5 do UpdateUIPanelPositions(character) end
+    NS.WindowControls.Refresh()
+    print(("5 panel passes and a refresh of a placed window: %d grip and title strip writes"):format(writes))
+    Check(writes == 0, "re-placing unchanged window controls rewrote their anchors or levels")
+    state.grip:SetPoint("CENTER", UIParent, "CENTER", 0, 0)
+    state.titleDrag:SetFrameLevel(1)
+    writes = 0
+    NS.WindowControls.Refresh()
+    Check(writes > 0 and state.grip:GetNumPoints() == 1 and state.grip.point[1] == "BOTTOMRIGHT"
+        and state.titleDrag:GetFrameLevel() > 1, "moved or relevelled window controls were not placed again")
+end
+
+-- Blizzard's panel pass runs for every open window: a caption whose window,
+-- title, buttons and level stayed as they were is not laid out again.
+do
+    local list = Frame("AddonList", UIParent)
+    local close = Frame(nil, list, "Button")
+    list.CloseButton = close
+    function list:GetRight() return self.left + self.width end
+    function list:GetChildren() return close end
+    close.left, close.top, close.width, close.height = 676, 800, 24, 24
+    local listState = NS.WindowControls.Attach(list, "panel-pass") and NS.WindowControls.states[list]
+    Check(listState and listState.closeCell and listState.closeCell.shown, "a caption window got no drawn X")
+    local layouts, show = 0, NS.WindowControlChrome.ShowCaption
+    NS.WindowControlChrome.ShowCaption = function(owner, ...)
+        if owner == listState then layouts = layouts + 1 end
+        return show(owner, ...)
+    end
+    local function Pass(expected, label)
+        layouts = 0
+        UpdateUIPanelPositions(list)
+        Check(layouts == expected, label .. ": " .. layouts .. " caption layouts")
+    end
+    for _ = 1, 3 do Pass(0, "a panel pass laid out the caption of an unchanged window") end
+    local oldX = listState.captionX
+    close.left = close.left - 20
+    Pass(1, "native X geometry changed without moving its window")
+    Check(listState.captionX ~= oldX, "caption stayed at the old native X position")
+    Pass(0, "the new native X geometry did not settle")
+    close.frameLevel = 23
+    Pass(1, "native X level changed without raising its window")
+    Check(listState.closeCell:GetFrameLevel() == 25, "caption did not follow the new native X level")
+    Pass(0, "the new native X level did not settle")
+    local corner = Frame(nil, list, "Texture")
+    corner.alpha = .8
+    list.NineSlice = { TopRightCorner = corner }
+    Pass(1, "a new root corner kept the previous caption art")
+    Check(corner.alpha == 0, "native root corner was not faded")
+    local replacement = Frame(nil, list, "Texture")
+    replacement.alpha = .65
+    list.NineSlice.TopRightCorner = replacement
+    Pass(1, "a replacement corner kept the previous caption art")
+    Check(corner.alpha == .8 and replacement.alpha == 0, "caption did not transfer its native corner fade")
+    list.left = list.left + 10
+    Pass(1, "a moved window kept its caption")
+    Pass(0, "a moved window was laid out again on the next pass")
+    local text = "Addons"
+    function list:GetTitleText() return { GetText = function() return text end } end
+    Pass(1, "a new title region kept the caption")
+    text = "AddOns (3)"
+    Pass(1, "a changed title kept the caption")
+    Pass(0, "an unchanged title was laid out again")
+    list.frameLevel = 40
+    Pass(1, "a raised window kept the caption level")
+    Pass(0, "a raised window was laid out again on the next pass")
+    close.shown = false
+    Pass(1, "a hidden X kept its caption")
+    close.shown = true
+    Pass(1, "a shown X did not get its caption back")
+    Check(listState.closeCell.shown and close.alpha == 0, "the caption did not come back with the X")
+    NS.WindowControlChrome.ShowCaption = show
+    list:Hide()
+    NS.WindowControls.DisableOwner("panel-pass")
+end
 
 -- Stored scales remain stable in combat for safe panels. Protected panels
 -- retain their native geometry and lose their controls outside combat.
@@ -1454,6 +1556,7 @@ NS.MenuMotion = {
     end,
 }
 NS.CombatGate = { Cancel = function() end }
+NS.ControlSkin = { MarkFixedButtonSpec = function(spec) return spec end }
 PanelTemplates_GetSelectedTab = function() return 1 end
 assert(loadfile(root .. "/MSUF_Suite_Skin/Adapters/PaperDollChrome.lua"))("MSUF_Suite_Skin", NS)
 assert(loadfile(root .. "/MSUF_Suite_Skin/Adapters/InspectPanel.lua"))("MSUF_Suite_Skin", NS)
