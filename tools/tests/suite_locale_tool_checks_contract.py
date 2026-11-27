@@ -11,6 +11,7 @@ import importlib.util
 import sys
 import tempfile
 from pathlib import Path
+from unittest.mock import patch
 
 ROOT = Path(sys.argv[1]).resolve() if len(sys.argv) > 1 else Path(__file__).resolve().parents[2]
 spec = importlib.util.spec_from_file_location("suite_locale_tool", ROOT / "tools" / "suite_locale_tool.py")
@@ -192,6 +193,57 @@ Plan.Table(root, "private")
     check("Selected getter caption" in extractor.found, "a nested getter lost its selected caption")
     check("Private getter sibling" not in extractor.found, "a getter selected an unrelated field")
     check(len(extractor.seen) < 100, "keyed getters expanded translation paths without a bound")
+
+# A diagnostic field lookup must retain the key on each call, especially
+# when one lookup supplies the object for another.
+with tempfile.TemporaryDirectory() as directory:
+    tree = Path(directory)
+    diagnostic = tree / "MSUF_Suite/Core/DevQuestTurnIn.lua"
+    diagnostic.parent.mkdir(parents=True)
+    diagnostic.write_text('''local _, Suite = ...
+local function Field(object, key)
+    if not Readable(object) then return end
+    local value = object[key]
+    if Suite.Public(value) then return value end
+end
+local function Show(root)
+    local child = Field(root, "child")
+    Suite.Text(Field(child, "label"))
+end
+Show({ child = { label = "Selected diagnostic caption", other = "Unrelated diagnostic caption" } })
+''', encoding="utf-8")
+    extractor = tool.Extractor(tree).run()
+    check(set(extractor.found) == {"Selected diagnostic caption"}, "diagnostic lookup did not keep its selected field")
+    check(len(extractor.seen) < 30, "nested diagnostic lookups expanded translation paths without a bound")
+
+# Non-string arguments pass through the translator at that invocation only.
+# Following its fallback return must not feed one call's shape into other calls.
+with tempfile.TemporaryDirectory() as directory:
+    tree = Path(directory)
+    bridge = tree / "MSUF_Suite_Options/Menu/Bridge.lua"
+    bridge.parent.mkdir(parents=True)
+    bridge.write_text('''local _, P = ...
+local M = P.M
+function P.Tr(text, plainSeparators)
+    if type(text) ~= "string" then return text end
+    local translated = M.Tr and M.Tr(text) or text
+    if plainSeparators == true then return Suite.PlainSeparators(translated) end
+    return translated
+end
+local translated = P.Tr({ "Selected translation caption", "Unselected translation caption" })
+P.Tr(translated[1])
+P.Tr({ "Unrelated translation caption" })
+''', encoding="utf-8")
+    extractor = tool.Extractor(tree).run()
+    check(set(extractor.found) == {"Selected translation caption"}, "translator return leaked into another invocation")
+    with patch.object(tool, "MAX_PROJECTIONS", 2, create=True):
+        try:
+            tool.Extractor(tree).run()
+        except ValueError as exc:
+            check("2 projections" in str(exc) and "Menu/Bridge.lua:" in str(exc),
+                  "a stopped scan did not report its input and limit")
+        else:
+            check(False, "projection exhaustion returned an incomplete result as successful")
 
 # Numeric summary ranks share their field name with authored help prose.
 with tempfile.TemporaryDirectory() as directory:

@@ -51,6 +51,16 @@ import subprocess
 import sys
 from pathlib import Path
 
+# Field and parameter inference can keep generating new projections for a cycle.
+# Bound retained states and fail before any command can emit a partial result.
+MAX_PROJECTIONS = 750_000
+MAX_PROJECTION_ROUNDS = 41
+
+
+class ProjectionLimitError(ValueError):
+    """The scan stopped before it could establish a complete result."""
+
+
 ROOT = Path(__file__).resolve().parents[1]
 BRANCH = ROOT.parent
 HOST_CLASSIC = BRANCH / "MidnightSimpleUnitFrames-7.0"
@@ -239,6 +249,8 @@ class LuaFile:
         self._calls()
         self._fields()
         self._private_table_fields()
+        # Token ownership and enclosure are only needed while building the index.
+        del self.owner, self.inside
 
     # brackets and blocks
     def _match(self):
@@ -767,12 +779,15 @@ DISPLAY_ENUM_LABELS = {
 VALUE_COPY_RESULTS = {
     ("MSUF_Suite/Core/Database.lua", "Copy"): 0,
     ("MSUF_Suite/Core/Database.lua", "CopyTable"): 0,
+    # Translation scans the original text at the call. Non-strings pass through.
+    ("MSUF_Suite_Options/Menu/Bridge.lua", "P.Tr"): 0,
 }
 # These getters return one input field. Project each invocation's key onto
 # its own table, so callers selecting nested tables do not repeatedly add
 # wildcard levels to every other invocation's first parameter.
 VALUE_LOOKUP_RESULTS = {
     ("MSUF_Suite_AdventurePlanner/PlanningTools.lua", "Plan.Table"): (0, 1),
+    ("MSUF_Suite/Core/DevQuestTurnIn.lua", "Field"): (0, 1),
     ("MSUF_Suite/Core/HostBridgeMenu.lua", "AppearanceAction"): (0, 1),
 }
 # The options use summary both for prose and a numeric display rank.
@@ -972,12 +987,20 @@ class Extractor:
             return True
         return d.file.addon == RUNTIME and f.addon not in (OPTIONS,)
 
+    def remember_projection(self, key):
+        if key in self.seen:
+            return False
+        if len(self.seen) >= MAX_PROJECTIONS:
+            rel, line, sink = self.current
+            raise ProjectionLimitError(f"Suite locale extraction exceeded {MAX_PROJECTIONS:,} projections "
+                                       f"while following {sink} at {rel}:{line}")
+        self.seen.add(key)
+        return True
+
     # applying a shape to an expression
     def apply(self, shape, f, rng, owner, sink, direct=True):
-        key = (f.rel, rng, shape)
-        if key in self.seen:
+        if not self.remember_projection((f.rel, rng, shape)):
             return
-        self.seen.add(key)
         if len(rng) == 3:
             # The n-th result of a call (local ok, reason = S.Set(...)).
             self.apply_result(shape, f, (rng[0], rng[1]), rng[2], sink)
@@ -1095,10 +1118,8 @@ class Extractor:
         call = f.call_at.get(f.open_of[close])
         if call is None:
             return
-        key = ("result", f.rel, rng, index, shape)
-        if key in self.seen:
+        if not self.remember_projection(("result", f.rel, rng, index, shape)):
             return
-        self.seen.add(key)
         targets = self.call_targets_of(f, call)
         if not targets and re.fullmatch(r"[A-Za-z_]\w*", call.callee):
             # A local such as bar = bar() can otherwise grow a return projection
@@ -1254,9 +1275,7 @@ class Extractor:
 
     # the fixed point
     def run(self):
-        rounds = 0
-        while True:
-            rounds += 1
+        for _ in range(MAX_PROJECTION_ROUNDS):
             self.changed = False
             for f in self.files:
                 for call in f.calls:
@@ -1299,9 +1318,9 @@ class Extractor:
                 for rng, owner in f.reasons:
                     self.current = (f.rel, f.tokens[rng[0]].line, "reason")
                     self.apply(STR, f, rng, owner, "reason", direct=False)
-            if not self.changed or rounds > 40:
-                break
-        return self
+            if not self.changed:
+                return self
+        raise ProjectionLimitError(f"Suite locale extraction did not converge in {MAX_PROJECTION_ROUNDS} rounds")
 
 
 def source_files(root):
@@ -1962,7 +1981,11 @@ def main(argv):
     if not command:
         print(__doc__)
         return 2
-    return command(argv[1:])
+    try:
+        return command(argv[1:])
+    except ProjectionLimitError as exc:
+        print(f"FAIL {exc}", file=sys.stderr)
+        return 1
 
 
 if __name__ == "__main__":
