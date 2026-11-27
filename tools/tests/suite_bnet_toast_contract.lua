@@ -232,6 +232,7 @@ local NS = { AnchorPoints = Support.AnchorPoints(root), FontRendering = { SMOOTH
 ------------------------------------------------------------------ catalog
 local catalog = { Client = { isForever = false }, Text = function(text) return text end }
 assert(loadfile(root .. "/MSUF_Suite/Core/SuiteCatalog.lua"))("MSUF_Suite", catalog)
+assert(loadfile(root .. "/MSUF_Suite/Core/Catalog/Tooltips.lua"))("MSUF_Suite", catalog)
 assert(loadfile(root .. "/MSUF_Suite/Core/Catalog/QualityOfLife.lua"))("MSUF_Suite", catalog)
 assert(loadfile(root .. "/MSUF_Suite/Core/Catalog/QualityOfLifeDetails.lua"))("MSUF_Suite", catalog)
 local spec = assert(catalog.SuiteCatalog.bnetToast, "the Battle.net toast module is not in the catalog")

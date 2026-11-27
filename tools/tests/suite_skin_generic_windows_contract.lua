@@ -977,23 +977,23 @@ Section("shared chrome", function()
     _G.TalkingHeadFrame, _G.RaidParentFrame, _G.QueueStatusFrame, _G.PlayerChoiceFrame = nil, nil, nil, nil
 end)
 
--- The Battle.net toast with a Suite look belongs to the Suite's toast module
--- (Core/SuiteOwnership.lua "battleNetToast"); the time alert keeps its skin.
 Section("shared chrome battle.net toast", function()
     local SharedChrome = NS.SharedChrome
     local toast, timeAlert = Frame("BNToastFrame"), Frame("TimeAlertFrame")
     _G.BNToastFrame, _G.TimeAlertFrame = toast, timeAlert
-    suiteOwned.battleNetToast = true
-    local ok = pcall(SharedChrome.Apply, "toastOwned")
-    Expect(ok and toast.surfaceSpec == nil and timeAlert.surfaceSpec ~= nil,
-        "the skin styled the Battle.net toast the Suite module styles, or dropped the time alert")
-    SharedChrome.Disable("toastOwned")
-    suiteOwned.battleNetToast = false
-    toast.surfaceSpec, timeAlert.surfaceSpec = nil, nil
-    ok = pcall(SharedChrome.Apply, "toastFree")
-    Expect(ok and toast.surfaceSpec ~= nil and timeAlert.surfaceSpec ~= nil,
-        "the skin left a free Battle.net toast unstyled")
-    SharedChrome.Disable("toastFree")
+    for _, owned in ipairs({ false, true }) do
+        suiteOwned.battleNetToast = owned
+        GenericWindows.ApplyAll("toast")
+        SharedChrome.Apply("toast")
+        Expect(toast.surfaceSpec == nil, owned and "shared chrome painted over the toast module"
+            or "shared chrome skinned the native Battle.net toast with the toast skin off")
+        Expect(timeAlert.surfaceSpec ~= nil, "shared chrome dropped the separate session-time alert skin")
+        SharedChrome.Disable("toast")
+        GenericWindows.Disable("toast")
+        toast.surfaceSpec, timeAlert.surfaceSpec = nil, nil
+    end
+    Expect(NS.BlizzardCatalog.FindByFrame("BNToastFrame") == nil,
+        "the general window catalog still claimed the Battle.net toast")
     _G.BNToastFrame, _G.TimeAlertFrame, suiteOwned.battleNetToast = nil, nil, nil
 end)
 

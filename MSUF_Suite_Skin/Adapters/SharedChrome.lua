@@ -42,7 +42,7 @@ local CHAR_CUSTOMIZE_SHOW_CALLBACK = "CharCustomize.OnShow"
 local addonKinds = {
     Blizzard_FrameXML = { "talking-head" },
     Blizzard_UIPanels_Game = { "dressing-room" },
-    Blizzard_BNet = { "social-toasts" },
+    Blizzard_BNet = { "session-time-alert" },
     Blizzard_Minimap = { "addon-compartment" },
     Blizzard_QuickKeybind = { "quick-keybind" },
     Blizzard_RaidFrame = { "raid" },
@@ -56,7 +56,7 @@ local addonKinds = {
 local allKinds = {
     "talking-head",
     "dressing-room",
-    "social-toasts",
+    "session-time-alert",
     "addon-compartment",
     "quick-keybind",
     "raid",
@@ -186,7 +186,10 @@ local function SkinTalkingHead(state)
     return applied
 end
 
-local function SkinSocialToast(state, frame)
+local function SkinSessionTimeAlert(state)
+    if not NS.GenericWindows.IsCategoryEnabled("social") then return false end
+    -- BattleNetToast.lua is the sole Suite owner of BNToastFrame.
+    local frame = _G.TimeAlertFrame
     if not frame then return false end
     local applied = Kit.Attach(state, frame, TOAST_SPEC)
     -- BackdropTemplate exposes its neutral nine-slice pieces directly. Hide
@@ -194,16 +197,6 @@ local function SkinSocialToast(state, frame)
     -- native. The close-button detector preserves its native icon textures.
     Kit.FadeNineSlice(state, frame)
     applied = Kit.SkinControl(state, Field(frame, "CloseButton"), SMALL_CLOSE_SPEC) or applied
-    return applied
-end
-
-local function SkinSocialToasts(state)
-    if not NS.GenericWindows.IsCategoryEnabled("social") then return false end
-    -- The Suite's Battle.net toast module paints its own look on the toast
-    -- (Core/SuiteOwnership.lua); the skin keeps the time alert.
-    local applied = false
-    if not NS.SuiteOwnership.Owns("battleNetToast") then applied = SkinSocialToast(state, _G.BNToastFrame) end
-    applied = SkinSocialToast(state, _G.TimeAlertFrame) or applied
     return applied
 end
 
@@ -358,7 +351,7 @@ end
 local kindSkinners = {
     ["talking-head"] = SkinTalkingHead,
     ["dressing-room"] = SkinDressingRoom,
-    ["social-toasts"] = SkinSocialToasts,
+    ["session-time-alert"] = SkinSessionTimeAlert,
     ["addon-compartment"] = SkinAddonCompartment,
     ["quick-keybind"] = SkinQuickKeybind,
     raid = SkinRaid,
