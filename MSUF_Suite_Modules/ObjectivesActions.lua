@@ -60,6 +60,12 @@ local function WatchTogglePressed()
     return Read(IsModifiedClick, "QUESTWATCHTOGGLE") == true or Read(IsShiftKeyDown) == true
 end
 
+function O.InsertQuestChatLink(questID)
+    if NS.ChatLocked() then return end
+    local link = S.ReadText(GetQuestLink, questID)
+    if link then ChatFrameUtil.InsertLink(link) end
+end
+
 local function CanUntrack(button)
     if Finite(button.recipeID) or Finite(button.contentID) then return true end
     if Finite(button.achievementID) then return true end
@@ -179,17 +185,19 @@ local function WindowButton(row)
     end
 end
 
--- PreClick of a Forever row or header: writes only the button's own
--- attributes; row.secureWindow tells the click handler that Blizzard's
--- button took the click.
 function O.IsQuestCollapseClick(row, mouseButton)
     return mouseButton == "LeftButton" and row.altCollapse and O.M.config.altClickQuestCollapse
         and IsAltKeyDown() and not WatchTogglePressed()
 end
 
+-- Pick the chat action before native delegation or the quest-watch binding.
+-- Both bindings default to Shift, so an open chat box gives linking priority.
 function O.RowPreClick(row, mouseButton)
+    row.chatLinkClick = mouseButton == "LeftButton" and Finite(row.questID)
+        and Read(IsModifiedClick, "CHATLINK") == true and Read(ChatFrameUtil.GetActiveWindow) ~= nil or nil
     local target
-    if row.kind ~= "section" and not NS.IsCombatLocked() and not O.IsQuestCollapseClick(row, mouseButton) then
+    if not row.chatLinkClick and row.kind ~= "section" and not NS.IsCombatLocked()
+        and not O.IsQuestCollapseClick(row, mouseButton) then
         if S.GamepadUI() then
             if mouseButton == "LeftButton" then
                 target = not WatchTogglePressed() and WindowButton(row) or nil

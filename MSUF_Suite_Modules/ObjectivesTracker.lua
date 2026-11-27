@@ -108,23 +108,21 @@ end
 
 local ToggleEntry
 local function OnRowClick(button, mouseButton)
+    if button.secureWindow then
+        button.secureWindow = nil
+        return
+    elseif button.chatLinkClick then
+        button.chatLinkClick = nil
+        O.InsertQuestChatLink(button.questID)
+        return
+    end
     if mouseButton == "RightButton" then
-        -- Blizzard's own quest menu opened from its header (O.RowPreClick).
-        if button.secureWindow then
-            button.secureWindow = nil
-            return
-        end
         if O.QuestGroupMenu and O.QuestGroupMenu(M, button) then return end
         ShowContextMenu(button)
         return
     end
     if button.kind == "section" then
         ToggleGroup(M, button.collapseKey or button.group)
-        return
-    end
-    if button.secureWindow then
-        -- Blizzard's own button opened the window (O.RowPreClick).
-        button.secureWindow = nil
         return
     end
     if O.IsQuestCollapseClick(button, mouseButton) then
